@@ -1,0 +1,587 @@
+openapi: 3.0.0
+info:
+  title: 个性化旅游推荐系统 API
+  version: 1.0.0
+  description: |
+    基于图算法和 AI 的个性化旅游路线规划系统
+    
+    ## 开发顺序
+    1. ✅ 数据库设计 (Database) - 已完成
+    2. 🔄 API 定义 (API) - 当前进行
+    3. ⏳ 前端 UI (UI/UX) - 待开始
+    4. ⏳ 业务逻辑与算法实现 (Business Logic & Algorithm) - 待开始
+
+servers:
+  - url: /api/v1
+    description: 本地开发环境
+
+components:
+  schemas:
+    # === 数据库表对应模型 ===
+    ScenicSpot:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: 景点唯一标识
+        name:
+          type: string
+          description: 景点名称
+        description:
+          type: string
+          description: 景点描述
+        location:
+          type: object
+          properties:
+            latitude:
+              type: number
+              format: double
+            longitude:
+              type: number
+              format: double
+          description: 地理坐标 (PostGIS GEOGRAPHY)
+        rating:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 5
+          description: 评分
+        category:
+          type: string
+          enum: [自然风光，历史文化，主题乐园，博物馆，美食，购物，娱乐，其他]
+          description: 景点类别
+        opening_hours:
+          type: string
+          description: 开放时间
+        admission_fee:
+          type: number
+          format: float
+          description: 门票价格
+        tags:
+          type: array
+          items:
+            type: string
+          description: 标签列表
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    GraphNode:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: 节点唯一标识
+        node_type:
+          type: string
+          enum: [scenic_spot, transportation, facility, custom]
+          description: 节点类型
+        scenic_spot_id:
+          type: integer
+          nullable: true
+          description: 关联的景点 ID (如果是景点节点)
+        location:
+          type: object
+          properties:
+            latitude:
+              type: number
+              format: double
+            longitude:
+              type: number
+              format: double
+          description: 地理坐标
+        name:
+          type: string
+          description: 节点名称
+
+    GraphEdge:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: 边唯一标识
+        from_node:
+          type: integer
+          description: 起始节点 ID
+        to_node:
+          type: integer
+          description: 目标节点 ID
+        distance:
+          type: number
+          format: float
+          description: 距离 (米)
+        travel_mode:
+          type: string
+          enum: [walking, cycling, driving, public_transport]
+          description: 交通方式
+        travel_time:
+          type: integer
+          description: 预计时间 (分钟)
+        weight:
+          type: number
+          format: float
+          description: 权重 (用于 Dijkstra 算法)
+
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+        username:
+          type: string
+        email:
+          type: string
+          format: email
+        preferences:
+          type: object
+          description: 用户偏好设置
+        created_at:
+          type: string
+          format: date-time
+
+    # === API 请求/响应模型 ===
+    RoutePlanRequest:
+      type: object
+      required:
+        - waypoints
+      properties:
+        waypoints:
+          type: array
+          items:
+            type: object
+            required:
+              - node_id
+            properties:
+              node_id:
+                type: integer
+                description: 途经点节点 ID
+              duration:
+                type: integer
+                nullable: true
+                description: 预计停留时间 (分钟)
+        transport_mode:
+          type: string
+          enum: [walking, cycling, driving, public_transport]
+          default: walking
+          description: 交通方式
+        optimization:
+          type: string
+          enum: [distance, time, experience]
+          default: distance
+          description: 优化目标
+
+    RoutePlanResponse:
+      type: object
+      properties:
+        path:
+          type: array
+          items:
+            $ref: '#/components/schemas/GraphNode'
+          description: 规划的路径节点序列
+        edges:
+          type: array
+          items:
+            $ref: '#/components/schemas/GraphEdge'
+          description: 路径包含的边
+        total_distance:
+          type: number
+          format: float
+          description: 总距离 (米)
+        total_duration:
+          type: integer
+          description: 总预计时间 (分钟)
+        recommendations:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScenicSpot'
+          description: 沿途推荐景点
+
+    ScenicSpotsResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScenicSpot'
+        total:
+          type: integer
+          description: 总数
+        page:
+          type: integer
+        page_size:
+          type: integer
+
+    RecommendationRequest:
+      type: object
+      properties:
+        user_id:
+          type: integer
+          nullable: true
+          description: 用户 ID (可选，用于个性化推荐)
+        limit:
+          type: integer
+          default: 10
+          description: 推荐数量
+        category:
+          type: string
+          nullable: true
+          description: 类别过滤
+        location:
+          type: object
+          nullable: true
+          properties:
+            latitude:
+              type: number
+            longitude:
+              type: number
+          description: 当前位置 (用于就近推荐)
+
+    RecommendationResponse:
+      type: object
+      properties:
+        recommendations:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScenicSpot'
+        reason:
+          type: string
+          description: 推荐理由
+
+paths:
+  # === 景点管理 API ===
+  /scenic-spots:
+    get:
+      summary: 获取景点列表
+      description: |
+        支持分页、排序、过滤的景点查询接口
+        
+        ## 数据库查询优化
+        - 使用 PostGIS GIST 索引加速空间查询
+        - 使用 GIN 索引加速全文搜索
+        - 支持 KNN 最近邻查询
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [rating, name, distance]
+            default: rating
+        - name: category
+          in: query
+          schema:
+            type: string
+        - name: q
+          in: query
+          schema:
+            type: string
+          description: 搜索关键词 (使用全文索引)
+        - name: lat
+          in: query
+          schema:
+            type: number
+          description: 纬度 (用于距离排序)
+        - name: lng
+          in: query
+          schema:
+            type: number
+          description: 经度 (用于距离排序)
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScenicSpotsResponse'
+              example:
+                data:
+                  - id: 1
+                    name: 故宫
+                    description: 中国明清两代的皇家宫殿
+                    location:
+                      latitude: 39.9163
+                      longitude: 116.3972
+                    rating: 4.8
+                    category: 历史文化
+                    tags: [世界遗产，博物馆，历史建筑]
+                  - id: 2
+                    name: 天坛
+                    description: 明清两代皇帝祭天的场所
+                    location:
+                      latitude: 39.8833
+                      longitude: 116.4067
+                    rating: 4.7
+                    category: 历史文化
+                    tags: [世界遗产，古建筑]
+                total: 200
+                page: 1
+                page_size: 20
+
+  # === 路线规划 API ===
+  /routes/plan:
+    post:
+      summary: 规划旅游路线
+      description: |
+        基于 Dijkstra 算法的路线规划接口
+        
+        ## 算法实现要点
+        1. 使用优先队列优化的 Dijkstra 算法
+        2. 支持多种优化目标 (距离/时间/体验)
+        3. 自动处理图的连通性问题
+        4. 返回完整路径和沿途推荐
+        
+        ## 性能要求
+        - 200+ 节点，500+ 边的图
+        - 响应时间 < 100ms
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoutePlanRequest'
+            example:
+              waypoints:
+                - node_id: 1
+                  duration: 120
+                - node_id: 50
+                  duration: 90
+                - node_id: 100
+                  duration: 60
+              transport_mode: walking
+              optimization: distance
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoutePlanResponse'
+              example:
+                path:
+                  - id: 1
+                    node_type: scenic_spot
+                    name: 故宫
+                    location:
+                      latitude: 39.9163
+                      longitude: 116.3972
+                  - id: 15
+                    node_type: transportation
+                    name: 故宫东门公交站
+                    location:
+                      latitude: 39.9175
+                      longitude: 116.3985
+                  - id: 50
+                    node_type: scenic_spot
+                    name: 景山公园
+                    location:
+                      latitude: 39.9256
+                      longitude: 116.3956
+                edges:
+                  - from_node: 1
+                    to_node: 15
+                    distance: 150
+                    travel_mode: walking
+                    travel_time: 2
+                    weight: 150
+                  - from_node: 15
+                    to_node: 50
+                    distance: 920
+                    travel_mode: walking
+                    travel_time: 12
+                    weight: 920
+                total_distance: 1070
+                total_duration: 14
+                recommendations:
+                  - id: 25
+                    name: 北海公园
+                    rating: 4.6
+
+  # === 智能推荐 API ===
+  /recommendations/scenic-spots:
+    get:
+      summary: 推荐景点
+      description: |
+        基于用户偏好和位置的智能推荐接口
+        
+        ## 推荐策略
+        1. 基于位置的 KNN 最近邻推荐
+        2. 基于用户历史偏好的协同过滤
+        3. 基于景点热度的推荐
+        4. 混合推荐策略
+      parameters:
+        - name: user_id
+          in: query
+          schema:
+            type: integer
+          description: 用户 ID
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+        - name: category
+          in: query
+          schema:
+            type: string
+        - name: lat
+          in: query
+          schema:
+            type: number
+        - name: lng
+          in: query
+          schema:
+            type: number
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecommendationResponse'
+              example:
+                recommendations:
+                  - id: 10
+                    name: 颐和园
+                    description: 中国清朝时期皇家园林
+                    location:
+                      latitude: 39.9983
+                      longitude: 116.2687
+                    rating: 4.7
+                    category: 历史文化
+                    tags: [世界遗产，皇家园林]
+                  - id: 23
+                    name: 圆明园
+                    description: 清代大型皇家园林
+                    location:
+                      latitude: 40.0033
+                      longitude: 116.3083
+                    rating: 4.5
+                    category: 历史文化
+                    tags: [历史遗迹，公园]
+                reason: 基于您的当前位置和历史偏好推荐
+
+  # === 用户相关 API ===
+  /users:
+    post:
+      summary: 创建用户
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - username
+                - email
+              properties:
+                username:
+                  type: string
+                email:
+                  type: string
+                  format: email
+                preferences:
+                  type: object
+      responses:
+        '201':
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+
+  /users/{user_id}/preferences:
+    put:
+      summary: 更新用户偏好
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                preferred_categories:
+                  type: array
+                  items:
+                    type: string
+                max_distance:
+                  type: number
+                budget_range:
+                  type: string
+      responses:
+        '200':
+          description: 更新成功
+
+  # === 成就系统 API ===
+  /achievements:
+    get:
+      summary: 获取成就列表
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  achievements:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                        name:
+                          type: string
+                        description:
+                          type: string
+                        layer:
+                          type: string
+                          enum: [L1 基础成就，L2 主题成就，L3 创作成就，L4 大师成就]
+                        icon:
+                          type: string
+
+  /users/{user_id}/achievements:
+    get:
+      summary: 获取用户成就
+      responses:
+        '200':
+          description: 成功
+
+  # === 数字藏品 API ===
+  /digital-collectibles:
+    get:
+      summary: 获取数字藏品列表
+      responses:
+        '200':
+          description: 成功
+
+tags:
+  - name: 景点管理
+    description: 景点查询、管理相关接口
+  - name: 路线规划
+    description: 基于 Dijkstra 算法的路线规划
+  - name: 智能推荐
+    description: AI 驱动的智能推荐
+  - name: 用户管理
+    description: 用户相关操作
+  - name: 成就系统
+    description: 成就和数字藏品
