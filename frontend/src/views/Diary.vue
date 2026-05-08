@@ -1,269 +1,191 @@
 <template>
-  <div class="diary-page">
-    <h1 class="text-3xl font-bold mb-6">游记管理</h1>
-    
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      <!-- 左侧：游记列表 -->
-      <div class="lg:col-span-1 bg-white rounded-lg shadow-md p-6">
-        <div class="flex justify-between items-center mb-4">
-          <h2 class="text-xl font-semibold">我的游记</h2>
-          <button 
-            @click="showCreateDialog = true"
-            class="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-md text-sm"
-          >
-            新建游记
-          </button>
+  <div class="grid gap-6 xl:grid-cols-[0.85fr_1.15fr]">
+    <section class="space-y-6">
+      <div class="rounded-md border border-slate-200 bg-white p-5">
+        <div class="flex items-center justify-between gap-4">
+          <div>
+            <h1 class="text-2xl font-bold text-slate-950">旅游日记</h1>
+            <p class="mt-2 text-sm leading-6 text-slate-500">记录路线、预算、体验和图片，后续可接 AIGC 润色与多媒体生成。</p>
+          </div>
+          <button @click="startNewDiary" class="rounded-md bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800">新建</button>
         </div>
-        
-        <!-- 搜索框 -->
-        <div class="mb-4">
-          <input 
-            v-model="searchQuery"
-            @keyup.enter="searchDiaries"
-            type="text"
-            placeholder="搜索游记..."
-            class="w-full border rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-          />
+
+        <div class="mt-5">
+          <input v-model="query" type="search" placeholder="搜索标题、标签或心情" class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-teal-700 focus:outline-none">
         </div>
-        
-        <!-- 游记列表 -->
-        <div class="space-y-4 max-h-[600px] overflow-y-auto">
-          <div 
-            v-for="diary in diaries" 
-            :key="diary.id"
-            @click="viewDiary(diary.id)"
-            class="border rounded-lg p-4 hover:shadow-md transition-shadow cursor-pointer"
-          >
-            <h3 class="font-semibold mb-2">{{ diary.title }}</h3>
-            <p class="text-gray-600 text-sm mb-2 line-clamp-2">{{ diary.summary }}</p>
-            <div class="flex items-center justify-between text-xs text-gray-500">
-              <span>{{ diary.start_date }}</span>
-              <div class="flex items-center space-x-2">
-                <span>👁 {{ diary.view_count }}</span>
-                <span>❤️ {{ diary.like_count }}</span>
+      </div>
+
+      <div class="space-y-3">
+        <article
+          v-for="diary in filteredDiaries"
+          :key="diary.id"
+          @click="selectDiary(diary)"
+          :class="[
+            'cursor-pointer overflow-hidden rounded-md border bg-white transition hover:border-slate-400',
+            selectedDiary?.id === diary.id ? 'border-slate-900 ring-2 ring-slate-900/10' : 'border-slate-200'
+          ]"
+        >
+          <img :src="diary.cover" :alt="diary.title" class="h-36 w-full object-cover">
+          <div class="p-4">
+            <div class="flex items-start justify-between gap-3">
+              <h2 class="font-semibold text-slate-950">{{ diary.title }}</h2>
+              <span class="rounded-md bg-teal-50 px-2 py-1 text-xs font-semibold text-teal-800">{{ diary.mood }}</span>
+            </div>
+            <p class="mt-2 line-clamp-2 text-sm leading-6 text-slate-500">{{ diary.excerpt }}</p>
+            <div class="mt-3 flex flex-wrap gap-2">
+              <span v-for="tag in diary.tags" :key="tag" class="rounded-md bg-slate-100 px-2 py-1 text-xs text-slate-600">{{ tag }}</span>
+            </div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="space-y-6">
+      <div class="rounded-md border border-slate-200 bg-white p-5">
+        <div class="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h2 class="text-lg font-semibold text-slate-950">日记编辑器</h2>
+            <p class="mt-1 text-sm text-slate-500">当前为本地演示编辑，保存后可展示在列表中。</p>
+          </div>
+          <div class="flex gap-2">
+            <button @click="generateSummary" class="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100">生成摘要</button>
+          <button @click="saveDiary" class="rounded-md bg-teal-700 px-3 py-2 text-sm font-semibold text-white hover:bg-teal-800">{{ saving ? '保存中' : '保存' }}</button>
+          </div>
+        </div>
+
+        <div class="mt-5 grid gap-4">
+          <input v-model="draft.title" class="rounded-md border border-slate-300 px-3 py-2 text-lg font-semibold focus:border-teal-700 focus:outline-none" placeholder="日记标题">
+          <div class="grid gap-4 md:grid-cols-3">
+            <input v-model="draft.date" type="date" class="rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-teal-700 focus:outline-none">
+            <input v-model="draft.distance" class="rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-teal-700 focus:outline-none" placeholder="路线距离">
+            <input v-model="draft.mood" class="rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-teal-700 focus:outline-none" placeholder="心情">
+          </div>
+          <input v-model="tagInput" class="rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-teal-700 focus:outline-none" placeholder="标签，用逗号分隔">
+          <textarea v-model="draft.excerpt" rows="7" class="resize-none rounded-md border border-slate-300 px-3 py-2 text-sm leading-6 focus:border-teal-700 focus:outline-none" placeholder="写下今天的路线、花费、体验和建议"></textarea>
+        </div>
+      </div>
+
+      <div class="rounded-md border border-slate-200 bg-white p-5">
+        <h2 class="text-lg font-semibold text-slate-950">预览</h2>
+        <div class="mt-4 overflow-hidden rounded-md border border-slate-200">
+          <img :src="draft.cover || diaries[0].cover" alt="日记封面" class="h-52 w-full object-cover">
+          <div class="p-5">
+            <div class="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 class="text-2xl font-bold text-slate-950">{{ draft.title || '未命名日记' }}</h3>
+                <div class="mt-2 text-sm text-slate-500">{{ draft.date }} · {{ draft.distance }} · {{ draft.mood }}</div>
               </div>
+              <span class="rounded-md bg-amber-50 px-3 py-1 text-sm font-semibold text-amber-800">草稿</span>
+            </div>
+            <p class="mt-4 whitespace-pre-line text-sm leading-7 text-slate-600">{{ draft.excerpt }}</p>
+            <div class="mt-4 flex flex-wrap gap-2">
+              <span v-for="tag in draftTags" :key="tag" class="rounded-md bg-teal-50 px-2 py-1 text-xs font-medium text-teal-800">{{ tag }}</span>
             </div>
           </div>
         </div>
       </div>
-      
-      <!-- 右侧：游记详情/编辑器 -->
-      <div class="lg:col-span-2 bg-white rounded-lg shadow-md p-6">
-        <div v-if="selectedDiary" class="h-full">
-          <h2 class="text-2xl font-bold mb-4">{{ selectedDiary.title }}</h2>
-          
-          <!-- 游记元信息 -->
-          <div class="flex items-center space-x-4 text-sm text-gray-600 mb-6">
-            <span>📅 {{ selectedDiary.start_date }} - {{ selectedDiary.end_date }}</span>
-            <span>📍 {{ selectedDiary.visited_spots?.length || 0 }} 个景点</span>
-            <span>📏 {{ selectedDiary.total_distance_km }} km</span>
-          </div>
-          
-          <!-- 游记内容 -->
-          <div class="prose max-w-none mb-6">
-            <p>{{ selectedDiary.content }}</p>
-          </div>
-          
-          <!-- 操作按钮 -->
-          <div class="flex space-x-4">
-            <button 
-              @click="editDiary"
-              class="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-md"
-            >
-              编辑
-            </button>
-            <button 
-              @click="generateAIGC"
-              class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md"
-            >
-              AI 润色
-            </button>
-            <button 
-              @click="deleteDiary"
-              class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-md"
-            >
-              删除
-            </button>
-          </div>
-        </div>
-        
-        <div v-else class="flex items-center justify-center h-full text-gray-400">
-          <p>请选择一篇游记或创建新游记</p>
+
+      <div class="rounded-md border border-slate-200 bg-white p-5">
+        <h2 class="text-lg font-semibold text-slate-950">后续修改空间</h2>
+        <div class="mt-4 grid gap-3 md:grid-cols-3">
+          <div class="rounded-md bg-slate-50 p-4 text-sm text-slate-600">接入 `POST /api/v1/diaries` 保存真实游记。</div>
+          <div class="rounded-md bg-slate-50 p-4 text-sm text-slate-600">接入 AIGC 标题、摘要、图片说明生成。</div>
+          <div class="rounded-md bg-slate-50 p-4 text-sm text-slate-600">关联路线规划和实际预算支出。</div>
         </div>
       </div>
-    </div>
-    
-    <!-- 新建/编辑对话框 -->
-    <div v-if="showCreateDialog" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div class="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
-        <div class="p-6">
-          <h2 class="text-2xl font-bold mb-4">新建游记</h2>
-          
-          <div class="space-y-4">
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">标题</label>
-              <input 
-                v-model="newDiary.title"
-                type="text"
-                class="w-full border rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-              />
-            </div>
-            
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">内容</label>
-              <textarea 
-                v-model="newDiary.content"
-                rows="10"
-                class="w-full border rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-              ></textarea>
-            </div>
-            
-            <div class="flex space-x-4">
-              <div class="flex-1">
-                <label class="block text-sm font-medium text-gray-700 mb-1">开始日期</label>
-                <input 
-                  v-model="newDiary.start_date"
-                  type="date"
-                  class="w-full border rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                />
-              </div>
-              <div class="flex-1">
-                <label class="block text-sm font-medium text-gray-700 mb-1">结束日期</label>
-                <input 
-                  v-model="newDiary.end_date"
-                  type="date"
-                  class="w-full border rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-                />
-              </div>
-            </div>
-          </div>
-          
-          <div class="flex justify-end space-x-4 mt-6">
-            <button 
-              @click="showCreateDialog = false"
-              class="px-4 py-2 text-gray-600 hover:text-gray-800"
-            >
-              取消
-            </button>
-            <button 
-              @click="createDiary"
-              class="bg-primary-600 hover:bg-primary-700 text-white px-6 py-2 rounded-md"
-            >
-              保存
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
+    </section>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
-import api from '@/api'
+import { computed, onMounted, ref } from 'vue'
+import { diaries as initialDiaries } from '@/data/demoData'
+import { tourismApi } from '@/services/tourismApi'
 
-const diaries = ref([])
-const selectedDiary = ref(null)
-const searchQuery = ref('')
-const showCreateDialog = ref(false)
-const newDiary = ref({
-  title: '',
-  content: '',
-  start_date: '',
-  end_date: ''
+const diaries = ref(initialDiaries.map(item => ({ ...item })))
+const selectedDiary = ref(diaries.value[0])
+const query = ref('')
+const tagInput = ref(selectedDiary.value.tags.join('，'))
+const draft = ref({ ...selectedDiary.value })
+const saving = ref(false)
+
+const filteredDiaries = computed(() => {
+  const keyword = query.value.trim().toLowerCase()
+  if (!keyword) return diaries.value
+  return diaries.value.filter(diary => {
+    return [diary.title, diary.mood, diary.excerpt, ...diary.tags].join(' ').toLowerCase().includes(keyword)
+  })
 })
+
+const draftTags = computed(() => tagInput.value.split(/[，,]/).map(tag => tag.trim()).filter(Boolean))
+
+const selectDiary = (diary) => {
+  selectedDiary.value = diary
+  draft.value = { ...diary }
+  tagInput.value = diary.tags.join('，')
+}
+
+const startNewDiary = () => {
+  selectedDiary.value = null
+  draft.value = {
+    id: Date.now(),
+    title: '',
+    date: new Date().toISOString().slice(0, 10),
+    distance: '',
+    mood: '',
+    cover: initialDiaries[1].cover,
+    tags: [],
+    excerpt: '',
+    stats: { views: 0, likes: 0, comments: 0 }
+  }
+  tagInput.value = ''
+}
+
+const generateSummary = () => {
+  const run = async () => {
+    try {
+      const response = await tourismApi.summarizeDiary({ content: draft.value.excerpt || draft.value.title })
+      draft.value.excerpt = response.summary || draft.value.excerpt
+    } catch (error) {
+      const tags = draftTags.value.length ? `关键词：${draftTags.value.join('、')}。` : ''
+      draft.value.excerpt = draft.value.excerpt || `这是一条围绕 ${draft.value.title || '本次旅行'} 的路线记录，包含行程亮点、预算感受和后续推荐依据。${tags}`
+    }
+  }
+  run()
+}
+
+const saveDiary = async () => {
+  saving.value = true
+  const nextDiary = { ...draft.value, tags: draftTags.value }
+  try {
+    const response = selectedDiary.value
+      ? await tourismApi.updateDiary(nextDiary.id, nextDiary)
+      : await tourismApi.createDiary(nextDiary)
+    const saved = response.id ? response : nextDiary
+    const index = diaries.value.findIndex(item => item.id === saved.id)
+    if (index >= 0) diaries.value[index] = saved
+    else diaries.value.unshift(saved)
+    selectedDiary.value = saved
+    draft.value = { ...saved }
+  } catch (error) {
+    const index = diaries.value.findIndex(item => item.id === nextDiary.id)
+    if (index >= 0) diaries.value[index] = nextDiary
+    else diaries.value.unshift(nextDiary)
+    selectedDiary.value = nextDiary
+  } finally {
+    saving.value = false
+  }
+}
 
 onMounted(async () => {
-  await loadDiaries()
+  try {
+    const response = await tourismApi.diaries()
+    if (response.items?.length) {
+      diaries.value = response.items
+      selectDiary(diaries.value[0])
+    }
+  } catch (error) {
+    // Keep local demo data when the API is not running.
+  }
 })
-
-const loadDiaries = async () => {
-  try {
-    const response = await api.diary.list({ page: 1, page_size: 20 })
-    if (response.code === 200) {
-      diaries.value = response.data.items
-    }
-  } catch (error) {
-    console.error('加载游记失败:', error)
-  }
-}
-
-const searchDiaries = async () => {
-  try {
-    const response = await api.diary.search({ q: searchQuery.value })
-    if (response.code === 200) {
-      diaries.value = response.data.items
-    }
-  } catch (error) {
-    console.error('搜索游记失败:', error)
-  }
-}
-
-const viewDiary = async (id) => {
-  try {
-    const response = await api.diary.getDetail(id)
-    if (response.code === 200) {
-      selectedDiary.value = response.data
-    }
-  } catch (error) {
-    console.error('加载游记详情失败:', error)
-  }
-}
-
-const createDiary = async () => {
-  try {
-    const response = await api.diary.create(newDiary.value)
-    if (response.code === 200) {
-      showCreateDialog.value = false
-      await loadDiaries()
-      alert('游记创建成功')
-    }
-  } catch (error) {
-    console.error('创建游记失败:', error)
-    alert('创建失败，请稍后重试')
-  }
-}
-
-const editDiary = () => {
-  // TODO: 实现编辑功能
-  alert('编辑功能待实现')
-}
-
-const generateAIGC = async () => {
-  try {
-    const response = await api.aigc.polish({
-      content: selectedDiary.value.content,
-      style: 'literary'
-    })
-    if (response.code === 200) {
-      selectedDiary.value.content = response.data.polished
-      alert('AI 润色完成')
-    }
-  } catch (error) {
-    console.error('AI 润色失败:', error)
-  }
-}
-
-const deleteDiary = async () => {
-  if (!confirm('确定要删除这篇游记吗？')) return
-  
-  try {
-    await api.diary.delete(selectedDiary.value.id)
-    await loadDiaries()
-    selectedDiary.value = null
-    alert('游记已删除')
-  } catch (error) {
-    console.error('删除游记失败:', error)
-    alert('删除失败，请稍后重试')
-  }
-}
 </script>
-
-<style scoped>
-.line-clamp-2 {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-</style>

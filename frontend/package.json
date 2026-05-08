@@ -2,6 +2,7 @@
   "name": "personalized-tourism-frontend",
   "version": "1.0.0",
   "description": "个性化旅游系统前端 - Vue.js + Tailwind CSS",
+  "type": "module",
   "private": true,
   "scripts": {
     "dev": "vite",

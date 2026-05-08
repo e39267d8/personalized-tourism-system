@@ -1,171 +1,178 @@
 <template>
-  <div class="route-plan-page">
-    <h1 class="text-3xl font-bold mb-6">路径规划</h1>
-    
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <!-- 左侧：输入表单 -->
-      <div class="bg-white rounded-lg shadow-md p-6">
-        <h2 class="text-xl font-semibold mb-4">规划选项</h2>
-        
-        <!-- 起点和终点 -->
-        <div class="space-y-4 mb-6">
+  <div class="grid gap-6 xl:grid-cols-[0.8fr_1.2fr]">
+    <section class="space-y-6">
+      <div class="rounded-md border border-slate-200 bg-white p-5">
+        <h1 class="text-2xl font-bold text-slate-950">路线规划</h1>
+        <p class="mt-2 text-sm leading-6 text-slate-500">用图节点和边模拟 Dijkstra 结果，演示多目标、交通方式和预算约束。</p>
+
+        <div class="mt-6 space-y-4">
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">起点</label>
-            <input 
-              v-model="startPoint"
-              type="text" 
-              placeholder="输入起点或点击地图选择"
-              class="w-full border rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-            />
+            <label class="text-sm font-semibold text-slate-700">路线模板</label>
+            <select v-model.number="selectedRouteId" class="mt-2 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:border-teal-700 focus:outline-none">
+              <option v-for="route in routes" :key="route.id" :value="route.id">{{ route.title }}</option>
+            </select>
           </div>
-          
+
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="text-sm font-semibold text-slate-700">交通方式</label>
+              <select v-model="transport" class="mt-2 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:border-teal-700 focus:outline-none">
+                <option>步行</option>
+                <option>骑行</option>
+                <option>地铁</option>
+                <option>混合</option>
+              </select>
+            </div>
+            <div>
+              <label class="text-sm font-semibold text-slate-700">优化目标</label>
+              <select v-model="goal" class="mt-2 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:border-teal-700 focus:outline-none">
+                <option>时间优先</option>
+                <option>距离优先</option>
+                <option>预算优先</option>
+                <option>均衡</option>
+              </select>
+            </div>
+          </div>
+
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">终点</label>
-            <input 
-              v-model="endPoint"
-              type="text" 
-              placeholder="输入终点或点击地图选择"
-              class="w-full border rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-            />
+            <div class="flex items-center justify-between">
+              <label class="text-sm font-semibold text-slate-700">拥挤容忍度</label>
+              <span class="text-sm font-bold text-slate-950">{{ crowdTolerance }}</span>
+            </div>
+            <input v-model.number="crowdTolerance" type="range" min="1" max="4" step="1" class="mt-3 w-full accent-teal-700">
           </div>
         </div>
-        
-        <!-- 交通方式选择 -->
-        <div class="mb-6">
-          <label class="block text-sm font-medium text-gray-700 mb-2">交通方式</label>
-          <div class="flex space-x-4">
-            <label class="flex items-center">
-              <input type="radio" v-model="transportMode" value="walk" class="mr-2">
-              <span>步行</span>
-            </label>
-            <label class="flex items-center">
-              <input type="radio" v-model="transportMode" value="bike" class="mr-2">
-              <span>自行车</span>
-            </label>
-            <label class="flex items-center">
-              <input type="radio" v-model="transportMode" value="car" class="mr-2">
-              <span>自驾</span>
-            </label>
-            <label class="flex items-center">
-              <input type="radio" v-model="transportMode" value="bus" class="mr-2">
-              <span>公交</span>
-            </label>
+      </div>
+
+      <div class="rounded-md border border-slate-200 bg-white p-5">
+        <div class="flex items-center justify-between">
+          <h2 class="text-lg font-semibold text-slate-950">规划结果</h2>
+          <span class="rounded-md bg-teal-50 px-2.5 py-1 text-sm font-semibold text-teal-800">可演示</span>
+        </div>
+        <div class="mt-4 grid grid-cols-3 gap-3">
+          <div class="rounded-md bg-slate-50 p-3">
+            <div class="text-xs text-slate-500">距离</div>
+            <div class="mt-1 text-lg font-bold">{{ selectedRoute.distance }}</div>
+          </div>
+          <div class="rounded-md bg-slate-50 p-3">
+            <div class="text-xs text-slate-500">时长</div>
+            <div class="mt-1 text-lg font-bold">{{ selectedRoute.time }}</div>
+          </div>
+          <div class="rounded-md bg-slate-50 p-3">
+            <div class="text-xs text-slate-500">预算</div>
+            <div class="mt-1 text-lg font-bold">¥{{ adjustedCost }}</div>
           </div>
         </div>
-        
-        <!-- 优化目标 -->
-        <div class="mb-6">
-          <label class="block text-sm font-medium text-gray-700 mb-2">优化目标</label>
-          <select 
-            v-model="optimization"
-            class="w-full border rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-          >
-            <option value="time">时间最短</option>
-            <option value="distance">距离最短</option>
-            <option value="balanced">平衡</option>
-          </select>
-        </div>
-        
-        <!-- 规划按钮 -->
-        <button 
-          @click="planRoute"
-          class="w-full bg-primary-600 hover:bg-primary-700 text-white font-semibold py-3 rounded-md transition-colors"
-        >
-          开始规划
-        </button>
-        
-        <!-- 规划结果 -->
-        <div v-if="routeResult" class="mt-6 p-4 bg-gray-50 rounded-md">
-          <h3 class="font-semibold mb-2">规划结果</h3>
-          <div class="space-y-2 text-sm">
-            <div class="flex justify-between">
-              <span>总距离：</span>
-              <span class="font-semibold">{{ (routeResult.total_distance / 1000).toFixed(2) }} km</span>
-            </div>
-            <div class="flex justify-between">
-              <span>预计时间：</span>
-              <span class="font-semibold">{{ Math.round(routeResult.total_duration / 60) }} 分钟</span>
-            </div>
-            <div class="flex justify-between">
-              <span>交通方式：</span>
-              <span class="font-semibold">{{ transportModeText }}</span>
+
+        <div class="mt-5 space-y-3">
+          <div v-for="(stop, index) in selectedRoute.stops" :key="stop" class="flex gap-3">
+            <div class="grid h-8 w-8 flex-none place-items-center rounded-md bg-slate-900 text-sm font-bold text-white">{{ index + 1 }}</div>
+            <div class="min-w-0 flex-1">
+              <div class="font-semibold text-slate-950">{{ stop }}</div>
+              <div class="text-sm text-slate-500">{{ index === 0 ? '出发点' : index === selectedRoute.stops.length - 1 ? '终点' : '途经节点' }}</div>
             </div>
           </div>
         </div>
       </div>
-      
-      <!-- 右侧：地图 -->
-      <div class="bg-white rounded-lg shadow-md p-6">
-        <h2 class="text-xl font-semibold mb-4">地图</h2>
-        <div ref="mapContainer" class="w-full h-[500px] rounded-lg border"></div>
+    </section>
+
+    <section class="space-y-6">
+      <div class="overflow-hidden rounded-md border border-slate-200 bg-white">
+        <div class="flex items-center justify-between border-b border-slate-200 p-5">
+          <div>
+            <h2 class="text-lg font-semibold text-slate-950">地图预览</h2>
+            <p class="mt-1 text-sm text-slate-500">演示路线会随模板切换。</p>
+          </div>
+          <button @click="fitRoute" class="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100">定位路线</button>
+        </div>
+        <div ref="mapContainer" class="h-[520px] w-full"></div>
       </div>
-    </div>
+
+      <div class="rounded-md border border-slate-200 bg-white p-5">
+        <h2 class="text-lg font-semibold text-slate-950">路线解释</h2>
+        <div class="mt-4 grid gap-3 md:grid-cols-3">
+          <div class="rounded-md bg-slate-50 p-4">
+            <div class="text-sm font-semibold">算法</div>
+            <p class="mt-1 text-sm text-slate-500">Dijkstra 最短路径，可替换真实后端结果。</p>
+          </div>
+          <div class="rounded-md bg-slate-50 p-4">
+            <div class="text-sm font-semibold">约束</div>
+            <p class="mt-1 text-sm text-slate-500">交通方式、拥挤度、预算目标。</p>
+          </div>
+          <div class="rounded-md bg-slate-50 p-4">
+            <div class="text-sm font-semibold">可扩展</div>
+            <p class="mt-1 text-sm text-slate-500">后续可接高德路线、实时拥堵和用户位置。</p>
+          </div>
+        </div>
+      </div>
+    </section>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import L from 'leaflet'
-import api from '@/api'
+import { routePlans as fallbackRoutes } from '@/data/demoData'
+import { tourismApi } from '@/services/tourismApi'
 
-const startPoint = ref('')
-const endPoint = ref('')
-const transportMode = ref('walk')
-const optimization = ref('time')
-const routeResult = ref(null)
+const selectedRouteId = ref(1)
+const transport = ref('混合')
+const goal = ref('均衡')
+const crowdTolerance = ref(2)
 const mapContainer = ref(null)
+const routes = ref(fallbackRoutes)
 
-let map = null
+let map
+let routeLayer
 
-const transportModeText = computed(() => {
-  const modes = {
-    walk: '步行',
-    bike: '自行车',
-    car: '自驾',
-    bus: '公交'
-  }
-  return modes[transportMode.value]
-})
-
-onMounted(() => {
-  // 初始化地图
-  map = L.map(mapContainer.value).setView([39.916, 116.397], 13)
-  
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '© OpenStreetMap contributors'
-  }).addTo(map)
-})
-
-const planRoute = async () => {
-  if (!startPoint.value || !endPoint.value) {
-    alert('请输入起点和终点')
-    return
-  }
-  
-  try {
-    // TODO: 实际应该将地址转换为坐标
-    const response = await api.route.plan({
-      waypoints: [
-        { name: startPoint.value },
-        { name: endPoint.value }
-      ],
-      transport_mode: transportMode.value,
-      optimization: optimization.value
-    })
-    
-    if (response.code === 200) {
-      routeResult.value = response.data
-      // 在地图上绘制路径
-      drawRoute(response.data.geometry)
-    }
-  } catch (error) {
-    console.error('路径规划失败:', error)
-    alert('路径规划失败，请稍后重试')
-  }
+const routeCoordinates = {
+  1: [[39.899318, 116.397957], [39.908692, 116.397477], [39.918058, 116.397026], [39.925048, 116.396621]],
+  2: [[39.905103, 116.401015], [39.908780, 116.401216], [39.912657, 116.411013]],
+  3: [[39.940269, 116.393776], [39.937661, 116.390855], [39.925455, 116.389535], [39.925048, 116.396621]]
 }
 
-const drawRoute = (geometry) => {
-  // TODO: 解析并绘制路径
-  console.log('绘制路径:', geometry)
+const selectedRoute = computed(() => routes.value.find(route => route.id === selectedRouteId.value) || routes.value[0] || fallbackRoutes[0])
+const adjustedCost = computed(() => selectedRoute.value.cost + (transport.value === '地铁' ? 12 : transport.value === '骑行' ? 8 : 0))
+
+onMounted(async () => {
+  try {
+    const response = await tourismApi.routes()
+    routes.value = response.items?.length ? response.items : fallbackRoutes
+  } catch (error) {
+    routes.value = fallbackRoutes
+  }
+  await nextTick()
+  map = L.map(mapContainer.value, { zoomControl: false }).setView([39.916, 116.397], 13)
+  L.control.zoom({ position: 'bottomright' }).addTo(map)
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: 'OpenStreetMap'
+  }).addTo(map)
+  drawRoute()
+})
+
+watch(selectedRouteId, () => drawRoute())
+
+const drawRoute = () => {
+  if (!map) return
+  if (routeLayer) routeLayer.remove()
+  const coords = routeCoordinates[selectedRouteId.value]
+  routeLayer = L.layerGroup()
+  L.polyline(coords, { color: '#0f766e', weight: 5, opacity: 0.9 }).addTo(routeLayer)
+  coords.forEach((coord, index) => {
+    L.circleMarker(coord, {
+      radius: 8,
+      color: '#0f172a',
+      fillColor: '#ffffff',
+      fillOpacity: 1,
+      weight: 3
+    }).bindTooltip(selectedRoute.value.stops[index] || `节点 ${index + 1}`).addTo(routeLayer)
+  })
+  routeLayer.addTo(map)
+  fitRoute()
+}
+
+const fitRoute = () => {
+  const coords = routeCoordinates[selectedRouteId.value]
+  if (map && coords) map.fitBounds(coords, { padding: [36, 36] })
 }
 </script>
