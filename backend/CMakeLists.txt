@@ -36,6 +36,12 @@ else()
     message(STATUS "GTest not found; tests disabled")
 endif()
 
+# PostgreSQL libpq is used by the API server to read scenic spots, routes,
+# achievements, and to persist travel diaries.
+find_package(PostgreSQL REQUIRED)
+message(STATUS "PostgreSQL include: ${PostgreSQL_INCLUDE_DIRS}")
+message(STATUS "PostgreSQL library: ${PostgreSQL_LIBRARIES}")
+
 # Crow 使用本地头文件（crow_all.h 已存在于 include/）
 # ASIO 使用 standalone 版本
 find_path(ASIO_INCLUDE_DIR asio.hpp)
@@ -76,6 +82,7 @@ target_include_directories(tourism_server PRIVATE
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/include/graph
     ${ASIO_INCLUDE_DIR}
+    ${PostgreSQL_INCLUDE_DIRS}
 )
 
 target_compile_definitions(tourism_server PRIVATE
@@ -86,6 +93,8 @@ target_compile_definitions(tourism_server PRIVATE
 if(nlohmann_json_FOUND)
     target_link_libraries(tourism_server PRIVATE nlohmann_json::nlohmann_json)
 endif()
+
+target_link_libraries(tourism_server PRIVATE ${PostgreSQL_LIBRARIES})
 
 if(WIN32)
     target_link_libraries(tourism_server PRIVATE ws2_32 wsock32)

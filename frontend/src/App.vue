@@ -1,86 +1,105 @@
 <template>
   <div class="min-h-screen bg-slate-50 text-slate-950">
-    <aside class="fixed inset-y-0 left-0 z-30 hidden w-72 border-r border-slate-200 bg-white lg:block">
-      <div class="flex h-full flex-col">
-        <div class="border-b border-slate-200 px-6 py-5">
-          <div class="text-xs font-semibold uppercase tracking-[0.18em] text-teal-700">TourPilot</div>
-          <div class="mt-2 text-2xl font-bold tracking-tight">个性化旅游系统</div>
-        </div>
+    <header class="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur">
+      <div class="mx-auto flex min-h-16 max-w-7xl items-center gap-4 px-4 sm:px-6 lg:px-8">
+        <router-link to="/" class="flex min-w-0 items-center gap-3">
+          <span class="grid h-10 w-10 flex-none place-items-center rounded-md bg-teal-700 text-sm font-bold text-white">TP</span>
+          <span class="min-w-0">
+            <span class="block text-lg font-bold leading-5">TourPilot</span>
+            <span class="block truncate text-xs text-slate-500">北京旅行规划与记录</span>
+          </span>
+        </router-link>
 
-        <nav class="flex-1 space-y-1 px-3 py-4">
+        <form class="hidden flex-1 md:block" @submit.prevent="submitSearch">
+          <label class="relative block">
+            <span class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">搜索</span>
+            <input
+              v-model="keyword"
+              class="h-10 w-full rounded-md border border-slate-300 bg-slate-50 pl-12 pr-24 text-sm outline-none transition focus:border-teal-700 focus:bg-white"
+              placeholder="景点、路线、博物馆、citywalk"
+              type="search"
+            >
+            <button class="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-md bg-slate-900 px-3 py-1.5 text-sm font-semibold text-white hover:bg-slate-800">
+              搜索
+            </button>
+          </label>
+        </form>
+
+        <nav class="hidden items-center gap-1 lg:flex">
           <router-link
             v-for="item in navItems"
             :key="item.to"
             :to="item.to"
-            class="group flex items-center gap-3 rounded-md px-3 py-3 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-950"
+            class="rounded-md px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-950"
             active-class="bg-slate-900 text-white hover:bg-slate-900 hover:text-white"
-          >
-            <span class="grid h-8 w-8 place-items-center rounded-md border border-slate-200 bg-white text-xs font-bold text-slate-700 group-[.router-link-active]:border-slate-700 group-[.router-link-active]:bg-slate-800 group-[.router-link-active]:text-white">
-              {{ item.code }}
-            </span>
-            <span>{{ item.label }}</span>
-          </router-link>
-        </nav>
-
-        <div class="border-t border-slate-200 p-4">
-          <div class="rounded-md bg-teal-50 p-4">
-            <div class="text-sm font-semibold text-teal-950">演示数据已就绪</div>
-            <p class="mt-1 text-xs leading-5 text-teal-800">PostGIS、小型景点数据、路线图、游记和成就可用于基础演示。</p>
-          </div>
-        </div>
-      </div>
-    </aside>
-
-    <div class="lg:pl-72">
-      <header class="sticky top-0 z-20 border-b border-slate-200 bg-white/90 backdrop-blur">
-        <div class="flex min-h-16 items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
-          <div>
-            <div class="text-sm text-slate-500">北京中轴线演示环境</div>
-            <div class="text-lg font-semibold text-slate-950">{{ currentTitle }}</div>
-          </div>
-          <div class="flex items-center gap-3">
-            <button class="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100">
-              导出方案
-            </button>
-            <button class="rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800">
-              演示账号
-            </button>
-          </div>
-        </div>
-
-        <nav class="flex gap-2 overflow-x-auto border-t border-slate-100 px-4 py-2 lg:hidden">
-          <router-link
-            v-for="item in navItems"
-            :key="item.to"
-            :to="item.to"
-            class="whitespace-nowrap rounded-md px-3 py-2 text-sm font-medium text-slate-600"
-            active-class="bg-slate-900 text-white"
           >
             {{ item.label }}
           </router-link>
         </nav>
-      </header>
 
-      <main class="px-4 py-6 sm:px-6 lg:px-8">
-        <router-view />
-      </main>
-    </div>
+        <router-link to="/profile" class="ml-auto hidden rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 sm:block lg:ml-0">
+          个人中心
+        </router-link>
+      </div>
+
+      <div class="border-t border-slate-100 px-4 py-2 md:hidden">
+        <form @submit.prevent="submitSearch">
+          <input
+            v-model="keyword"
+            class="h-10 w-full rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-teal-700"
+            placeholder="搜索景点或路线"
+            type="search"
+          >
+        </form>
+      </div>
+
+      <nav class="flex gap-2 overflow-x-auto border-t border-slate-100 px-4 py-2 lg:hidden">
+        <router-link
+          v-for="item in mobileNavItems"
+          :key="item.to"
+          :to="item.to"
+          class="whitespace-nowrap rounded-md px-3 py-2 text-sm font-medium text-slate-600"
+          active-class="bg-slate-900 text-white"
+        >
+          {{ item.label }}
+        </router-link>
+      </nav>
+    </header>
+
+    <main class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+      <router-view />
+    </main>
   </div>
 </template>
 
 <script setup>
-import { computed } from 'vue'
-import { useRoute } from 'vue-router'
+import { ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 
+const router = useRouter()
 const route = useRoute()
+const keyword = ref(typeof route.query.q === 'string' ? route.query.q : '')
 
 const navItems = [
-  { to: '/', label: '总览', code: 'OV' },
-  { to: '/recommend', label: '推荐与预算', code: 'BD' },
-  { to: '/route', label: '路线规划', code: 'RT' },
-  { to: '/diary', label: '旅游日记', code: 'DY' },
-  { to: '/achievements', label: '成就系统', code: 'AC' }
+  { to: '/', label: '首页' },
+  { to: '/search', label: '发现景点' },
+  { to: '/recommend', label: '预算推荐' },
+  { to: '/route', label: '路线规划' },
+  { to: '/diary', label: '旅行日记' },
+  { to: '/achievements', label: '成就' }
 ]
 
-const currentTitle = computed(() => navItems.find(item => item.to === route.path)?.label || '工作台')
+const mobileNavItems = [...navItems, { to: '/profile', label: '我的' }]
+
+const submitSearch = () => {
+  const q = keyword.value.trim()
+  router.push({ path: '/search', query: q ? { q } : {} })
+}
+
+watch(
+  () => route.query.q,
+  value => {
+    keyword.value = typeof value === 'string' ? value : ''
+  }
+)
 </script>

@@ -125,19 +125,26 @@ const routes = ref(fallbackRoutes)
 let map
 let routeLayer
 
-const routeCoordinates = {
+const fallbackRouteCoordinates = {
   1: [[39.899318, 116.397957], [39.908692, 116.397477], [39.918058, 116.397026], [39.925048, 116.396621]],
   2: [[39.905103, 116.401015], [39.908780, 116.401216], [39.912657, 116.411013]],
   3: [[39.940269, 116.393776], [39.937661, 116.390855], [39.925455, 116.389535], [39.925048, 116.396621]]
 }
 
 const selectedRoute = computed(() => routes.value.find(route => route.id === selectedRouteId.value) || routes.value[0] || fallbackRoutes[0])
+const selectedRouteCoordinates = computed(() => {
+  if (selectedRoute.value?.coordinates?.length) return selectedRoute.value.coordinates
+  return fallbackRouteCoordinates[selectedRouteId.value] || []
+})
 const adjustedCost = computed(() => selectedRoute.value.cost + (transport.value === '地铁' ? 12 : transport.value === '骑行' ? 8 : 0))
 
 onMounted(async () => {
   try {
     const response = await tourismApi.routes()
     routes.value = response.items?.length ? response.items : fallbackRoutes
+    if (!routes.value.some(route => route.id === selectedRouteId.value) && routes.value[0]) {
+      selectedRouteId.value = routes.value[0].id
+    }
   } catch (error) {
     routes.value = fallbackRoutes
   }
@@ -151,11 +158,13 @@ onMounted(async () => {
 })
 
 watch(selectedRouteId, () => drawRoute())
+watch(routes, () => drawRoute(), { deep: true })
 
 const drawRoute = () => {
   if (!map) return
   if (routeLayer) routeLayer.remove()
-  const coords = routeCoordinates[selectedRouteId.value]
+  const coords = selectedRouteCoordinates.value
+  if (!coords.length) return
   routeLayer = L.layerGroup()
   L.polyline(coords, { color: '#0f766e', weight: 5, opacity: 0.9 }).addTo(routeLayer)
   coords.forEach((coord, index) => {
@@ -172,7 +181,7 @@ const drawRoute = () => {
 }
 
 const fitRoute = () => {
-  const coords = routeCoordinates[selectedRouteId.value]
-  if (map && coords) map.fitBounds(coords, { padding: [36, 36] })
+  const coords = selectedRouteCoordinates.value
+  if (map && coords.length) map.fitBounds(coords, { padding: [36, 36] })
 }
 </script>

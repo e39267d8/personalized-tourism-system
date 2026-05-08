@@ -12,6 +12,17 @@ const routes = [
     component: () => import('@/views/Recommendation.vue')
   },
   {
+    path: '/search',
+    name: 'Search',
+    component: () => import('@/views/Search.vue')
+  },
+  {
+    path: '/spots/:id',
+    name: 'ScenicDetail',
+    component: () => import('@/views/ScenicDetail.vue'),
+    props: route => ({ id: Number(route.params.id) })
+  },
+  {
     path: '/route',
     name: 'RoutePlan',
     component: () => import('@/views/RoutePlan.vue')
@@ -25,6 +36,11 @@ const routes = [
     path: '/achievements',
     name: 'Achievements',
     component: () => import('@/views/Achievements.vue')
+  },
+  {
+    path: '/profile',
+    name: 'Profile',
+    component: () => import('@/views/Profile.vue')
   }
 ]
 

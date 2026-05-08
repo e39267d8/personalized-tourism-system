@@ -112,7 +112,7 @@
       </div>
 
         <div class="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        <article v-for="spot in rankedSpots" :key="spot.id" class="overflow-hidden rounded-md border border-slate-200">
+        <router-link v-for="spot in rankedSpots" :key="spot.id" :to="`/spots/${spot.id}`" class="overflow-hidden rounded-md border border-slate-200 transition hover:-translate-y-0.5 hover:border-teal-700 hover:shadow-sm">
           <img :src="spot.image" :alt="spot.name" class="h-40 w-full object-cover">
           <div class="p-4">
             <div class="flex items-start justify-between gap-3">
@@ -131,7 +131,7 @@
               <span>{{ spot.duration }} · 拥挤 {{ spot.crowd }}</span>
             </div>
           </div>
-        </article>
+        </router-link>
       </div>
     </section>
   </div>
