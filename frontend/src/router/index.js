@@ -29,8 +29,25 @@ const routes = [
   },
   {
     path: '/diary',
-    name: 'Diary',
+    name: 'DiaryPlaza',
     component: () => import('@/views/Diary.vue')
+  },
+  {
+    path: '/diary/new',
+    name: 'DiaryCreate',
+    component: () => import('@/views/DiaryEditor.vue')
+  },
+  {
+    path: '/diary/edit/:id',
+    name: 'DiaryEdit',
+    component: () => import('@/views/DiaryEditor.vue'),
+    props: route => ({ id: Number(route.params.id) })
+  },
+  {
+    path: '/diary/:id',
+    name: 'DiaryDetail',
+    component: () => import('@/views/DiaryDetail.vue'),
+    props: route => ({ id: Number(route.params.id) })
   },
   {
     path: '/achievements',

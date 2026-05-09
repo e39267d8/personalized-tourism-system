@@ -1211,22 +1211,39 @@ crow::json::wvalue scenic_json(const PgResult& rows, int row) {
 }
 
 crow::json::wvalue diary_json(const PgResult& rows, int row) {
-    std::string cover = first_nonempty({rows.value(row, "images")},
-                                       "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1200&q=80");
+    std::string images_raw = rows.value(row, "images");
+    auto image_list = split_pipe(images_raw);
+    std::string cover = image_list.empty()
+        ? "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1200&q=80"
+        : image_list[0];
 
     crow::json::wvalue item;
     item["id"] = to_int(rows.value(row, "id"));
     item["title"] = rows.value(row, "title");
     item["date"] = first_nonempty({rows.value(row, "start_date")}, today());
     item["distance"] = first_nonempty({rows.value(row, "total_distance_km")}, "0") + " km";
-    item["mood"] = "宸茶褰?;
+    item["mood"] = "\xe5\xb7\xb2\xe8\xae\xb0\xe5\xbd\x95";
     item["cover"] = cover;
     item["tags"] = string_list(split_pipe(rows.value(row, "tags")));
     item["excerpt"] = first_nonempty({rows.value(row, "summary"), rows.value(row, "content")});
     item["content"] = rows.value(row, "content");
+    item["status"] = to_int(rows.value(row, "status"), 1);
+
+    crow::json::wvalue::list imgs;
+    for (const auto& img : image_list) imgs.push_back(img);
+    item["images"] = std::move(imgs);
+
+    item["author"]["nickname"] = first_nonempty({rows.value(row, "author_nickname")}, "\xe6\x97\x85\xe8\xa1\x8c\xe8\x80\x85");
+    item["author"]["avatar"] = rows.value(row, "author_avatar");
+
     item["stats"]["views"] = to_int(rows.value(row, "view_count"));
     item["stats"]["likes"] = to_int(rows.value(row, "like_count"));
     item["stats"]["comments"] = to_int(rows.value(row, "comment_count"));
+
+    item["ratingScore"] = to_double(rows.value(row, "rating_score"));
+    item["ratingCount"] = to_int(rows.value(row, "rating_count"));
+    item["bookmarkCount"] = to_int(rows.value(row, "bookmark_count"));
+
     return item;
 }
 
@@ -1350,12 +1367,19 @@ const std::string scenic_select_sql = R"SQL(
     LIMIT $5::int
 )SQL";
 const std::string diary_select_sql = R"SQL(
-    SELECT id, title, summary, content, start_date::text, total_distance_km::text,
-           COALESCE(array_to_string(images, '|'), '') AS images,
-           COALESCE(array_to_string(tags, '|'), '') AS tags,
-           view_count::text, like_count::text, comment_count::text
-    FROM travel_diaries
-    WHERE status <> 2
+    SELECT d.id, d.title, d.summary, d.content, d.start_date::text, d.total_distance_km::text,
+           COALESCE(array_to_string(d.images, '|'), '') AS images,
+           COALESCE(array_to_string(d.tags, '|'), '') AS tags,
+           d.view_count::text, d.like_count::text, d.comment_count::text,
+           d.status::text,
+           COALESCE(d.rating_score, 0)::text AS rating_score,
+           COALESCE(d.rating_count, 0)::text AS rating_count,
+           COALESCE(d.bookmark_count, 0)::text AS bookmark_count,
+           COALESCE(u.username, '旅行者') AS author_nickname,
+           '' AS author_avatar
+    FROM travel_diaries d
+    LEFT JOIN users u ON u.id = d.user_id
+    WHERE d.status <> 2
 )SQL";
 
 crow::response list_scenic(const crow::request& req) {
@@ -1906,11 +1930,18 @@ int main(int argc, char** argv) {
     CROW_ROUTE(app, "/api/v1/diaries")([](const crow::request& req) -> crow::response {
         try {
             std::string query = req.url_params.get("q") ? req.url_params.get("q") : "";
+            std::string sort = req.url_params.get("sort") ? req.url_params.get("sort") : "latest";
+            std::string limit = req.url_params.get("limit") ? req.url_params.get("limit") : "50";
+
+            std::string order_clause;
+            if (sort == "rating") order_clause = " ORDER BY d.rating_score DESC, d.like_count DESC, d.id DESC";
+            else if (sort == "popular") order_clause = " ORDER BY (d.like_count * 2 + d.comment_count * 3 + d.view_count * 0.1) DESC, d.id DESC";
+            else order_clause = " ORDER BY d.created_at DESC, d.id DESC";
+
             PgConnection db;
             auto rows = exec_params(db, diary_select_sql + R"SQL(
-                AND ($1 = '' OR lower(title || ' ' || COALESCE(summary, '') || ' ' || content) LIKE '%' || lower($1) || '%')
-                ORDER BY created_at DESC, id DESC
-            )SQL", {query});
+                AND ($1 = '' OR lower(d.title || ' ' || COALESCE(d.summary, '') || ' ' || d.content) LIKE '%' || lower($1) || '%')
+            )SQL" + order_clause + " LIMIT " + limit, {query});
 
             crow::json::wvalue::list items;
             for (int row = 0; row < rows.rows(); ++row) items.push_back(diary_json(rows, row));
@@ -1948,26 +1979,40 @@ int main(int argc, char** argv) {
     CROW_ROUTE(app, "/api/v1/diaries/<int>")([](int id) -> crow::response {
         try {
             PgConnection db;
-            auto rows = exec_params(db, diary_select_sql + " AND id = $1", {std::to_string(id)});
+            // Increment view count
+            exec_params(db, "UPDATE travel_diaries SET view_count = view_count + 1 WHERE id = $1 AND status <> 2",
+                        {std::to_string(id)}, PGRES_COMMAND_OK);
+            auto rows = exec_params(db, diary_select_sql + " AND d.id = $1", {std::to_string(id)});
             if (rows.rows() == 0) return json_error(404, "Diary not found");
             return crow::response(ok(diary_json(rows, 0)));
         } catch (const std::exception& error) {
             return json_error(500, error.what());
         }
     });
-
     CROW_ROUTE(app, "/api/v1/diaries").methods("POST"_method)([](const crow::request& req) -> crow::response {
         try {
             auto body = crow::json::load(req.body);
             if (!body) return json_error(400, "Invalid JSON");
 
-            std::string title = first_nonempty({json_string(body, "title")}, "鏈懡鍚嶆棩璁?);
-            std::string content = first_nonempty({json_string(body, "excerpt"), json_string(body, "content")}, "");
+            std::string title = first_nonempty({json_string(body, "title")}, "Untitled");
+            std::string content = first_nonempty({json_string(body, "content"), json_string(body, "excerpt")}, "");
             std::string date = first_nonempty({json_string(body, "date"), json_string(body, "start_date")}, today());
-            std::string cover = first_nonempty({json_string(body, "cover")},
-                                               "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1200&q=80");
             std::string tags = pg_text_array(json_tags(body));
             std::string distance = std::to_string(distance_number(json_string(body, "distance", "0")));
+            int status = body.has("status") ? static_cast<int>(body["status"].i()) : 1;
+
+            // Build images array from JSON array or single cover field
+            std::vector<std::string> img_list;
+            if (body.has("images")) {
+                try {
+                    for (const auto& img : body["images"]) img_list.push_back(static_cast<std::string>(img.s()));
+                } catch (...) {}
+            }
+            if (img_list.empty()) {
+                std::string cover = json_string(body, "cover", "");
+                if (!cover.empty()) img_list.push_back(cover);
+            }
+            std::string images_pg = pg_text_array(img_list);
 
             PgConnection db;
             auto rows = exec_params(db, R"SQL(
@@ -1975,12 +2020,15 @@ int main(int argc, char** argv) {
                     (user_id, title, summary, content, status, start_date, end_date, total_distance_km,
                      images, tags, view_count, like_count, comment_count)
                 VALUES
-                    (1, $1, $2, $3, 1, $4::date, $4::date, $5::numeric, ARRAY[$6]::text[], $7::text[], 0, 0, 0)
+                    (1, $1, $2, $3, $4::int, $5::date, $5::date, $6::numeric, $7::text[], $8::text[], 0, 0, 0)
                 RETURNING id, title, summary, content, start_date::text, total_distance_km::text,
                           COALESCE(array_to_string(images, '|'), '') AS images,
                           COALESCE(array_to_string(tags, '|'), '') AS tags,
-                          view_count::text, like_count::text, comment_count::text
-            )SQL", {title, summary_from(content), content, date, distance, cover, tags});
+                          view_count::text, like_count::text, comment_count::text,
+                          status::text,
+                          '0'::text AS rating_score, '0'::text AS rating_count, '0'::text AS bookmark_count,
+                          '' AS author_nickname, '' AS author_avatar
+            )SQL", {title, summary_from(content), content, std::to_string(status), date, distance, images_pg, tags});
 
             return crow::response(201, ok(diary_json(rows, 0)));
         } catch (const std::exception& error) {
@@ -1993,26 +2041,43 @@ int main(int argc, char** argv) {
             auto body = crow::json::load(req.body);
             if (!body) return json_error(400, "Invalid JSON");
 
-            std::string title = first_nonempty({json_string(body, "title")}, "鏈懡鍚嶆棩璁?);
-            std::string content = first_nonempty({json_string(body, "excerpt"), json_string(body, "content")}, "");
+            std::string title = first_nonempty({json_string(body, "title")}, "Untitled");
+            std::string content = first_nonempty({json_string(body, "content"), json_string(body, "excerpt")}, "");
             std::string date = first_nonempty({json_string(body, "date"), json_string(body, "start_date")}, today());
-            std::string cover = first_nonempty({json_string(body, "cover")},
-                                               "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1200&q=80");
             std::string tags = pg_text_array(json_tags(body));
             std::string distance = std::to_string(distance_number(json_string(body, "distance", "0")));
+            int status = body.has("status") ? static_cast<int>(body["status"].i()) : 1;
+
+            std::vector<std::string> img_list;
+            if (body.has("images")) {
+                try {
+                    for (const auto& img : body["images"]) img_list.push_back(static_cast<std::string>(img.s()));
+                } catch (...) {}
+            }
+            if (img_list.empty()) {
+                std::string cover = json_string(body, "cover", "");
+                if (!cover.empty()) img_list.push_back(cover);
+            }
+            std::string images_pg = pg_text_array(img_list);
 
             PgConnection db;
             auto rows = exec_params(db, R"SQL(
                 UPDATE travel_diaries
-                SET title = $1, summary = $2, content = $3, start_date = $4::date, end_date = $4::date,
-                    total_distance_km = $5::numeric, images = ARRAY[$6]::text[], tags = $7::text[],
+                SET title = $1, summary = $2, content = $3, status = $4::int,
+                    start_date = $5::date, end_date = $5::date,
+                    total_distance_km = $6::numeric, images = $7::text[], tags = $8::text[],
                     updated_at = CURRENT_TIMESTAMP
-                WHERE id = $8 AND status <> 2
+                WHERE id = $9 AND status <> 2
                 RETURNING id, title, summary, content, start_date::text, total_distance_km::text,
                           COALESCE(array_to_string(images, '|'), '') AS images,
                           COALESCE(array_to_string(tags, '|'), '') AS tags,
-                          view_count::text, like_count::text, comment_count::text
-            )SQL", {title, summary_from(content), content, date, distance, cover, tags, std::to_string(id)});
+                          view_count::text, like_count::text, comment_count::text,
+                          status::text,
+                          COALESCE(rating_score, 0)::text AS rating_score,
+                          COALESCE(rating_count, 0)::text AS rating_count,
+                          COALESCE(bookmark_count, 0)::text AS bookmark_count,
+                          '' AS author_nickname, '' AS author_avatar
+            )SQL", {title, summary_from(content), content, std::to_string(status), date, distance, images_pg, tags, std::to_string(id)});
 
             if (rows.rows() == 0) return json_error(404, "Diary not found");
             return crow::response(ok(diary_json(rows, 0)));
@@ -2020,7 +2085,6 @@ int main(int argc, char** argv) {
             return json_error(500, error.what());
         }
     });
-
     CROW_ROUTE(app, "/api/v1/diaries/<int>").methods("DELETE"_method)([](int id) -> crow::response {
         try {
             PgConnection db;
@@ -2033,6 +2097,212 @@ int main(int argc, char** argv) {
             return json_error(500, error.what());
         }
     });
+
+    // ==================== Diary Social Endpoints ====================
+
+    CROW_ROUTE(app, "/api/v1/diaries/<int>/like").methods("POST"_method)([](int id) -> crow::response {
+        try {
+            PgConnection db;
+            auto check = exec_params(db, "SELECT id FROM travel_diaries WHERE id = $1 AND status <> 2", {std::to_string(id)});
+            if (check.rows() == 0) return json_error(404, "Diary not found");
+
+            exec_params(db, R"SQL(
+                INSERT INTO diary_likes (diary_id, user_id) VALUES ($1, 1) ON CONFLICT DO NOTHING
+            )SQL", {std::to_string(id)}, PGRES_COMMAND_OK);
+            exec_params(db, R"SQL(
+                UPDATE travel_diaries SET like_count = (SELECT COUNT(*) FROM diary_likes WHERE diary_id = $1) WHERE id = $1
+            )SQL", {std::to_string(id)}, PGRES_COMMAND_OK);
+
+            auto rows = exec_params(db, "SELECT like_count::text FROM travel_diaries WHERE id = $1", {std::to_string(id)});
+            crow::json::wvalue data;
+            data["liked"] = true;
+            data["likeCount"] = to_int(rows.value(0, "like_count"));
+            return crow::response(ok(std::move(data)));
+        } catch (const std::exception& error) {
+            return json_error(500, error.what());
+        }
+    });
+
+    CROW_ROUTE(app, "/api/v1/diaries/<int>/like").methods("DELETE"_method)([](int id) -> crow::response {
+        try {
+            PgConnection db;
+            exec_params(db, "DELETE FROM diary_likes WHERE diary_id = $1 AND user_id = 1", {std::to_string(id)}, PGRES_COMMAND_OK);
+            exec_params(db, R"SQL(
+                UPDATE travel_diaries SET like_count = (SELECT COUNT(*) FROM diary_likes WHERE diary_id = $1) WHERE id = $1
+            )SQL", {std::to_string(id)}, PGRES_COMMAND_OK);
+
+            auto rows = exec_params(db, "SELECT like_count::text FROM travel_diaries WHERE id = $1", {std::to_string(id)});
+            crow::json::wvalue data;
+            data["liked"] = false;
+            data["likeCount"] = to_int(rows.value(0, "like_count"));
+            return crow::response(ok(std::move(data)));
+        } catch (const std::exception& error) {
+            return json_error(500, error.what());
+        }
+    });
+
+    CROW_ROUTE(app, "/api/v1/diaries/<int>/bookmark").methods("POST"_method)([](int id) -> crow::response {
+        try {
+            PgConnection db;
+            auto check = exec_params(db, "SELECT id FROM travel_diaries WHERE id = $1 AND status <> 2", {std::to_string(id)});
+            if (check.rows() == 0) return json_error(404, "Diary not found");
+
+            exec_params(db, R"SQL(
+                INSERT INTO diary_bookmarks (diary_id, user_id) VALUES ($1, 1) ON CONFLICT DO NOTHING
+            )SQL", {std::to_string(id)}, PGRES_COMMAND_OK);
+            exec_params(db, R"SQL(
+                UPDATE travel_diaries SET bookmark_count = (SELECT COUNT(*) FROM diary_bookmarks WHERE diary_id = $1) WHERE id = $1
+            )SQL", {std::to_string(id)}, PGRES_COMMAND_OK);
+
+            auto rows = exec_params(db, "SELECT bookmark_count::text FROM travel_diaries WHERE id = $1", {std::to_string(id)});
+            crow::json::wvalue data;
+            data["bookmarked"] = true;
+            data["bookmarkCount"] = to_int(rows.value(0, "bookmark_count"));
+            return crow::response(ok(std::move(data)));
+        } catch (const std::exception& error) {
+            return json_error(500, error.what());
+        }
+    });
+
+    CROW_ROUTE(app, "/api/v1/diaries/<int>/bookmark").methods("DELETE"_method)([](int id) -> crow::response {
+        try {
+            PgConnection db;
+            exec_params(db, "DELETE FROM diary_bookmarks WHERE diary_id = $1 AND user_id = 1", {std::to_string(id)}, PGRES_COMMAND_OK);
+            exec_params(db, R"SQL(
+                UPDATE travel_diaries SET bookmark_count = (SELECT COUNT(*) FROM diary_bookmarks WHERE diary_id = $1) WHERE id = $1
+            )SQL", {std::to_string(id)}, PGRES_COMMAND_OK);
+
+            auto rows = exec_params(db, "SELECT bookmark_count::text FROM travel_diaries WHERE id = $1", {std::to_string(id)});
+            crow::json::wvalue data;
+            data["bookmarked"] = false;
+            data["bookmarkCount"] = to_int(rows.value(0, "bookmark_count"));
+            return crow::response(ok(std::move(data)));
+        } catch (const std::exception& error) {
+            return json_error(500, error.what());
+        }
+    });
+
+    CROW_ROUTE(app, "/api/v1/diaries/<int>/rating").methods("POST"_method)([](const crow::request& req, int id) -> crow::response {
+        try {
+            auto body = crow::json::load(req.body);
+            if (!body || !body.has("score")) return json_error(400, "score required (1-5)");
+            int score = static_cast<int>(body["score"].i());
+            if (score < 1 || score > 5) return json_error(400, "score must be 1-5");
+
+            PgConnection db;
+            exec_params(db, R"SQL(
+                INSERT INTO diary_ratings (diary_id, user_id, score) VALUES ($1, 1, $2)
+                ON CONFLICT (diary_id, user_id) DO UPDATE SET score = $2
+            )SQL", {std::to_string(id), std::to_string(score)}, PGRES_COMMAND_OK);
+
+            exec_params(db, R"SQL(
+                UPDATE travel_diaries SET
+                    rating_score = (SELECT COALESCE(AVG(score), 0) FROM diary_ratings WHERE diary_id = $1),
+                    rating_count = (SELECT COUNT(*) FROM diary_ratings WHERE diary_id = $1)
+                WHERE id = $1
+            )SQL", {std::to_string(id)}, PGRES_COMMAND_OK);
+
+            auto rows = exec_params(db, "SELECT rating_score::text, rating_count::text FROM travel_diaries WHERE id = $1", {std::to_string(id)});
+            crow::json::wvalue data;
+            data["score"] = score;
+            data["ratingScore"] = to_double(rows.value(0, "rating_score"));
+            data["ratingCount"] = to_int(rows.value(0, "rating_count"));
+            return crow::response(ok(std::move(data)));
+        } catch (const std::exception& error) {
+            return json_error(500, error.what());
+        }
+    });
+
+    CROW_ROUTE(app, "/api/v1/diaries/<int>/comments")([](int id) -> crow::response {
+        try {
+            PgConnection db;
+            auto rows = exec_params(db, R"SQL(
+                SELECT c.id::text, c.content, c.parent_id::text, c.created_at::text,
+                       COALESCE(u.username, 'Anonymous') AS author_nickname,
+                       '' AS author_avatar
+                FROM diary_comments c
+                LEFT JOIN users u ON u.id = c.user_id
+                WHERE c.diary_id = $1
+                ORDER BY c.created_at ASC
+            )SQL", {std::to_string(id)});
+
+            crow::json::wvalue::list items;
+            for (int row = 0; row < rows.rows(); ++row) {
+                crow::json::wvalue item;
+                item["id"] = to_int(rows.value(row, "id"));
+                item["content"] = rows.value(row, "content");
+                item["parentId"] = rows.value(row, "parent_id").empty() ? 0 : to_int(rows.value(row, "parent_id"));
+                item["createdAt"] = rows.value(row, "created_at");
+                item["author"]["nickname"] = rows.value(row, "author_nickname");
+                item["author"]["avatar"] = rows.value(row, "author_avatar");
+                items.push_back(std::move(item));
+            }
+
+            crow::json::wvalue data;
+            data["total"] = static_cast<int>(items.size());
+            data["items"] = std::move(items);
+            return crow::response(ok(std::move(data)));
+        } catch (const std::exception& error) {
+            return json_error(500, error.what());
+        }
+    });
+
+    CROW_ROUTE(app, "/api/v1/diaries/<int>/comments").methods("POST"_method)([](const crow::request& req, int id) -> crow::response {
+        try {
+            auto body = crow::json::load(req.body);
+            if (!body || !body.has("content")) return json_error(400, "content required");
+            std::string content = json_string(body, "content");
+            std::string parent_id = json_string(body, "parentId", "");
+
+            PgConnection db;
+            std::string sql;
+            std::vector<std::string> params;
+            if (parent_id.empty() || parent_id == "0") {
+                sql = "INSERT INTO diary_comments (diary_id, user_id, content) VALUES ($1, 1, $2) RETURNING id::text, content, created_at::text";
+                params = {std::to_string(id), content};
+            } else {
+                sql = "INSERT INTO diary_comments (diary_id, user_id, content, parent_id) VALUES ($1, 1, $2, $3) RETURNING id::text, content, created_at::text";
+                params = {std::to_string(id), content, parent_id};
+            }
+            auto rows = exec_params(db, sql, params);
+
+            exec_params(db, R"SQL(
+                UPDATE travel_diaries SET comment_count = (SELECT COUNT(*) FROM diary_comments WHERE diary_id = $1) WHERE id = $1
+            )SQL", {std::to_string(id)}, PGRES_COMMAND_OK);
+
+            crow::json::wvalue data;
+            data["id"] = to_int(rows.value(0, "id"));
+            data["content"] = rows.value(0, "content");
+            data["createdAt"] = rows.value(0, "created_at");
+            data["author"]["nickname"] = "\xe6\x97\x85\xe8\xa1\x8c\xe8\x80\x85";
+            data["author"]["avatar"] = "";
+            return crow::response(201, ok(std::move(data)));
+        } catch (const std::exception& error) {
+            return json_error(500, error.what());
+        }
+    });
+
+    CROW_ROUTE(app, "/api/v1/comments/<int>").methods("DELETE"_method)([](int id) -> crow::response {
+        try {
+            PgConnection db;
+            auto rows = exec_params(db, R"SQL(
+                DELETE FROM diary_comments WHERE id = $1 RETURNING diary_id::text
+            )SQL", {std::to_string(id)});
+            if (rows.rows() == 0) return json_error(404, "Comment not found");
+
+            std::string diary_id = rows.value(0, "diary_id");
+            exec_params(db, R"SQL(
+                UPDATE travel_diaries SET comment_count = (SELECT COUNT(*) FROM diary_comments WHERE diary_id = $1) WHERE id = $1
+            )SQL", {diary_id}, PGRES_COMMAND_OK);
+
+            crow::json::wvalue data;
+            data["deleted"] = true;
+            return crow::response(ok(std::move(data)));
+        } catch (const std::exception& error) {
+            return json_error(500, error.what());
+        }
+    });
+
 
     CROW_ROUTE(app, "/api/v1/achievements")([]() -> crow::response {
         try {
