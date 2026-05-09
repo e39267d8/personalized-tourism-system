@@ -139,6 +139,7 @@ CREATE INDEX idx_scenic_spots_rating ON scenic_spots(rating DESC);
 CREATE INDEX idx_scenic_spots_city ON scenic_spots(city);
 CREATE INDEX idx_scenic_spots_crowd ON scenic_spots(crowd_level);
 CREATE INDEX idx_scenic_spots_status ON scenic_spots(status);
+CREATE INDEX idx_scenic_spots_tags ON scenic_spots USING GIN(tags);
 
 -- =====================================================
 -- 4. 图节点表

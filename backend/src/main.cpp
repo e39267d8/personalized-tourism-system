@@ -1,4 +1,5 @@
 #include "crow.h"
+#include "services/recommendation_service.h"
 
 #include <libpq-fe.h>
 
@@ -48,12 +49,12 @@ struct JsonHeaders {
 };
 
 const std::vector<BudgetPlan> budget_plans = {
-    {"lite", "轻预算", 80, "免费展览 + 城市漫步", "国家博物馆 -> 天安门广场 -> 前门大街",
-     {"门票 0 元", "餐饮约 45 元", "交通约 12 元"}, "优先选择免费景点和步行路线，适合小型演示。"},
-    {"balanced", "均衡型", 180, "中轴线完整体验", "前门 -> 天安门 -> 故宫 -> 景山",
-     {"核心门票约 62 元", "餐饮约 80 元", "交通约 20 元"}, "体验完整，适合课程答辩和首次来北京用户。"},
-    {"comfort", "舒适型", 360, "少排队 + 好餐厅 + 轻交通", "故宫 -> 景山 -> 王府井餐饮",
-     {"预约优先", "餐饮约 180 元", "打车/骑行约 80 元"}, "成本更高，但减少转场压力。"}
+    {"lite", "杞婚绠?, 80, "鍏嶈垂灞曡 + 鍩庡競婕", "鍥藉鍗氱墿棣?-> 澶╁畨闂ㄥ箍鍦?-> 鍓嶉棬澶ц",
+     {"闂ㄧエ 0 鍏?, "椁愰ギ绾?45 鍏?, "浜ら€氱害 12 鍏?}, "浼樺厛閫夋嫨鍏嶈垂鏅偣鍜屾琛岃矾绾匡紝閫傚悎灏忓瀷婕旂ず銆?},
+    {"balanced", "鍧囪　鍨?, 180, "涓酱绾垮畬鏁翠綋楠?, "鍓嶉棬 -> 澶╁畨闂?-> 鏁呭 -> 鏅北",
+     {"鏍稿績闂ㄧエ绾?62 鍏?, "椁愰ギ绾?80 鍏?, "浜ら€氱害 20 鍏?}, "浣撻獙瀹屾暣锛岄€傚悎璇剧▼绛旇京鍜岄娆℃潵鍖椾含鐢ㄦ埛銆?},
+    {"comfort", "鑸掗€傚瀷", 360, "灏戞帓闃?+ 濂介鍘?+ 杞讳氦閫?, "鏁呭 -> 鏅北 -> 鐜嬪簻浜曢楗?,
+     {"棰勭害浼樺厛", "椁愰ギ绾?180 鍏?, "鎵撹溅/楠戣绾?80 鍏?}, "鎴愭湰鏇撮珮锛屼絾鍑忓皯杞満鍘嬪姏銆?}
 };
 
 std::string db_conninfo() {
@@ -207,28 +208,28 @@ double to_double(const std::string& value, double fallback = 0.0) {
 
 std::string duration_label(const std::string& minutes_text) {
     int minutes = to_int(minutes_text);
-    if (minutes <= 0) return "约 1 小时";
-    if (minutes < 60) return std::to_string(minutes) + " 分钟";
-    if (minutes % 60 == 0) return std::to_string(minutes / 60) + " 小时";
+    if (minutes <= 0) return "绾?1 灏忔椂";
+    if (minutes < 60) return std::to_string(minutes) + " 鍒嗛挓";
+    if (minutes % 60 == 0) return std::to_string(minutes / 60) + " 灏忔椂";
     std::ostringstream out;
-    out << std::fixed << std::setprecision(1) << (minutes / 60.0) << " 小时";
+    out << std::fixed << std::setprecision(1) << (minutes / 60.0) << " 灏忔椂";
     return out.str();
 }
 
 std::string crowd_label(int level) {
-    if (level <= 1) return "低";
-    if (level == 2) return "适中";
-    if (level == 3) return "较高";
-    return "拥挤";
+    if (level <= 1) return "浣?;
+    if (level == 2) return "閫備腑";
+    if (level == 3) return "杈冮珮";
+    return "鎷ユ尋";
 }
 
 std::string transport_label(const std::string& mode) {
-    if (mode == "walk") return "步行";
-    if (mode == "bike") return "骑行";
-    if (mode == "subway") return "地铁";
-    if (mode == "bus") return "公交";
-    if (mode == "car") return "驾车";
-    return "混合";
+    if (mode == "walk") return "姝ヨ";
+    if (mode == "bike") return "楠戣";
+    if (mode == "subway") return "鍦伴搧";
+    if (mode == "bus") return "鍏氦";
+    if (mode == "car") return "椹捐溅";
+    return "娣峰悎";
 }
 
 std::string today() {
@@ -352,18 +353,18 @@ std::vector<int> json_int_array(const crow::json::rvalue& body, const std::strin
 }
 
 std::string normalize_transport(const std::string& value) {
-    if (value == "walk" || value == "步行") return "walk";
-    if (value == "bike" || value == "骑行") return "bike";
-    if (value == "subway" || value == "地铁") return "subway";
-    if (value == "bus" || value == "公交") return "bus";
-    if (value == "car" || value == "驾车") return "car";
+    if (value == "walk" || value == "姝ヨ") return "walk";
+    if (value == "bike" || value == "楠戣") return "bike";
+    if (value == "subway" || value == "鍦伴搧") return "subway";
+    if (value == "bus" || value == "鍏氦") return "bus";
+    if (value == "car" || value == "椹捐溅") return "car";
     return "";
 }
 
 std::string normalize_optimization(const std::string& value) {
-    if (value == "distance" || value == "距离优先") return "distance";
-    if (value == "time" || value == "时间优先") return "time";
-    if (value == "budget" || value == "预算优先") return "budget";
+    if (value == "distance" || value == "璺濈浼樺厛") return "distance";
+    if (value == "time" || value == "鏃堕棿浼樺厛") return "time";
+    if (value == "budget" || value == "棰勭畻浼樺厛") return "budget";
     return "balanced";
 }
 
@@ -414,14 +415,14 @@ std::string amap_url(const std::string& path, const std::vector<std::pair<std::s
 std::string http_get_text(const std::string& url) {
 #ifdef _WIN32
     HINTERNET internet = InternetOpenA("TourPilot/1.0", INTERNET_OPEN_TYPE_PRECONFIG, nullptr, nullptr, 0);
-    if (!internet) throw std::runtime_error("无法初始化 HTTP 客户端");
+    if (!internet) throw std::runtime_error("鏃犳硶鍒濆鍖?HTTP 瀹㈡埛绔?);
 
     HINTERNET request = InternetOpenUrlA(internet, url.c_str(), nullptr, 0,
                                         INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE | INTERNET_FLAG_SECURE,
                                         0);
     if (!request) {
         InternetCloseHandle(internet);
-        throw std::runtime_error("无法请求高德 Web 服务");
+        throw std::runtime_error("鏃犳硶璇锋眰楂樺痉 Web 鏈嶅姟");
     }
 
     std::string body;
@@ -436,7 +437,7 @@ std::string http_get_text(const std::string& url) {
     return body;
 #else
     (void)url;
-    throw std::runtime_error("当前后端未实现非 Windows HTTP 客户端");
+    throw std::runtime_error("褰撳墠鍚庣鏈疄鐜伴潪 Windows HTTP 瀹㈡埛绔?);
 #endif
 }
 
@@ -467,15 +468,15 @@ crow::json::rvalue amap_request_json(const std::string& path, const std::vector<
         }
 
         auto payload = crow::json::load(http_get_text(amap_url(path, params)));
-        if (!payload) throw std::runtime_error("高德返回了无效 JSON");
+        if (!payload) throw std::runtime_error("楂樺痉杩斿洖浜嗘棤鏁?JSON");
         if (!payload.has("status") || json_value_string(payload["status"]) == "1") return payload;
 
-        std::string info = payload.has("info") ? json_value_string(payload["info"], "高德请求失败") : "高德请求失败";
+        std::string info = payload.has("info") ? json_value_string(payload["info"], "楂樺痉璇锋眰澶辫触") : "楂樺痉璇锋眰澶辫触";
         std::string infocode = payload.has("infocode") ? json_value_string(payload["infocode"]) : "";
         last_error = infocode.empty() ? info : info + " (" + infocode + ")";
         if (!retryable_amap_error(info) && !retryable_amap_error(infocode)) break;
     }
-    throw std::runtime_error(last_error.empty() ? "高德请求失败" : last_error);
+    throw std::runtime_error(last_error.empty() ? "楂樺痉璇锋眰澶辫触" : last_error);
 }
 
 bool parse_location(const std::string& location, double& longitude, double& latitude) {
@@ -499,9 +500,59 @@ std::vector<std::string> json_string_array(const crow::json::rvalue& body, const
     return values;
 }
 
+std::string json_escape(const std::string& value) {
+    std::string escaped;
+    escaped.reserve(value.size() + 8);
+    for (char ch : value) {
+        switch (ch) {
+            case '"': escaped += "\\\""; break;
+            case '\\': escaped += "\\\\"; break;
+            case '\b': escaped += "\\b"; break;
+            case '\f': escaped += "\\f"; break;
+            case '\n': escaped += "\\n"; break;
+            case '\r': escaped += "\\r"; break;
+            case '\t': escaped += "\\t"; break;
+            default: escaped += ch; break;
+        }
+    }
+    return escaped;
+}
+
+std::string json_array_text(const std::vector<std::string>& values) {
+    std::string result = "[";
+    for (size_t i = 0; i < values.size(); ++i) {
+        if (i) result += ",";
+        result += "\"" + json_escape(values[i]) + "\"";
+    }
+    result += "]";
+    return result;
+}
+
+crow::json::wvalue preference_payload_json(const crow::json::rvalue& body) {
+    crow::json::wvalue data;
+    data["preferredTags"] = string_list(json_string_array(body, "preferredTags"));
+    data["preferredCategories"] = string_list(json_string_array(body, "preferredCategories"));
+    data["budgetLevel"] = json_string(body, "budgetLevel", "medium");
+    data["crowdPreference"] = json_string(body, "crowdPreference", "any");
+    data["intensity"] = json_string(body, "intensity", "medium");
+    return data;
+}
+
+std::string preference_payload_text(const crow::json::rvalue& body) {
+    std::ostringstream out;
+    out << "{";
+    out << "\"preferredTags\":" << json_array_text(json_string_array(body, "preferredTags")) << ",";
+    out << "\"preferredCategories\":" << json_array_text(json_string_array(body, "preferredCategories")) << ",";
+    out << "\"budgetLevel\":\"" << json_escape(json_string(body, "budgetLevel", "medium")) << "\",";
+    out << "\"crowdPreference\":\"" << json_escape(json_string(body, "crowdPreference", "any")) << "\",";
+    out << "\"intensity\":\"" << json_escape(json_string(body, "intensity", "medium")) << "\"";
+    out << "}";
+    return out.str();
+}
+
 AmapPlace resolve_amap_place(const std::string& key, const std::string& text, const std::string& city) {
     std::string query = trim_text(text);
-    if (query.empty()) throw std::runtime_error("地点不能为空");
+    if (query.empty()) throw std::runtime_error("鍦扮偣涓嶈兘涓虹┖");
 
     auto poi_payload = amap_request_json("/v3/place/text", {
         {"key", key},
@@ -535,7 +586,7 @@ AmapPlace resolve_amap_place(const std::string& key, const std::string& text, co
     });
 
     if (!geocode_payload.has("geocodes") || geocode_payload["geocodes"].size() == 0) {
-        throw std::runtime_error("无法识别地点：" + query);
+        throw std::runtime_error("鏃犳硶璇嗗埆鍦扮偣锛? + query);
     }
     const auto& geocode = geocode_payload["geocodes"][0];
     AmapPlace place;
@@ -544,7 +595,7 @@ AmapPlace resolve_amap_place(const std::string& key, const std::string& text, co
     place.city = city;
     place.location = geocode.has("location") ? json_value_string(geocode["location"]) : "";
     if (!parse_location(place.location, place.longitude, place.latitude)) {
-        throw std::runtime_error("地点没有可用坐标：" + query);
+        throw std::runtime_error("鍦扮偣娌℃湁鍙敤鍧愭爣锛? + query);
     }
     return place;
 }
@@ -623,7 +674,7 @@ RouteSearchResult dijkstra_route(const RouteGraphData& graph,
                                  int crowd_tolerance) {
     RouteSearchResult result;
     if (!graph.nodes.count(start) || !graph.nodes.count(end)) {
-        result.error = "起点或终点不存在";
+        result.error = "璧风偣鎴栫粓鐐逛笉瀛樺湪";
         return result;
     }
     if (start == end) {
@@ -662,7 +713,7 @@ RouteSearchResult dijkstra_route(const RouteGraphData& graph,
     }
 
     if (!prev.count(end)) {
-        result.error = "当前交通方式下找不到可达路线";
+        result.error = "褰撳墠浜ら€氭柟寮忎笅鎵句笉鍒板彲杈捐矾绾?;
         return result;
     }
 
@@ -694,7 +745,7 @@ RouteSearchResult plan_route_with_waypoints(const RouteGraphData& graph,
                                             int crowd_tolerance) {
     RouteSearchResult combined;
     if (points.size() < 2) {
-        combined.error = "请选择起点和终点";
+        combined.error = "璇烽€夋嫨璧风偣鍜岀粓鐐?;
         return combined;
     }
 
@@ -777,16 +828,16 @@ crow::json::wvalue computed_route_json(const RouteGraphData& graph,
     crow::json::wvalue item;
     item["id"] = 0;
     item["route_id"] = "live-route";
-    item["title"] = !first_stop.empty() && !last_stop.empty() ? first_stop + " 到 " + last_stop : "实时规划路线";
+    item["title"] = !first_stop.empty() && !last_stop.empty() ? first_stop + " 鍒?" + last_stop : "瀹炴椂瑙勫垝璺嚎";
     item["stops"] = std::move(stops);
     item["segments"] = std::move(segments);
     item["coordinates"] = std::move(coordinates);
     item["distance"] = distance.str();
     item["time"] = duration_label(std::to_string(route.total_duration / 60));
     item["cost"] = route.total_distance <= 0 ? 0 : std::max(0, static_cast<int>(route.total_distance / 1000.0 * 2));
-    item["intensity"] = route.total_distance > 3500 ? "中等" : "轻松";
-    item["transport"] = requested_transport.empty() ? "混合" : transport_label(requested_transport);
-    item["bestFor"] = optimization + " 优先";
+    item["intensity"] = route.total_distance > 3500 ? "涓瓑" : "杞绘澗";
+    item["transport"] = requested_transport.empty() ? "娣峰悎" : transport_label(requested_transport);
+    item["bestFor"] = optimization + " 浼樺厛";
     item["total_distance_meters"] = static_cast<int>(route.total_distance);
     item["total_duration_seconds"] = route.total_duration;
     item["usedTransportFallback"] = route.used_transport_fallback;
@@ -839,10 +890,10 @@ std::string amap_direction_path(const std::string& travel_mode) {
 }
 
 std::string amap_direction_transport(const std::string& travel_mode) {
-    if (travel_mode == "driving" || travel_mode == "car") return "驾车";
-    if (travel_mode == "bike") return "骑行";
-    if (travel_mode == "transit" || travel_mode == "bus" || travel_mode == "subway") return "地铁公交";
-    return "步行";
+    if (travel_mode == "driving" || travel_mode == "car") return "椹捐溅";
+    if (travel_mode == "bike") return "楠戣";
+    if (travel_mode == "transit" || travel_mode == "bus" || travel_mode == "subway") return "鍦伴搧鍏氦";
+    return "姝ヨ";
 }
 
 crow::json::rvalue first_path_from_amap_payload(const crow::json::rvalue& payload) {
@@ -852,14 +903,14 @@ crow::json::rvalue first_path_from_amap_payload(const crow::json::rvalue& payloa
     if (payload.has("data") && payload["data"].has("paths") && payload["data"]["paths"].size() > 0) {
         return payload["data"]["paths"][0];
     }
-    throw std::runtime_error("高德没有返回可用路线");
+    throw std::runtime_error("楂樺痉娌℃湁杩斿洖鍙敤璺嚎");
 }
 
 crow::json::rvalue first_transit_from_amap_payload(const crow::json::rvalue& payload) {
     if (payload.has("route") && payload["route"].has("transits") && payload["route"]["transits"].size() > 0) {
         return payload["route"]["transits"][0];
     }
-    throw std::runtime_error("高德没有返回可用公交/地铁路线");
+    throw std::runtime_error("楂樺痉娌℃湁杩斿洖鍙敤鍏氦/鍦伴搧璺嚎");
 }
 
 std::string amap_json_string_field(const crow::json::rvalue& value, const std::string& key) {
@@ -897,9 +948,9 @@ void append_transit_walk_steps(const crow::json::rvalue& walking, AmapRoutePlan&
         if (!walking.has("steps")) return;
         for (const auto& step : walking["steps"]) {
             AmapRouteSegment segment;
-            segment.instruction = step.has("instruction") ? json_value_string(step["instruction"]) : "步行";
+            segment.instruction = step.has("instruction") ? json_value_string(step["instruction"]) : "姝ヨ";
             segment.road = step.has("road") ? json_value_string(step["road"]) : "";
-            segment.transport = "步行";
+            segment.transport = "姝ヨ";
             segment.distance = step.has("distance") ? to_double(static_cast<std::string>(step["distance"])) : 0.0;
             segment.duration = step.has("duration") ? to_int(static_cast<std::string>(step["duration"])) : 0;
             segment.polyline = step.has("polyline") ? json_value_string(step["polyline"]) : "";
@@ -913,16 +964,16 @@ void append_transit_buslines(const crow::json::rvalue& bus, AmapRoutePlan& plan)
     try {
         if (!bus.has("buslines")) return;
         for (const auto& line : bus["buslines"]) {
-            std::string line_name = line.has("name") ? json_value_string(line["name"]) : "公交/地铁";
+            std::string line_name = line.has("name") ? json_value_string(line["name"]) : "鍏氦/鍦伴搧";
             std::string departure = line.has("departure_stop") ? amap_json_string_field(line["departure_stop"], "name") : "";
             std::string arrival = line.has("arrival_stop") ? amap_json_string_field(line["arrival_stop"], "name") : "";
 
             AmapRouteSegment segment;
             segment.instruction = departure.empty() || arrival.empty()
                 ? line_name
-                : "乘坐 " + line_name + "，从 " + departure + " 到 " + arrival;
+                : "涔樺潗 " + line_name + "锛屼粠 " + departure + " 鍒?" + arrival;
             segment.road = line_name;
-            segment.transport = "地铁公交";
+            segment.transport = "鍦伴搧鍏氦";
             segment.distance = line.has("distance") ? to_double(static_cast<std::string>(line["distance"])) : 0.0;
             segment.duration = line.has("duration") ? to_int(static_cast<std::string>(line["duration"])) : 0;
             segment.polyline = line.has("polyline") ? json_value_string(line["polyline"]) : "";
@@ -947,14 +998,14 @@ AmapRoutePlan plan_amap_route(const std::string& key,
                               const std::string& city,
                               const std::string& travel_mode,
                               const std::vector<std::string>& place_texts) {
-    if (place_texts.size() < 2) throw std::runtime_error("请选择起点和终点");
+    if (place_texts.size() < 2) throw std::runtime_error("璇烽€夋嫨璧风偣鍜岀粓鐐?);
 
     AmapRoutePlan plan;
     for (size_t index = 0; index < place_texts.size(); ++index) {
         try {
             plan.places.push_back(resolve_amap_place(key, place_texts[index], city));
         } catch (const std::exception& error) {
-            throw std::runtime_error("第 " + std::to_string(index + 1) + " 个地点「" + place_texts[index] + "」识别失败：" + error.what());
+            throw std::runtime_error("绗?" + std::to_string(index + 1) + " 涓湴鐐广€? + place_texts[index] + "銆嶈瘑鍒け璐ワ細" + error.what());
         }
     }
 
@@ -968,8 +1019,8 @@ AmapRoutePlan plan_amap_route(const std::string& key,
             {"output", "JSON"}
         };
         if (travel_mode == "transit" || travel_mode == "bus" || travel_mode == "subway") {
-            params.push_back({"city", first_nonempty({plan.places[i].city, city}, "北京")});
-            params.push_back({"cityd", first_nonempty({plan.places[i + 1].city, city}, "北京")});
+            params.push_back({"city", first_nonempty({plan.places[i].city, city}, "鍖椾含")});
+            params.push_back({"cityd", first_nonempty({plan.places[i + 1].city, city}, "鍖椾含")});
             params.push_back({"strategy", travel_mode == "subway" ? "5" : "0"});
             params.push_back({"nightflag", "0"});
         }
@@ -995,9 +1046,9 @@ AmapRoutePlan plan_amap_route(const std::string& key,
             append_amap_steps(route_path, transport, plan);
         } catch (const std::exception& error) {
             throw std::runtime_error(
-                "第 " + std::to_string(i + 1) + " 段「" +
-                plan.places[i].name + " → " + plan.places[i + 1].name +
-                "」规划失败：" + error.what()
+                "绗?" + std::to_string(i + 1) + " 娈点€? +
+                plan.places[i].name + " 鈫?" + plan.places[i + 1].name +
+                "銆嶈鍒掑け璐ワ細" + error.what()
             );
         }
     }
@@ -1022,7 +1073,7 @@ crow::json::wvalue amap_route_json(const AmapRoutePlan& plan, const std::string&
     crow::json::wvalue::list coordinates;
     for (const auto& segment : plan.segments) {
         crow::json::wvalue item;
-        item["from"] = segment.instruction.empty() ? "按路线前进" : segment.instruction;
+        item["from"] = segment.instruction.empty() ? "鎸夎矾绾垮墠杩? : segment.instruction;
         item["to"] = segment.road;
         item["transport"] = segment.transport;
         item["transportMode"] = travel_mode;
@@ -1048,7 +1099,7 @@ crow::json::wvalue amap_route_json(const AmapRoutePlan& plan, const std::string&
     crow::json::wvalue data;
     data["id"] = 0;
     data["route_id"] = "amap-route";
-    data["title"] = plan.places.front().name + " 到 " + plan.places.back().name;
+    data["title"] = plan.places.front().name + " 鍒?" + plan.places.back().name;
     data["stops"] = std::move(stops);
     data["requestedPlaces"] = std::move(requested_places);
     data["segments"] = std::move(segments);
@@ -1056,9 +1107,9 @@ crow::json::wvalue amap_route_json(const AmapRoutePlan& plan, const std::string&
     data["distance"] = distance.str();
     data["time"] = duration_label(std::to_string(plan.total_duration / 60));
     data["cost"] = travel_mode == "walk" ? 0 : std::max(3, static_cast<int>(plan.total_distance / 1000.0 * 2));
-    data["intensity"] = plan.total_distance > 3500 ? "中等" : "轻松";
+    data["intensity"] = plan.total_distance > 3500 ? "涓瓑" : "杞绘澗";
     data["transport"] = amap_direction_transport(travel_mode);
-    data["bestFor"] = "高德路径规划";
+    data["bestFor"] = "楂樺痉璺緞瑙勫垝";
     data["total_distance_meters"] = static_cast<int>(plan.total_distance);
     data["total_duration_seconds"] = plan.total_duration;
     data["usedAmap"] = true;
@@ -1102,19 +1153,19 @@ bool unusable_image_url(const std::string& url) {
 std::string scenic_fallback_image(const std::string& name, const std::string& category, const std::string& tags) {
     std::string profile = name + " " + category + " " + tags;
 
-    if (contains_any(profile, {"博物馆", "展览", "纪念馆", "Museum"})) {
+    if (contains_any(profile, {"鍗氱墿棣?, "灞曡", "绾康棣?, "Museum"})) {
         return "https://images.unsplash.com/photo-1566127992631-137a642a90f4?auto=format&fit=crop&w=1200&q=80";
     }
-    if (contains_any(profile, {"公园", "园林", "植物园", "湿地", "湖", "山", "Park"})) {
+    if (contains_any(profile, {"鍏洯", "鍥灄", "妞嶇墿鍥?, "婀垮湴", "婀?, "灞?, "Park"})) {
         return "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1200&q=80";
     }
-    if (contains_any(profile, {"古迹", "遗址", "寺", "庙", "宫", "长城", "历史", "Historic"})) {
+    if (contains_any(profile, {"鍙よ抗", "閬楀潃", "瀵?, "搴?, "瀹?, "闀垮煄", "鍘嗗彶", "Historic"})) {
         return "https://images.unsplash.com/photo-1513415756790-2ac1db1297d0?auto=format&fit=crop&w=1200&q=80";
     }
-    if (contains_any(profile, {"商业", "步行街", "购物", "美食", "街区", "夜市"})) {
+    if (contains_any(profile, {"鍟嗕笟", "姝ヨ琛?, "璐墿", "缇庨", "琛楀尯", "澶滃競"})) {
         return "https://images.unsplash.com/photo-1519608487953-e999c86e7455?auto=format&fit=crop&w=1200&q=80";
     }
-    if (contains_any(profile, {"海", "沙滩", "海滩", "岛", "湾"})) {
+    if (contains_any(profile, {"娴?, "娌欐哗", "娴锋哗", "宀?, "婀?})) {
         return "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1200&q=80";
     }
     return "https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?auto=format&fit=crop&w=1200&q=80";
@@ -1135,20 +1186,22 @@ std::string public_image_url(const std::string& database_image,
 crow::json::wvalue scenic_json(const PgResult& rows, int row) {
     std::string image = first_nonempty({rows.value(row, "thumbnail_url"), rows.value(row, "images")});
     int id = to_int(rows.value(row, "id"));
-    std::string category = first_nonempty({rows.value(row, "category")}, "景点");
+    std::string category = first_nonempty({rows.value(row, "category")}, "鏅偣");
     std::string tags = rows.value(row, "tags");
 
     crow::json::wvalue item;
     item["id"] = id;
     item["name"] = rows.value(row, "name");
     item["category"] = category;
-    item["district"] = first_nonempty({rows.value(row, "city"), rows.value(row, "address")}, "北京");
+    item["district"] = first_nonempty({rows.value(row, "city"), rows.value(row, "address")}, "鍖椾含");
     item["rating"] = to_double(rows.value(row, "rating"));
     item["duration"] = duration_label(rows.value(row, "duration_minutes"));
     item["ticket"] = static_cast<int>(to_double(rows.value(row, "ticket_price")));
     item["crowd"] = crowd_label(to_int(rows.value(row, "crowd_level"), 2));
     item["tags"] = string_list(split_pipe(tags));
-    item["image"] = public_image_url(image, rows.value(row, "name"), category, tags);
+    std::string image_url = public_image_url(image, rows.value(row, "name"), category, tags);
+    item["imageUrl"] = image_url;
+    item["image"] = image_url;
     item["description"] = rows.value(row, "description");
     item["address"] = rows.value(row, "address");
     item["openingHours"] = rows.value(row, "opening_hours");
@@ -1166,7 +1219,7 @@ crow::json::wvalue diary_json(const PgResult& rows, int row) {
     item["title"] = rows.value(row, "title");
     item["date"] = first_nonempty({rows.value(row, "start_date")}, today());
     item["distance"] = first_nonempty({rows.value(row, "total_distance_km")}, "0") + " km";
-    item["mood"] = "已记录";
+    item["mood"] = "宸茶褰?;
     item["cover"] = cover;
     item["tags"] = string_list(split_pipe(rows.value(row, "tags")));
     item["excerpt"] = first_nonempty({rows.value(row, "summary"), rows.value(row, "content")});
@@ -1192,9 +1245,9 @@ crow::json::wvalue route_json(const PgResult& rows, int row) {
     item["distance"] = distance.str();
     item["time"] = duration_label(std::to_string(seconds / 60));
     item["cost"] = cost;
-    item["intensity"] = meters > 3500 ? "中" : "低";
+    item["intensity"] = meters > 3500 ? "涓? : "浣?;
     item["transport"] = transport_label(rows.value(row, "travel_mode"));
-    item["bestFor"] = rows.value(row, "optimization_type") + " 优先";
+    item["bestFor"] = rows.value(row, "optimization_type") + " 浼樺厛";
     item["coordinates"] = route_coordinates_json(rows.value(row, "coordinates"));
     return item;
 }
@@ -1208,73 +1261,94 @@ crow::json::wvalue achievement_json(const PgResult& rows, int row) {
     item["name"] = rows.value(row, "name");
     item["level"] = "Lv." + first_nonempty({rows.value(row, "level")}, "1");
     item["progress"] = progress;
-    item["status"] = status == "unlocked" ? "已解锁" : status == "in_progress" ? "进行中" : "未解锁";
+    item["status"] = status == "unlocked" ? "宸茶В閿? : status == "in_progress" ? "杩涜涓? : "鏈В閿?;
     item["description"] = rows.value(row, "description");
     return item;
 }
 
 const std::string scenic_select_sql = R"SQL(
-    SELECT s.id, s.name, s.description, s.rating, s.address, s.city, s.opening_hours,
-           s.ticket_price, s.duration_minutes, s.crowd_level, s.thumbnail_url,
-           COALESCE(c.name, '景点') AS category,
-           COALESCE(array_to_string(s.tags, '|'), '') AS tags,
-           COALESCE(array_to_string(s.images, '|'), '') AS images,
-           (
-               CASE WHEN $2 = '' THEN 0 WHEN lower(s.name) = lower($2) THEN 120 ELSE 0 END +
-               CASE WHEN $2 = '' THEN 0 WHEN lower(s.name) LIKE lower($2) || '%' THEN 80 ELSE 0 END +
-               CASE WHEN $2 = '' THEN 0 WHEN lower(s.name) LIKE '%' || lower($2) || '%' THEN 60 ELSE 0 END +
-               CASE WHEN $2 = '' THEN 0 WHEN lower(COALESCE(c.name, '')) LIKE '%' || lower($2) || '%' THEN 42 ELSE 0 END +
-               CASE WHEN $2 = '' THEN 0 WHEN lower(COALESCE(array_to_string(s.tags, ' '), '')) LIKE '%' || lower($2) || '%' THEN 48 ELSE 0 END +
-               CASE WHEN $2 = '' THEN 0 WHEN lower(COALESCE(s.description, '')) LIKE '%' || lower($2) || '%' THEN 18 ELSE 0 END +
-               (s.rating * 8) +
-               LEAST(s.favorite_count, 10000) / 500.0 +
-               LEAST(s.view_count, 100000) / 5000.0
-           )::numeric(10,2) AS search_score,
-           CASE
-               WHEN $2 = '' THEN '综合评分和热度排序'
-               WHEN lower(s.name) = lower($2) THEN '名称精确匹配'
-               WHEN lower(s.name) LIKE lower($2) || '%' THEN '名称前缀匹配'
-               WHEN lower(s.name) LIKE '%' || lower($2) || '%' THEN '名称包含关键词'
-               WHEN lower(COALESCE(array_to_string(s.tags, ' '), '')) LIKE '%' || lower($2) || '%' THEN '标签匹配'
-               WHEN lower(COALESCE(c.name, '')) LIKE '%' || lower($2) || '%' THEN '类型匹配'
-               ELSE '描述内容匹配'
-           END AS match_reason
-    FROM scenic_spots s
-    LEFT JOIN categories c ON c.id = s.category_id
-    WHERE s.status = 1
-      AND ($1 = '' OR c.name = $1)
-      AND ($3 = '' OR s.ticket_price <= $3::numeric)
-      AND (
-          $2 = ''
-          OR lower(s.name) LIKE '%' || lower($2) || '%'
-          OR lower(COALESCE(c.name, '')) LIKE '%' || lower($2) || '%'
-          OR lower(COALESCE(array_to_string(s.tags, ' '), '')) LIKE '%' || lower($2) || '%'
-          OR (
-              NOT EXISTS (
-                  SELECT 1
-                  FROM scenic_spots candidate
-                  LEFT JOIN categories candidate_category ON candidate_category.id = candidate.category_id
-                  WHERE candidate.status = 1
-                    AND (
-                        lower(candidate.name) LIKE '%' || lower($2) || '%'
-                        OR lower(COALESCE(candidate_category.name, '')) LIKE '%' || lower($2) || '%'
-                        OR lower(COALESCE(array_to_string(candidate.tags, ' '), '')) LIKE '%' || lower($2) || '%'
-                    )
+    WITH scored AS (
+        SELECT s.id, s.name, s.description, s.rating, s.address, s.city, s.opening_hours,
+               s.ticket_price, s.duration_minutes, s.crowd_level, s.thumbnail_url,
+               COALESCE(c.name, '景点') AS category,
+               COALESCE(array_to_string(s.tags, '|'), '') AS tags,
+               COALESCE(array_to_string(s.images, '|'), '') AS images,
+               regexp_replace(lower(trim(s.name)), '[-－—–].*$', '') AS display_name_key,
+               regexp_replace(COALESCE(s.city, ''), '市$', '') AS display_city_key,
+               (
+                   CASE WHEN $2 = '' THEN 0 WHEN lower(s.name) = lower($2) THEN 120 ELSE 0 END +
+                   CASE WHEN $2 = '' THEN 0 WHEN lower(s.name) LIKE lower($2) || '%' THEN 80 ELSE 0 END +
+                   CASE WHEN $2 = '' THEN 0 WHEN lower(s.name) LIKE '%' || lower($2) || '%' THEN 60 ELSE 0 END +
+                   CASE WHEN $2 = '' THEN 0 WHEN lower(COALESCE(c.name, '')) LIKE '%' || lower($2) || '%' THEN 42 ELSE 0 END +
+                   CASE WHEN $2 = '' THEN 0 WHEN lower(COALESCE(array_to_string(s.tags, ' '), '')) LIKE '%' || lower($2) || '%' THEN 48 ELSE 0 END +
+                   CASE WHEN $2 = '' THEN 0 WHEN lower(COALESCE(s.description, '')) LIKE '%' || lower($2) || '%' THEN 18 ELSE 0 END +
+                   (s.rating * 8) +
+                   LEAST(s.favorite_count, 10000) / 500.0 +
+                   LEAST(s.view_count, 100000) / 5000.0
+               )::numeric(10,2) AS search_score,
+               CASE
+                   WHEN $2 = '' THEN '综合评分和热度排序'
+                   WHEN lower(s.name) = lower($2) THEN '名称精确匹配'
+                   WHEN lower(s.name) LIKE lower($2) || '%' THEN '名称前缀匹配'
+                   WHEN lower(s.name) LIKE '%' || lower($2) || '%' THEN '名称包含关键词'
+                   WHEN lower(COALESCE(array_to_string(s.tags, ' '), '')) LIKE '%' || lower($2) || '%' THEN '标签匹配'
+                   WHEN lower(COALESCE(c.name, '')) LIKE '%' || lower($2) || '%' THEN '类型匹配'
+                   ELSE '描述内容匹配'
+               END AS match_reason
+        FROM scenic_spots s
+        LEFT JOIN categories c ON c.id = s.category_id
+        WHERE s.status = 1
+          AND ($1 = '' OR c.name = $1)
+          AND ($3 = '' OR s.ticket_price <= $3::numeric)
+          AND (
+              $2 = ''
+              OR lower(s.name) LIKE '%' || lower($2) || '%'
+              OR lower(COALESCE(c.name, '')) LIKE '%' || lower($2) || '%'
+              OR lower(COALESCE(array_to_string(s.tags, ' '), '')) LIKE '%' || lower($2) || '%'
+              OR (
+                  NOT EXISTS (
+                      SELECT 1
+                      FROM scenic_spots candidate
+                      LEFT JOIN categories candidate_category ON candidate_category.id = candidate.category_id
+                      WHERE candidate.status = 1
+                        AND (
+                            lower(candidate.name) LIKE '%' || lower($2) || '%'
+                            OR lower(COALESCE(candidate_category.name, '')) LIKE '%' || lower($2) || '%'
+                            OR lower(COALESCE(array_to_string(candidate.tags, ' '), '')) LIKE '%' || lower($2) || '%'
+                        )
+                  )
+                  AND lower(COALESCE(s.description, '')) LIKE '%' || lower($2) || '%'
               )
-              AND lower(COALESCE(s.description, '')) LIKE '%' || lower($2) || '%'
           )
-      )
+    ),
+    deduped AS (
+        SELECT *,
+               ROW_NUMBER() OVER (
+                   PARTITION BY display_name_key, display_city_key
+                   ORDER BY
+                       search_score DESC,
+                       CASE WHEN lower(trim(name)) = display_name_key THEN 1 ELSE 0 END DESC,
+                       rating DESC,
+                       view_count DESC,
+                       id
+               ) AS display_rank
+        FROM scored
+    )
+    SELECT id, name, description, rating, address, city, opening_hours,
+           ticket_price, duration_minutes, crowd_level, thumbnail_url,
+           category, tags, images, search_score, match_reason
+    FROM deduped
+    WHERE display_rank = 1
     ORDER BY
-      CASE WHEN $4 = 'rating' THEN s.rating END DESC,
-      CASE WHEN $4 = 'price' THEN s.ticket_price END ASC,
-      CASE WHEN $4 = 'hot' THEN s.view_count END DESC,
+      CASE WHEN $4 = 'rating' THEN rating END DESC,
+      CASE WHEN $4 = 'price' THEN ticket_price END ASC,
+      CASE WHEN $4 = 'hot' THEN view_count END DESC,
       search_score DESC,
-      s.rating DESC,
-      s.view_count DESC,
-      s.id
+      rating DESC,
+      view_count DESC,
+      id
     LIMIT $5::int
 )SQL";
-
 const std::string diary_select_sql = R"SQL(
     SELECT id, title, summary, content, start_date::text, total_distance_km::text,
            COALESCE(array_to_string(images, '|'), '') AS images,
@@ -1317,6 +1391,40 @@ crow::json::wvalue budget_json(const BudgetPlan& plan) {
     item["tradeoff"] = plan.tradeoff;
     return item;
 }
+
+tourism::services::RecommendationProfile recommendation_profile_from_json(const crow::json::rvalue& body) {
+    tourism::services::RecommendationProfile profile;
+    profile.preferred_tags = json_string_array(body, "preferredTags");
+    profile.preferred_categories = json_string_array(body, "preferredCategories");
+    profile.budget_level = json_string(body, "budgetLevel", "medium");
+    profile.crowd_preference = json_string(body, "crowdPreference", "any");
+    profile.intensity = json_string(body, "intensity", "medium");
+    return profile;
+}
+
+tourism::services::ScenicCandidate recommendation_candidate_from_row(const PgResult& rows, int row) {
+    tourism::services::ScenicCandidate candidate;
+    candidate.id = to_int(rows.value(row, "id"));
+    candidate.name = rows.value(row, "name");
+    candidate.category = rows.value(row, "category");
+    candidate.tags = split_pipe(rows.value(row, "tags"));
+    candidate.rating = to_double(rows.value(row, "rating"));
+    candidate.ticket_price = to_double(rows.value(row, "ticket_price"));
+    candidate.crowd_level = to_int(rows.value(row, "crowd_level"), 2);
+    candidate.duration_minutes = to_int(rows.value(row, "duration_minutes"));
+    return candidate;
+}
+
+const std::string recommendation_spots_sql = R"SQL(
+    SELECT s.id, s.name, s.description, s.rating, s.address, s.city, s.opening_hours,
+           s.ticket_price, s.duration_minutes, s.crowd_level, s.thumbnail_url,
+           COALESCE(c.name, '鏅偣') AS category,
+           COALESCE(array_to_string(s.tags, '|'), '') AS tags,
+           COALESCE(array_to_string(s.images, '|'), '') AS images
+    FROM scenic_spots s
+    LEFT JOIN categories c ON c.id = s.category_id
+    WHERE s.status = 1
+)SQL";
 
 } // namespace
 
@@ -1362,6 +1470,8 @@ int main(int argc, char** argv) {
         data["endpoints"] = string_list({
             "/api/v1/dashboard",
             "/api/v1/scenic-spots",
+            "/api/v1/recommendations/personalized",
+            "/api/v1/profile/preferences",
             "/api/v1/budget-plans",
             "/api/v1/routes",
             "/api/v1/diaries",
@@ -1383,10 +1493,10 @@ int main(int argc, char** argv) {
             )SQL");
 
             crow::json::wvalue::list stats;
-            stats.push_back(crow::json::wvalue{{"label", "数据库景点"}, {"value", rows.value(0, "scenic_count")}, {"detail", "来自 scenic_spots 表"}});
-            stats.push_back(crow::json::wvalue{{"label", "路线边数"}, {"value", rows.value(0, "edge_count")}, {"detail", "来自 graph_edges 表"}});
-            stats.push_back(crow::json::wvalue{{"label", "旅游日记"}, {"value", rows.value(0, "diary_count")}, {"detail", "支持数据库保存"}});
-            stats.push_back(crow::json::wvalue{{"label", "成就徽章"}, {"value", rows.value(0, "achievement_count")}, {"detail", "来自 achievements 表"}});
+            stats.push_back(crow::json::wvalue{{"label", "鏁版嵁搴撴櫙鐐?}, {"value", rows.value(0, "scenic_count")}, {"detail", "鏉ヨ嚜 scenic_spots 琛?}});
+            stats.push_back(crow::json::wvalue{{"label", "璺嚎杈规暟"}, {"value", rows.value(0, "edge_count")}, {"detail", "鏉ヨ嚜 graph_edges 琛?}});
+            stats.push_back(crow::json::wvalue{{"label", "鏃呮父鏃ヨ"}, {"value", rows.value(0, "diary_count")}, {"detail", "鏀寔鏁版嵁搴撲繚瀛?}});
+            stats.push_back(crow::json::wvalue{{"label", "鎴愬氨寰界珷"}, {"value", rows.value(0, "achievement_count")}, {"detail", "鏉ヨ嚜 achievements 琛?}});
 
             crow::json::wvalue data;
             data["stats"] = std::move(stats);
@@ -1421,6 +1531,70 @@ int main(int argc, char** argv) {
             data["stats"]["diaries"] = to_int(rows.value(0, "diary_count"));
             data["stats"]["achievements"] = to_int(rows.value(0, "unlocked_count"));
             data["stats"]["favorites"] = to_int(rows.value(0, "favorite_count"));
+            return crow::response(ok(std::move(data)));
+        } catch (const std::exception& error) {
+            return json_error(500, error.what());
+        }
+    });
+
+    CROW_ROUTE(app, "/api/v1/profile/preferences")([]() -> crow::response {
+        try {
+            PgConnection db;
+            auto rows = exec_sql(db, R"SQL(
+                SELECT COALESCE(preference_value::text, '{}') AS preference_value
+                FROM user_preferences
+                WHERE user_id = 1 AND preference_type = 'travel_profile'
+                LIMIT 1
+            )SQL");
+
+            crow::json::wvalue data;
+            data["exists"] = rows.rows() > 0;
+            if (rows.rows() > 0) {
+                auto parsed = crow::json::load(rows.value(0, "preference_value"));
+                if (parsed) data["profile"] = preference_payload_json(parsed);
+                else data["profile"] = crow::json::wvalue();
+            } else {
+                data["profile"] = crow::json::wvalue();
+            }
+            return crow::response(ok(std::move(data)));
+        } catch (const std::exception& error) {
+            return json_error(500, error.what());
+        }
+    });
+
+    CROW_ROUTE(app, "/api/v1/profile/preferences").methods("PUT"_method)([](const crow::request& req) -> crow::response {
+        try {
+            auto body = crow::json::load(req.body);
+            if (!body) return json_error(400, "Invalid JSON");
+
+            std::string preference_text = preference_payload_text(body);
+            PgConnection db;
+            auto rows = exec_params(db, R"SQL(
+                INSERT INTO user_preferences (user_id, preference_type, preference_value, weight)
+                VALUES (1, 'travel_profile', $1::jsonb, 1.00)
+                ON CONFLICT (user_id, preference_type) DO UPDATE SET
+                    preference_value = EXCLUDED.preference_value,
+                    weight = EXCLUDED.weight,
+                    updated_at = CURRENT_TIMESTAMP
+                RETURNING preference_value::text
+            )SQL", {preference_text});
+
+            crow::json::wvalue data;
+            data["saved"] = true;
+            auto parsed = rows.rows() > 0 ? crow::json::load(rows.value(0, "preference_value")) : body;
+            data["profile"] = parsed ? preference_payload_json(parsed) : preference_payload_json(body);
+            return crow::response(ok(std::move(data)));
+        } catch (const std::exception& error) {
+            return json_error(500, error.what());
+        }
+    });
+
+    CROW_ROUTE(app, "/api/v1/profile/preferences").methods("DELETE"_method)([]() -> crow::response {
+        try {
+            PgConnection db;
+            exec_sql(db, "DELETE FROM user_preferences WHERE user_id = 1 AND preference_type = 'travel_profile'", PGRES_COMMAND_OK);
+            crow::json::wvalue data;
+            data["deleted"] = true;
             return crow::response(ok(std::move(data)));
         } catch (const std::exception& error) {
             return json_error(500, error.what());
@@ -1471,7 +1645,7 @@ int main(int argc, char** argv) {
             auto rows = exec_params(db, R"SQL(
                 SELECT s.id, s.name, s.description, s.rating, s.address, s.city, s.opening_hours,
                        s.ticket_price, s.duration_minutes, s.crowd_level, s.thumbnail_url,
-                       COALESCE(c.name, '景点') AS category,
+                       COALESCE(c.name, '鏅偣') AS category,
                        COALESCE(array_to_string(s.tags, '|'), '') AS tags,
                        COALESCE(array_to_string(s.images, '|'), '') AS images
                 FROM scenic_spots s
@@ -1491,7 +1665,7 @@ int main(int argc, char** argv) {
             auto rows = exec_params(db, R"SQL(
                 SELECT r.id::text, r.rating::text, COALESCE(r.content, '') AS content,
                        r.helpful_count::text, r.created_at::date::text AS created_at,
-                       COALESCE(u.nickname, u.username, '旅行用户') AS author
+                       COALESCE(u.nickname, u.username, '鏃呰鐢ㄦ埛') AS author
                 FROM reviews r
                 JOIN users u ON u.id = r.user_id
                 WHERE r.scenic_spot_id = $1 AND r.status = 1
@@ -1544,11 +1718,63 @@ int main(int argc, char** argv) {
                 crow::json::wvalue rec;
                 rec["scenic_spot"] = scenic_json(rows, row);
                 rec["score"] = to_double(rows.value(row, "rating")) / 5.0;
-                rec["reason"] = "数据库评分和标签匹配";
+                rec["reason"] = "鏁版嵁搴撹瘎鍒嗗拰鏍囩鍖归厤";
                 items.push_back(std::move(rec));
             }
             crow::json::wvalue data;
             data["recommendations"] = std::move(items);
+            return crow::response(ok(std::move(data)));
+        } catch (const std::exception& error) {
+            return json_error(500, error.what());
+        }
+    });
+
+    CROW_ROUTE(app, "/api/v1/recommendations/personalized").methods("POST"_method)([](const crow::request& req) -> crow::response {
+        try {
+            auto body = crow::json::load(req.body);
+            if (!body) return json_error(400, "Invalid JSON");
+
+            int limit = json_int(body, "limit", 6);
+            if (limit <= 0) limit = 6;
+            if (limit > 30) limit = 30;
+
+            auto profile = recommendation_profile_from_json(body);
+
+            PgConnection db;
+            auto rows = exec_sql(db, recommendation_spots_sql);
+
+            std::vector<tourism::services::ScenicCandidate> candidates;
+            std::unordered_map<int, int> row_by_id;
+            candidates.reserve(static_cast<size_t>(rows.rows()));
+            for (int row = 0; row < rows.rows(); ++row) {
+                auto candidate = recommendation_candidate_from_row(rows, row);
+                row_by_id[candidate.id] = row;
+                candidates.push_back(std::move(candidate));
+            }
+
+            auto ranked = tourism::services::rank_personalized_recommendations(candidates, profile, limit);
+
+            crow::json::wvalue::list items;
+            for (const auto& result : ranked) {
+                auto row_it = row_by_id.find(result.scenic_spot_id);
+                if (row_it == row_by_id.end()) continue;
+
+                crow::json::wvalue item;
+                item["scenic_spot"] = scenic_json(rows, row_it->second);
+                item["score"] = result.score;
+                item["matchedTags"] = string_list(result.matched_tags);
+                item["reason"] = result.reason;
+                item["scoreBreakdown"]["tagScore"] = result.tag_score;
+                item["scoreBreakdown"]["categoryScore"] = result.category_score;
+                item["scoreBreakdown"]["ratingScore"] = result.rating_score;
+                item["scoreBreakdown"]["budgetScore"] = result.budget_score;
+                item["scoreBreakdown"]["crowdScore"] = result.crowd_score;
+                items.push_back(std::move(item));
+            }
+
+            crow::json::wvalue data;
+            data["recommendations"] = std::move(items);
+            data["algorithm"] = "score = tagScore * 50 + categoryScore * 20 + ratingScore * 15 + budgetScore * 10 + crowdScore * 5";
             return crow::response(ok(std::move(data)));
         } catch (const std::exception& error) {
             return json_error(500, error.what());
@@ -1629,15 +1855,15 @@ int main(int argc, char** argv) {
             std::string transport = normalize_transport(raw_transport);
             std::string optimization = normalize_optimization(json_string(body, "optimization", "balanced"));
             int crowd_tolerance = std::max(1, std::min(4, json_int(body, "crowdTolerance", 3)));
-            std::string city = trim_text(json_string(body, "city", "北京"));
+            std::string city = trim_text(json_string(body, "city", "鍖椾含"));
 
             if (!start_text.empty() || !end_text.empty()) {
                 if (start_text.empty() || end_text.empty()) {
-                    return json_error(400, "请输入出发点和目的地");
+                    return json_error(400, "璇疯緭鍏ュ嚭鍙戠偣鍜岀洰鐨勫湴");
                 }
                 std::string key = amap_key();
                 if (key.empty()) {
-                    return json_error(500, "后端未设置 AMAP_WEB_SERVICE_KEY，无法使用高德路径规划");
+                    return json_error(500, "鍚庣鏈缃?AMAP_WEB_SERVICE_KEY锛屾棤娉曚娇鐢ㄩ珮寰疯矾寰勮鍒?);
                 }
 
                 std::vector<std::string> place_texts;
@@ -1654,7 +1880,7 @@ int main(int argc, char** argv) {
             }
 
             if (start_node_id <= 0 || end_node_id <= 0) {
-                return json_error(400, "请选择起点和终点");
+                return json_error(400, "璇烽€夋嫨璧风偣鍜岀粓鐐?);
             }
 
             PgConnection db;
@@ -1668,7 +1894,7 @@ int main(int argc, char** argv) {
             points.push_back(end_node_id);
 
             RouteSearchResult route = plan_route_with_waypoints(graph, points, transport, optimization, crowd_tolerance);
-            if (!route.success) return json_error(404, route.error.empty() ? "无法规划路线" : route.error);
+            if (!route.success) return json_error(404, route.error.empty() ? "鏃犳硶瑙勫垝璺嚎" : route.error);
 
             crow::json::wvalue data = computed_route_json(graph, route, optimization, transport);
             return crow::response(ok(std::move(data)));
@@ -1735,7 +1961,7 @@ int main(int argc, char** argv) {
             auto body = crow::json::load(req.body);
             if (!body) return json_error(400, "Invalid JSON");
 
-            std::string title = first_nonempty({json_string(body, "title")}, "未命名日记");
+            std::string title = first_nonempty({json_string(body, "title")}, "鏈懡鍚嶆棩璁?);
             std::string content = first_nonempty({json_string(body, "excerpt"), json_string(body, "content")}, "");
             std::string date = first_nonempty({json_string(body, "date"), json_string(body, "start_date")}, today());
             std::string cover = first_nonempty({json_string(body, "cover")},
@@ -1767,7 +1993,7 @@ int main(int argc, char** argv) {
             auto body = crow::json::load(req.body);
             if (!body) return json_error(400, "Invalid JSON");
 
-            std::string title = first_nonempty({json_string(body, "title")}, "未命名日记");
+            std::string title = first_nonempty({json_string(body, "title")}, "鏈懡鍚嶆棩璁?);
             std::string content = first_nonempty({json_string(body, "excerpt"), json_string(body, "content")}, "");
             std::string date = first_nonempty({json_string(body, "date"), json_string(body, "start_date")}, today());
             std::string cover = first_nonempty({json_string(body, "cover")},
@@ -1834,7 +2060,7 @@ int main(int argc, char** argv) {
         auto body = crow::json::load(req.body);
         std::string content = json_string(body, "content", "");
         crow::json::wvalue data;
-        data["summary"] = content.empty() ? "这是一篇待完善的旅行记录。" : "自动摘要：" + content.substr(0, std::min<size_t>(content.size(), 90));
+        data["summary"] = content.empty() ? "杩欐槸涓€绡囧緟瀹屽杽鐨勬梾琛岃褰曘€? : "鑷姩鎽樿锛? + content.substr(0, std::min<size_t>(content.size(), 90));
         return ok(std::move(data));
     });
 
@@ -1842,7 +2068,7 @@ int main(int argc, char** argv) {
         auto body = crow::json::load(req.body);
         std::string content = json_string(body, "content", "");
         crow::json::wvalue data;
-        data["polished"] = content + "\n\n系统建议：补充路线顺序、预算感受和最推荐的停留点，会让游记更适合分享。";
+        data["polished"] = content + "\n\n绯荤粺寤鸿锛氳ˉ鍏呰矾绾块『搴忋€侀绠楁劅鍙楀拰鏈€鎺ㄨ崘鐨勫仠鐣欑偣锛屼細璁╂父璁版洿閫傚悎鍒嗕韩銆?;
         return ok(std::move(data));
     });
 

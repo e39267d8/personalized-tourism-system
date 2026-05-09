@@ -20,11 +20,15 @@ export const tourismApi = {
   routeNodes: () => client.get('/route-nodes').then(unwrap),
   routes: () => client.get('/routes').then(unwrap),
   planRoute: (payload) => client.post('/routes/plan', payload).then(unwrap),
+  personalizedRecommendations: (payload) => client.post('/recommendations/personalized', payload).then(unwrap),
   diaries: (params) => client.get('/diaries', { params }).then(unwrap),
   createDiary: (payload) => client.post('/diaries', payload).then(unwrap),
   updateDiary: (id, payload) => client.put(`/diaries/${id}`, payload).then(unwrap),
   deleteDiary: (id) => client.delete(`/diaries/${id}`).then(unwrap),
   achievements: () => client.get('/achievements').then(unwrap),
   profile: () => client.get('/profile').then(unwrap),
+  getProfilePreferences: () => client.get('/profile/preferences').then(unwrap),
+  saveProfilePreferences: (payload) => client.put('/profile/preferences', payload).then(unwrap),
+  deleteProfilePreferences: () => client.delete('/profile/preferences').then(unwrap),
   summarizeDiary: (payload) => client.post('/aigc/diary-summary', payload).then(unwrap)
 }

@@ -6,7 +6,7 @@
           <span class="grid h-10 w-10 flex-none place-items-center rounded-md bg-teal-700 text-sm font-bold text-white">TP</span>
           <span class="min-w-0">
             <span class="block text-lg font-bold leading-5">TourPilot</span>
-            <span class="block truncate text-xs text-slate-500">北京旅行规划与记录</span>
+            <span class="block truncate text-xs text-slate-500">个性化旅游规划与记录</span>
           </span>
         </router-link>
 

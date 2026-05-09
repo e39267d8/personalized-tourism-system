@@ -129,6 +129,10 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'scenic_spots' AND column_name = 'favorite_count') THEN
         ALTER TABLE scenic_spots ADD COLUMN favorite_count INTEGER DEFAULT 0;
     END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'scenic_spots' AND column_name = 'tags') THEN
+        ALTER TABLE scenic_spots ADD COLUMN tags TEXT[];
+    END IF;
     
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'scenic_spots' AND column_name = 'status') THEN
         ALTER TABLE scenic_spots ADD COLUMN status SMALLINT DEFAULT 1;
@@ -145,6 +149,7 @@ CREATE INDEX IF NOT EXISTS idx_scenic_spots_rating ON scenic_spots(rating DESC);
 CREATE INDEX IF NOT EXISTS idx_scenic_spots_city ON scenic_spots(city);
 CREATE INDEX IF NOT EXISTS idx_scenic_spots_crowd ON scenic_spots(crowd_level);
 CREATE INDEX IF NOT EXISTS idx_scenic_spots_status ON scenic_spots(status);
+CREATE INDEX IF NOT EXISTS idx_scenic_spots_tags ON scenic_spots USING GIN(tags);
 
 -- =====================================================
 -- 5. 图节点表升级

@@ -76,7 +76,12 @@
             :to="`/spots/${spot.id}`"
             class="overflow-hidden rounded-md border border-slate-200 bg-white transition hover:-translate-y-0.5 hover:border-teal-700 hover:shadow-sm"
           >
-            <img :src="spot.image" :alt="spot.name" class="h-40 w-full object-cover">
+            <img
+              :src="spotImageUrl(spot)"
+              :alt="spot.name"
+              class="h-40 w-full object-cover"
+              @error="event => handleSpotImageError(event, spot)"
+            >
             <div class="p-4">
               <div class="flex items-start justify-between gap-3">
                 <div>
@@ -115,6 +120,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { scenicSpots as fallbackSpots } from '@/data/demoData'
 import { tourismApi } from '@/services/tourismApi'
+import { handleSpotImageError, spotImageUrl } from '@/utils/images'
 
 const route = useRoute()
 const router = useRouter()

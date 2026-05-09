@@ -6,16 +6,16 @@
         src="https://images.unsplash.com/photo-1508804185872-d7badad00f7d?auto=format&fit=crop&w=1800&q=85"
         alt="北京城市旅行"
       >
-      <div class="absolute inset-0 bg-gradient-to-r from-slate-950 via-slate-950/70 to-slate-950/10"></div>
+      <div class="absolute inset-0 bg-gradient-to-r from-slate-950 via-slate-950/75 to-slate-950/20"></div>
 
-      <div class="relative grid min-h-[520px] content-end px-5 py-8 sm:px-8 lg:grid-cols-[0.95fr_0.75fr] lg:items-end lg:gap-10">
+      <div class="relative grid min-h-[520px] content-end px-5 py-8 sm:px-8 lg:grid-cols-[1fr_0.7fr] lg:items-end lg:gap-10">
         <div class="pb-4">
-          <p class="text-sm font-semibold uppercase tracking-[0.2em] text-teal-200">Beijing Travel Planner</p>
+          <p class="text-sm font-semibold uppercase tracking-[0.2em] text-teal-200">TourPilot</p>
           <h1 class="mt-4 max-w-3xl text-4xl font-bold leading-tight tracking-tight sm:text-6xl">
-            找到适合你的北京一日路线
+            按你的偏好规划下一站
           </h1>
           <p class="mt-5 max-w-2xl text-base leading-7 text-slate-200">
-            搜索景点，比较预算，规划路线，写下旅行记录。TourPilot 把目的地、路线和个人旅行档案放在一个清晰的网站里。
+            搜索目的地、保存旅游偏好、生成路线和预算方案。首页推荐会根据你的标签、预算和人流选择动态变化。
           </p>
 
           <form class="mt-7 max-w-2xl rounded-md bg-white p-2 shadow-xl" @submit.prevent="submitSearch">
@@ -23,7 +23,7 @@
               <input
                 v-model="searchQuery"
                 class="h-12 flex-1 rounded-md border border-slate-200 px-4 text-sm text-slate-950 outline-none focus:border-teal-700"
-                placeholder="搜索故宫、博物馆、citywalk、低预算..."
+                placeholder="搜索故宫、博物馆、摄影、低预算..."
                 type="search"
               >
               <button class="rounded-md bg-teal-700 px-5 py-3 text-sm font-semibold text-white hover:bg-teal-800">
@@ -34,7 +34,7 @@
         </div>
 
         <div class="hidden rounded-md bg-white/95 p-5 text-slate-950 shadow-xl lg:block">
-          <div class="text-sm font-semibold text-slate-500">今天推荐</div>
+          <div class="text-sm font-semibold text-slate-500">今日路线灵感</div>
           <h2 class="mt-2 text-2xl font-bold">{{ featuredRoute?.title || '中轴线经典一日' }}</h2>
           <p class="mt-3 text-sm leading-6 text-slate-600">
             {{ featuredRoute?.stops?.join(' -> ') || '前门 -> 天安门 -> 故宫 -> 景山' }}
@@ -54,7 +54,7 @@
             </div>
           </div>
           <router-link to="/route" class="mt-5 block rounded-md bg-slate-900 px-4 py-2.5 text-center text-sm font-semibold text-white hover:bg-slate-800">
-            查看路线
+            打开路线规划
           </router-link>
         </div>
       </div>
@@ -64,8 +64,8 @@
       <button
         v-for="item in quickSearches"
         :key="item.query"
-        @click="goSearch(item.query)"
         class="rounded-md border border-slate-200 bg-white p-4 text-left transition hover:-translate-y-0.5 hover:border-teal-700 hover:shadow-sm"
+        @click="goSearch(item.query)"
       >
         <div class="font-semibold">{{ item.title }}</div>
         <p class="mt-1 text-sm text-slate-500">{{ item.copy }}</p>
@@ -76,36 +76,53 @@
       <div>
         <div class="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <h2 class="text-2xl font-bold">热门目的地</h2>
-            <p class="mt-2 text-sm text-slate-500">按评分、标签和旅行场景挑选适合你的景点。</p>
+            <h2 class="text-2xl font-bold">个性化推荐目的地</h2>
+            <p class="mt-2 text-sm text-slate-500">{{ recommendationSubtitle }}</p>
           </div>
-          <router-link to="/search" class="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100">
-            查看全部
+          <router-link to="/profile" class="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100">
+            {{ hasUserProfile ? '修改偏好' : '完善偏好' }}
           </router-link>
+        </div>
+
+        <div v-if="recommendationNotice" class="mt-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          {{ recommendationNotice }}
         </div>
 
         <div class="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           <router-link
-            v-for="spot in spots.slice(0, 6)"
-            :key="spot.id"
-            :to="`/spots/${spot.id}`"
+            v-for="item in recommendations"
+            :key="item.scenicSpot.id"
+            :to="`/spots/${item.scenicSpot.id}`"
             class="group overflow-hidden rounded-md border border-slate-200 bg-white transition hover:-translate-y-0.5 hover:border-teal-700 hover:shadow-sm"
           >
             <div class="relative">
-              <img :src="spot.image" :alt="spot.name" class="h-44 w-full object-cover transition group-hover:scale-[1.02]">
-              <div class="absolute right-3 top-3 rounded-md bg-white/95 px-2 py-1 text-sm font-bold text-amber-700">{{ spot.rating }}</div>
+              <img
+                :src="spotImageUrl(item.scenicSpot)"
+                :alt="item.scenicSpot.name"
+                class="h-44 w-full object-cover transition group-hover:scale-[1.02]"
+                @error="event => handleSpotImageError(event, item.scenicSpot)"
+              >
+              <div class="absolute right-3 top-3 rounded-md bg-white/95 px-2 py-1 text-sm font-bold text-amber-700">
+                {{ Math.round(item.score) }}
+              </div>
             </div>
             <div class="p-4">
               <div class="flex items-start justify-between gap-3">
                 <div>
-                  <h3 class="font-semibold text-slate-950">{{ spot.name }}</h3>
-                  <div class="mt-1 text-sm text-slate-500">{{ spot.category }} · {{ spot.district }}</div>
+                  <h3 class="font-semibold text-slate-950">{{ item.scenicSpot.name }}</h3>
+                  <div class="mt-1 text-sm text-slate-500">{{ item.scenicSpot.category }} · {{ item.scenicSpot.district }}</div>
                 </div>
+                <span class="rounded-md bg-slate-100 px-2 py-1 text-sm font-bold text-slate-700">{{ item.scenicSpot.rating }}</span>
               </div>
-              <p class="mt-3 line-clamp-2 text-sm leading-6 text-slate-500">{{ spot.description }}</p>
+              <p class="mt-3 line-clamp-2 text-sm leading-6 text-slate-500">{{ item.scenicSpot.description }}</p>
+              <div class="mt-4 flex flex-wrap gap-2">
+                <span v-for="tag in item.matchedTags" :key="tag" class="rounded-md bg-teal-50 px-2 py-1 text-xs font-medium text-teal-800">{{ tag }}</span>
+                <span v-if="!item.matchedTags.length" class="rounded-md bg-slate-100 px-2 py-1 text-xs text-slate-600">综合推荐</span>
+              </div>
+              <p class="mt-3 text-sm leading-6 text-slate-600">{{ item.reason }}</p>
               <div class="mt-4 flex items-center justify-between border-t border-slate-100 pt-3 text-sm text-slate-500">
-                <span>门票 ¥{{ spot.ticket }}</span>
-                <span>{{ spot.duration }}</span>
+                <span>门票 ¥{{ item.scenicSpot.ticket }}</span>
+                <span>{{ item.scenicSpot.duration }}</span>
               </div>
             </div>
           </router-link>
@@ -129,7 +146,7 @@
             </div>
           </div>
           <router-link to="/recommend" class="mt-4 block rounded-md bg-slate-900 px-4 py-2.5 text-center text-sm font-semibold text-white hover:bg-slate-800">
-            详细规划
+            详细预算推荐
           </router-link>
         </div>
 
@@ -137,7 +154,7 @@
           <h2 class="text-lg font-semibold">继续你的旅行</h2>
           <div class="mt-4 grid gap-3">
             <router-link to="/diary" class="rounded-md bg-slate-50 p-4 text-sm font-semibold hover:bg-slate-100">写一篇旅行日记</router-link>
-            <router-link to="/profile" class="rounded-md bg-slate-50 p-4 text-sm font-semibold hover:bg-slate-100">查看个人旅行档案</router-link>
+            <router-link to="/profile" class="rounded-md bg-slate-50 p-4 text-sm font-semibold hover:bg-slate-100">查看个人中心</router-link>
             <router-link to="/achievements" class="rounded-md bg-slate-50 p-4 text-sm font-semibold hover:bg-slate-100">查看旅行成就</router-link>
           </div>
         </div>
@@ -175,24 +192,32 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { budgetPlans as fallbackBudgetPlans, routePlans as fallbackRoutes, scenicSpots as fallbackSpots } from '@/data/demoData'
 import { tourismApi } from '@/services/tourismApi'
+import { handleSpotImageError, spotImageUrl } from '@/utils/images'
 
+const STORAGE_KEY = 'tourism_user_profile'
 const router = useRouter()
 
 const searchQuery = ref('')
 const budget = ref(180)
-const spots = ref(fallbackSpots)
 const routes = ref(fallbackRoutes)
 const plans = ref(fallbackBudgetPlans)
+const recommendations = ref([])
+const hasUserProfile = ref(false)
+const recommendationNotice = ref('')
 
 const quickSearches = [
   { title: '第一次来北京', copy: '经典地标和中轴线', query: '中轴线' },
   { title: '雨天也能玩', copy: '博物馆和室内展览', query: '博物馆' },
-  { title: '适合拍照', copy: '日落、公园、citywalk', query: '摄影' },
+  { title: '适合拍照', copy: '日落、公园、城市漫步', query: '摄影' },
   { title: '低预算路线', copy: '免费景点和步行路线', query: '低预算' }
 ]
 
 const featuredRoute = computed(() => routes.value[0])
 const affordablePlans = computed(() => plans.value.filter(plan => plan.budget <= budget.value).slice(0, 2))
+const recommendationSubtitle = computed(() => {
+  if (hasUserProfile.value) return '根据你的偏好问卷，按标签匹配、类型、评分、预算和人流综合排序。'
+  return '完善个人偏好后可获得更精准推荐，当前展示默认综合推荐。'
+})
 
 const submitSearch = () => {
   goSearch(searchQuery.value)
@@ -203,18 +228,83 @@ const goSearch = (query) => {
   router.push({ path: '/search', query: q ? { q } : {} })
 }
 
-onMounted(async () => {
+const readLocalUserProfile = () => {
+  const raw = localStorage.getItem(STORAGE_KEY)
+  if (!raw) return null
   try {
-    const [scenic, routeData, budgetData] = await Promise.all([
-      tourismApi.scenicSpots(),
+    const profile = JSON.parse(raw)
+    const hasSelections = [
+      ...(profile.preferredTags || []),
+      ...(profile.preferredCategories || [])
+    ].length > 0
+    const hasOptions =
+      (profile.budgetLevel && profile.budgetLevel !== 'medium') ||
+      (profile.crowdPreference && profile.crowdPreference !== 'any') ||
+      (profile.intensity && profile.intensity !== 'medium')
+    return hasSelections || hasOptions ? profile : null
+  } catch (error) {
+    localStorage.removeItem(STORAGE_KEY)
+    return null
+  }
+}
+
+const readUserProfile = async () => {
+  try {
+    const data = await tourismApi.getProfilePreferences()
+    if (data.exists && data.profile) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data.profile))
+      return data.profile
+    }
+  } catch (error) {
+    return readLocalUserProfile()
+  }
+  return readLocalUserProfile()
+}
+
+const normalizeRecommendation = (item) => {
+  const scenicSpot = item.scenic_spot || item.scenicSpot || item
+  const fallbackScore = Number(scenicSpot.rating || 0) * 15
+  return {
+    scenicSpot,
+    score: Number(item.score ?? scenicSpot.score ?? fallbackScore),
+    matchedTags: item.matchedTags || scenicSpot.tags?.slice?.(0, 2) || [],
+    reason: item.reason || '基于综合评分推荐。'
+  }
+}
+
+const fallbackRecommendations = () => fallbackSpots.slice(0, 6).map((spot) => normalizeRecommendation({
+  scenic_spot: spot,
+  score: Number(spot.rating || 0) * 15,
+  matchedTags: spot.tags?.slice?.(0, 2) || [],
+  reason: '后端未连接时的本地演示推荐。'
+}))
+
+const loadRecommendations = async () => {
+  const profile = await readUserProfile()
+  hasUserProfile.value = Boolean(profile)
+  recommendationNotice.value = profile ? '' : '完善个人偏好后可获得更精准推荐。'
+
+  try {
+    const payload = profile ? { ...profile, limit: 6 } : { limit: 6 }
+    const data = await tourismApi.personalizedRecommendations(payload)
+    recommendations.value = (data.recommendations || []).map(normalizeRecommendation)
+  } catch (error) {
+    recommendations.value = fallbackRecommendations()
+    recommendationNotice.value = '后端未连接，当前为本地演示推荐。'
+  }
+}
+
+onMounted(async () => {
+  await loadRecommendations()
+
+  try {
+    const [routeData, budgetData] = await Promise.all([
       tourismApi.routes(),
       tourismApi.budgetPlans({ budget: 500 })
     ])
-    spots.value = scenic.items?.length ? scenic.items : fallbackSpots
     routes.value = routeData.items?.length ? routeData.items : fallbackRoutes
     plans.value = budgetData.items?.length ? budgetData.items : fallbackBudgetPlans
   } catch (error) {
-    spots.value = fallbackSpots
     routes.value = fallbackRoutes
     plans.value = fallbackBudgetPlans
   }

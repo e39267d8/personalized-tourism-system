@@ -6,7 +6,12 @@
 
     <section class="overflow-hidden rounded-md border border-slate-200 bg-white">
       <div class="grid lg:grid-cols-[1.15fr_0.85fr]">
-        <img :src="spot.image" :alt="spot.name" class="h-72 w-full object-cover lg:h-full">
+        <img
+          :src="spotImageUrl(spot)"
+          :alt="spot.name"
+          class="h-72 w-full object-cover lg:h-full"
+          @error="event => handleSpotImageError(event, spot)"
+        >
         <div class="p-6">
           <div class="flex flex-wrap items-center gap-2">
             <span class="rounded-md bg-teal-50 px-2.5 py-1 text-sm font-semibold text-teal-800">{{ spot.category }}</span>
@@ -88,6 +93,7 @@
 import { onMounted, ref, watch } from 'vue'
 import { scenicSpots as fallbackSpots } from '@/data/demoData'
 import { tourismApi } from '@/services/tourismApi'
+import { handleSpotImageError, spotImageUrl } from '@/utils/images'
 
 const props = defineProps({
   id: {

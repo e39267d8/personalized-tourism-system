@@ -182,10 +182,11 @@ def poi_to_sql(poi: dict, category_id: int) -> str | None:
 
     description = f"{name}\uff0c\u4f4d\u4e8e{province}{city}{address}\u3002\u6570\u636e\u6765\u6e90\uff1a\u9ad8\u5fb7\u5730\u56fe\u5f00\u653e\u5e73\u53f0 POI\u3002"
 
+    point_expr = f"ST_SetSRID(ST_MakePoint({longitude}, {latitude}), 4326)::geography"
     identity_where = f"""
-name = {sql_literal(name)}
-      AND COALESCE(address, '') = {sql_literal(address)}
+lower(trim(name)) = lower(trim({sql_literal(name)}))
       AND COALESCE(city, '') = {sql_literal(city)}
+      AND ST_DWithin(location, {point_expr}, 100)
 """.strip()
 
     update_photo = ""
@@ -212,7 +213,7 @@ INSERT INTO scenic_spots
 SELECT
     {sql_literal(name)},
     {sql_literal(description)},
-    ST_SetSRID(ST_MakePoint({longitude}, {latitude}), 4326)::geography,
+    {point_expr},
     {category_id},
     4.20,
     0,

@@ -65,11 +65,15 @@ set(GRAPH_SOURCES
     src/graph/graph.cpp
     src/graph/dijkstra.cpp
 )
+set(SERVICE_SOURCES
+    src/services/recommendation_service.cpp
+)
 set(MAIN_SOURCES
     src/main.cpp
 )
 set(ALL_SOURCES
     ${GRAPH_SOURCES}
+    ${SERVICE_SOURCES}
     ${MAIN_SOURCES}
 )
 
@@ -128,5 +132,6 @@ message(STATUS "Build Type: ${CMAKE_BUILD_TYPE}")
 message(STATUS "C++ Standard: ${CMAKE_CXX_STANDARD}")
 message(STATUS "Source Files:")
 message(STATUS "  - Graph: ${GRAPH_SOURCES}")
+message(STATUS "  - Services: ${SERVICE_SOURCES}")
 message(STATUS "  - Main: ${MAIN_SOURCES}")
 message(STATUS "============================================")
