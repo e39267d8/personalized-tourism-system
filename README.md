@@ -44,6 +44,7 @@ personalized-tourism-system/
 | `/api/v1/dashboard` | GET | 首页统计 |
 | `/api/v1/scenic-spots` | GET | 景点列表，来自数据库 |
 | `/api/v1/scenic-spots/<id>` | GET | 景点详情 |
+| `/api/v1/search/suggestions` | GET | 搜索建议词 |
 | `/api/v1/budget-plans` | GET | 预算方案 |
 | `/api/v1/routes` | GET | 路线列表，来自数据库 |
 | `/api/v1/diaries` | GET/POST | 游记查询和新增 |
@@ -64,6 +65,44 @@ host=127.0.0.1 port=5432 dbname=tourism_system user=postgres
 ```bat
 set TOURISM_DB_CONN=host=127.0.0.1 port=5432 dbname=tourism_system user=postgres password=你的密码
 ```
+
+## 搜索能力
+
+站内搜索不是简单前端过滤，而是在后端按相关度排序。当前排序信号包括：
+
+- 名称精确匹配
+- 名称前缀匹配
+- 名称包含关键词
+- 标签匹配
+- 类型匹配
+- 描述匹配
+- 评分、收藏数、浏览数热度加权
+
+支持参数：
+
+```text
+GET /api/v1/scenic-spots?q=故宫&category=历史古迹&max_ticket=80&sort=relevance&limit=50
+```
+
+`sort` 可选：
+
+| 值 | 含义 |
+|---|---|
+| `relevance` | 相关度优先 |
+| `rating` | 评分优先 |
+| `price` | 低价优先 |
+| `hot` | 热度优先 |
+
+## 高德 POI 数据扩充
+
+如果需要大量景点数据，可以用高德开放平台 Web 服务接口拉取 POI，再导入本地 PostgreSQL。项目提供了脚本：
+
+```bat
+python scripts\import_amap_pois.py --key 你的高德Key --city 北京 --keywords 景点 --output database\amap_pois.sql
+psql -U postgres -d tourism_system -f database\amap_pois.sql
+```
+
+推荐做法是“定期拉取 API 数据入库，再用本地数据库搜索”，不要每次用户搜索都实时请求第三方 API。这样速度更快，也不会因为第三方接口限流影响网站体验。
 
 ## 快速运行
 

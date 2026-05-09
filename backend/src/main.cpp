@@ -8,10 +8,19 @@
 #include <ctime>
 #include <iomanip>
 #include <iostream>
+#include <limits>
+#include <queue>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <thread>
+#include <unordered_map>
 #include <vector>
+
+#ifdef _WIN32
+#include <windows.h>
+#include <wininet.h>
+#endif
 
 namespace {
 
@@ -160,6 +169,13 @@ std::vector<std::string> split_pipe(const std::string& value) {
     return parts;
 }
 
+std::string trim_text(const std::string& value) {
+    auto begin = std::find_if_not(value.begin(), value.end(), [](unsigned char ch) { return std::isspace(ch); });
+    auto end = std::find_if_not(value.rbegin(), value.rend(), [](unsigned char ch) { return std::isspace(ch); }).base();
+    if (begin >= end) return "";
+    return std::string(begin, end);
+}
+
 crow::json::wvalue string_list(const std::vector<std::string>& values) {
     crow::json::wvalue::list list;
     for (const auto& value : values) list.push_back(value);
@@ -276,6 +292,780 @@ double distance_number(const std::string& distance) {
     return to_double(numeric);
 }
 
+struct RouteNode {
+    int id = 0;
+    std::string name;
+    std::string type;
+    std::string scenic_name;
+    double longitude = 0.0;
+    double latitude = 0.0;
+    int congestion = 2;
+};
+
+struct RouteEdge {
+    int id = 0;
+    int from = 0;
+    int to = 0;
+    std::string mode;
+    double distance = 0.0;
+    int duration = 0;
+    double base_weight = 1.0;
+    int congestion = 2;
+};
+
+struct RouteGraphData {
+    std::unordered_map<int, RouteNode> nodes;
+    std::unordered_map<int, std::vector<RouteEdge>> edges;
+};
+
+struct RouteSearchResult {
+    bool success = false;
+    bool used_transport_fallback = false;
+    std::string error;
+    std::vector<int> nodes;
+    std::vector<RouteEdge> edges;
+    double total_distance = 0.0;
+    int total_duration = 0;
+    double total_weight = 0.0;
+};
+
+int json_int(const crow::json::rvalue& body, const std::string& key, int fallback = 0) {
+    if (!body || !body.has(key)) return fallback;
+    try {
+        return static_cast<int>(body[key].i());
+    } catch (...) {
+        return fallback;
+    }
+}
+
+std::vector<int> json_int_array(const crow::json::rvalue& body, const std::string& key) {
+    std::vector<int> values;
+    if (!body || !body.has(key)) return values;
+    try {
+        for (const auto& item : body[key]) {
+            int value = static_cast<int>(item.i());
+            if (value > 0) values.push_back(value);
+        }
+    } catch (...) {
+    }
+    return values;
+}
+
+std::string normalize_transport(const std::string& value) {
+    if (value == "walk" || value == "步行") return "walk";
+    if (value == "bike" || value == "骑行") return "bike";
+    if (value == "subway" || value == "地铁") return "subway";
+    if (value == "bus" || value == "公交") return "bus";
+    if (value == "car" || value == "驾车") return "car";
+    return "";
+}
+
+std::string normalize_optimization(const std::string& value) {
+    if (value == "distance" || value == "距离优先") return "distance";
+    if (value == "time" || value == "时间优先") return "time";
+    if (value == "budget" || value == "预算优先") return "budget";
+    return "balanced";
+}
+
+struct AmapPlace {
+    std::string name;
+    std::string address;
+    std::string city;
+    std::string location;
+    double longitude = 0.0;
+    double latitude = 0.0;
+};
+
+std::string amap_key() {
+    if (const char* value = std::getenv("AMAP_WEB_SERVICE_KEY")) {
+        if (*value) return value;
+    }
+    if (const char* value = std::getenv("AMAP_KEY")) {
+        if (*value) return value;
+    }
+    return "";
+}
+
+std::string url_encode(const std::string& value) {
+    static const char* hex = "0123456789ABCDEF";
+    std::string output;
+    for (unsigned char ch : value) {
+        if ((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') ||
+            (ch >= '0' && ch <= '9') || ch == '-' || ch == '_' || ch == '.' || ch == '~') {
+            output.push_back(static_cast<char>(ch));
+        } else {
+            output.push_back('%');
+            output.push_back(hex[ch >> 4]);
+            output.push_back(hex[ch & 15]);
+        }
+    }
+    return output;
+}
+
+std::string amap_url(const std::string& path, const std::vector<std::pair<std::string, std::string>>& params) {
+    std::string url = "https://restapi.amap.com" + path + "?";
+    for (size_t i = 0; i < params.size(); ++i) {
+        if (i) url += "&";
+        url += params[i].first + "=" + url_encode(params[i].second);
+    }
+    return url;
+}
+
+std::string http_get_text(const std::string& url) {
+#ifdef _WIN32
+    HINTERNET internet = InternetOpenA("TourPilot/1.0", INTERNET_OPEN_TYPE_PRECONFIG, nullptr, nullptr, 0);
+    if (!internet) throw std::runtime_error("无法初始化 HTTP 客户端");
+
+    HINTERNET request = InternetOpenUrlA(internet, url.c_str(), nullptr, 0,
+                                        INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE | INTERNET_FLAG_SECURE,
+                                        0);
+    if (!request) {
+        InternetCloseHandle(internet);
+        throw std::runtime_error("无法请求高德 Web 服务");
+    }
+
+    std::string body;
+    char buffer[4096];
+    DWORD bytes_read = 0;
+    while (InternetReadFile(request, buffer, sizeof(buffer), &bytes_read) && bytes_read > 0) {
+        body.append(buffer, bytes_read);
+    }
+
+    InternetCloseHandle(request);
+    InternetCloseHandle(internet);
+    return body;
+#else
+    (void)url;
+    throw std::runtime_error("当前后端未实现非 Windows HTTP 客户端");
+#endif
+}
+
+std::string json_value_string(const crow::json::rvalue& value, const std::string& fallback = "") {
+    try {
+        if (!value) return fallback;
+        return static_cast<std::string>(value.s());
+    } catch (...) {
+        return fallback;
+    }
+}
+
+bool retryable_amap_error(const std::string& info) {
+    return info.find("QPS") != std::string::npos ||
+           info.find("RATE") != std::string::npos ||
+           info.find("OVER") != std::string::npos ||
+           info.find("LIMIT") != std::string::npos ||
+           info.find("CUQPS") != std::string::npos;
+}
+
+crow::json::rvalue amap_request_json(const std::string& path, const std::vector<std::pair<std::string, std::string>>& params) {
+    std::string last_error;
+    for (int attempt = 0; attempt < 3; ++attempt) {
+        if (attempt > 0) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(600 * attempt));
+        } else {
+            std::this_thread::sleep_for(std::chrono::milliseconds(180));
+        }
+
+        auto payload = crow::json::load(http_get_text(amap_url(path, params)));
+        if (!payload) throw std::runtime_error("高德返回了无效 JSON");
+        if (!payload.has("status") || json_value_string(payload["status"]) == "1") return payload;
+
+        std::string info = payload.has("info") ? json_value_string(payload["info"], "高德请求失败") : "高德请求失败";
+        std::string infocode = payload.has("infocode") ? json_value_string(payload["infocode"]) : "";
+        last_error = infocode.empty() ? info : info + " (" + infocode + ")";
+        if (!retryable_amap_error(info) && !retryable_amap_error(infocode)) break;
+    }
+    throw std::runtime_error(last_error.empty() ? "高德请求失败" : last_error);
+}
+
+bool parse_location(const std::string& location, double& longitude, double& latitude) {
+    auto comma = location.find(',');
+    if (comma == std::string::npos) return false;
+    longitude = to_double(location.substr(0, comma));
+    latitude = to_double(location.substr(comma + 1));
+    return longitude != 0.0 && latitude != 0.0;
+}
+
+std::vector<std::string> json_string_array(const crow::json::rvalue& body, const std::string& key) {
+    std::vector<std::string> values;
+    if (!body || !body.has(key)) return values;
+    try {
+        for (const auto& item : body[key]) {
+            std::string value = trim_text(static_cast<std::string>(item.s()));
+            if (!value.empty()) values.push_back(value);
+        }
+    } catch (...) {
+    }
+    return values;
+}
+
+AmapPlace resolve_amap_place(const std::string& key, const std::string& text, const std::string& city) {
+    std::string query = trim_text(text);
+    if (query.empty()) throw std::runtime_error("地点不能为空");
+
+    auto poi_payload = amap_request_json("/v3/place/text", {
+        {"key", key},
+        {"keywords", query},
+        {"city", city},
+        {"citylimit", city.empty() ? "false" : "true"},
+        {"offset", "1"},
+        {"page", "1"},
+        {"extensions", "base"},
+        {"output", "JSON"}
+    });
+
+    try {
+        if (poi_payload.has("pois") && poi_payload["pois"].size() > 0) {
+            const auto& poi = poi_payload["pois"][0];
+            AmapPlace place;
+            place.name = poi.has("name") ? json_value_string(poi["name"], query) : query;
+            place.address = poi.has("address") ? json_value_string(poi["address"]) : "";
+            place.city = poi.has("cityname") ? json_value_string(poi["cityname"], city) : city;
+            place.location = poi.has("location") ? json_value_string(poi["location"]) : "";
+            if (parse_location(place.location, place.longitude, place.latitude)) return place;
+        }
+    } catch (...) {
+    }
+
+    auto geocode_payload = amap_request_json("/v3/geocode/geo", {
+        {"key", key},
+        {"address", query},
+        {"city", city},
+        {"output", "JSON"}
+    });
+
+    if (!geocode_payload.has("geocodes") || geocode_payload["geocodes"].size() == 0) {
+        throw std::runtime_error("无法识别地点：" + query);
+    }
+    const auto& geocode = geocode_payload["geocodes"][0];
+    AmapPlace place;
+    place.name = geocode.has("formatted_address") ? json_value_string(geocode["formatted_address"], query) : query;
+    place.address = place.name;
+    place.city = city;
+    place.location = geocode.has("location") ? json_value_string(geocode["location"]) : "";
+    if (!parse_location(place.location, place.longitude, place.latitude)) {
+        throw std::runtime_error("地点没有可用坐标：" + query);
+    }
+    return place;
+}
+
+double route_edge_weight(const RouteEdge& edge, const std::string& optimization, int crowd_tolerance) {
+    double crowd_penalty = std::max(0, edge.congestion - crowd_tolerance);
+    if (optimization == "distance") return edge.distance + crowd_penalty * 300.0;
+    if (optimization == "time") return edge.duration + crowd_penalty * 180.0;
+    if (optimization == "budget") {
+        double mode_cost = edge.mode == "walk" ? 0.0 : edge.mode == "bike" ? 3.0 : edge.mode == "subway" ? 5.0 : 15.0;
+        return edge.distance / 120.0 + edge.duration / 60.0 + mode_cost * 20.0 + crowd_penalty * 10.0;
+    }
+    return edge.distance / 90.0 + edge.duration / 45.0 + edge.base_weight + crowd_penalty * 12.0;
+}
+
+std::string transport_label(const std::string& mode);
+
+RouteGraphData load_route_graph(PgConnection& db) {
+    RouteGraphData graph;
+
+    auto nodes = exec_sql(db, R"SQL(
+        SELECT gn.id::text, gn.name, gn.node_type,
+               COALESCE(ss.name, '') AS scenic_name,
+               gn.congestion_level::text,
+               ST_X(gn.location::geometry)::text AS longitude,
+               ST_Y(gn.location::geometry)::text AS latitude
+        FROM graph_nodes gn
+        LEFT JOIN scenic_spots ss ON ss.id = gn.scenic_spot_id
+        WHERE gn.location IS NOT NULL
+        ORDER BY gn.node_type, gn.id
+    )SQL");
+
+    for (int row = 0; row < nodes.rows(); ++row) {
+        RouteNode node;
+        node.id = to_int(nodes.value(row, "id"));
+        node.name = nodes.value(row, "name");
+        node.type = nodes.value(row, "node_type");
+        node.scenic_name = nodes.value(row, "scenic_name");
+        node.congestion = to_int(nodes.value(row, "congestion_level"), 2);
+        node.longitude = to_double(nodes.value(row, "longitude"));
+        node.latitude = to_double(nodes.value(row, "latitude"));
+        graph.nodes[node.id] = node;
+    }
+
+    auto edges = exec_sql(db, R"SQL(
+        SELECT id::text, from_node::text, to_node::text, travel_mode,
+               distance::text, COALESCE(travel_time, CEIL(distance / 1.2))::text AS travel_time,
+               base_weight::text, congestion_level::text
+        FROM graph_edges
+        ORDER BY id
+    )SQL");
+
+    for (int row = 0; row < edges.rows(); ++row) {
+        RouteEdge edge;
+        edge.id = to_int(edges.value(row, "id"));
+        edge.from = to_int(edges.value(row, "from_node"));
+        edge.to = to_int(edges.value(row, "to_node"));
+        edge.mode = edges.value(row, "travel_mode");
+        edge.distance = to_double(edges.value(row, "distance"));
+        edge.duration = to_int(edges.value(row, "travel_time"));
+        edge.base_weight = to_double(edges.value(row, "base_weight"), 1.0);
+        edge.congestion = to_int(edges.value(row, "congestion_level"), 2);
+        if (graph.nodes.count(edge.from) && graph.nodes.count(edge.to)) {
+            graph.edges[edge.from].push_back(edge);
+        }
+    }
+
+    return graph;
+}
+
+RouteSearchResult dijkstra_route(const RouteGraphData& graph,
+                                 int start,
+                                 int end,
+                                 const std::string& transport,
+                                 const std::string& optimization,
+                                 int crowd_tolerance) {
+    RouteSearchResult result;
+    if (!graph.nodes.count(start) || !graph.nodes.count(end)) {
+        result.error = "起点或终点不存在";
+        return result;
+    }
+    if (start == end) {
+        result.success = true;
+        result.nodes = {start};
+        return result;
+    }
+
+    const double inf = std::numeric_limits<double>::infinity();
+    std::unordered_map<int, double> dist;
+    std::unordered_map<int, RouteEdge> prev;
+    for (const auto& [id, node] : graph.nodes) dist[id] = inf;
+
+    using QueueItem = std::pair<double, int>;
+    std::priority_queue<QueueItem, std::vector<QueueItem>, std::greater<QueueItem>> queue;
+    dist[start] = 0.0;
+    queue.push({0.0, start});
+
+    while (!queue.empty()) {
+        auto [current_weight, current] = queue.top();
+        queue.pop();
+        if (current_weight > dist[current]) continue;
+        if (current == end) break;
+
+        auto edge_iter = graph.edges.find(current);
+        if (edge_iter == graph.edges.end()) continue;
+        for (const auto& edge : edge_iter->second) {
+            if (!transport.empty() && edge.mode != transport) continue;
+            double next_weight = current_weight + route_edge_weight(edge, optimization, crowd_tolerance);
+            if (next_weight < dist[edge.to]) {
+                dist[edge.to] = next_weight;
+                prev[edge.to] = edge;
+                queue.push({next_weight, edge.to});
+            }
+        }
+    }
+
+    if (!prev.count(end)) {
+        result.error = "当前交通方式下找不到可达路线";
+        return result;
+    }
+
+    std::vector<RouteEdge> reversed_edges;
+    int current = end;
+    while (current != start) {
+        RouteEdge edge = prev[current];
+        reversed_edges.push_back(edge);
+        current = edge.from;
+    }
+    std::reverse(reversed_edges.begin(), reversed_edges.end());
+
+    result.nodes.push_back(start);
+    for (const auto& edge : reversed_edges) {
+        result.edges.push_back(edge);
+        result.nodes.push_back(edge.to);
+        result.total_distance += edge.distance;
+        result.total_duration += edge.duration;
+        result.total_weight += route_edge_weight(edge, optimization, crowd_tolerance);
+    }
+    result.success = true;
+    return result;
+}
+
+RouteSearchResult plan_route_with_waypoints(const RouteGraphData& graph,
+                                            const std::vector<int>& points,
+                                            const std::string& transport,
+                                            const std::string& optimization,
+                                            int crowd_tolerance) {
+    RouteSearchResult combined;
+    if (points.size() < 2) {
+        combined.error = "请选择起点和终点";
+        return combined;
+    }
+
+    for (size_t i = 0; i + 1 < points.size(); ++i) {
+        RouteSearchResult segment = dijkstra_route(graph, points[i], points[i + 1], transport, optimization, crowd_tolerance);
+        if (!segment.success && !transport.empty()) {
+            segment = dijkstra_route(graph, points[i], points[i + 1], "", optimization, crowd_tolerance);
+            segment.used_transport_fallback = segment.success;
+        }
+        if (!segment.success) {
+            combined.error = segment.error;
+            return combined;
+        }
+
+        if (combined.nodes.empty()) combined.nodes.push_back(segment.nodes.front());
+        for (size_t node_index = 1; node_index < segment.nodes.size(); ++node_index) {
+            combined.nodes.push_back(segment.nodes[node_index]);
+        }
+        combined.edges.insert(combined.edges.end(), segment.edges.begin(), segment.edges.end());
+        combined.total_distance += segment.total_distance;
+        combined.total_duration += segment.total_duration;
+        combined.total_weight += segment.total_weight;
+        combined.used_transport_fallback = combined.used_transport_fallback || segment.used_transport_fallback;
+    }
+
+    combined.success = true;
+    return combined;
+}
+
+crow::json::wvalue route_node_json(const RouteNode& node) {
+    crow::json::wvalue item;
+    item["id"] = node.id;
+    item["name"] = first_nonempty({node.scenic_name, node.name});
+    item["nodeName"] = node.name;
+    item["type"] = node.type;
+    item["congestion"] = node.congestion;
+    item["longitude"] = node.longitude;
+    item["latitude"] = node.latitude;
+    return item;
+}
+
+crow::json::wvalue computed_route_json(const RouteGraphData& graph,
+                                       const RouteSearchResult& route,
+                                       const std::string& optimization,
+                                       const std::string& requested_transport) {
+    crow::json::wvalue::list stops;
+    crow::json::wvalue::list coordinates;
+    std::string first_stop;
+    std::string last_stop;
+    for (int node_id : route.nodes) {
+        const auto& node = graph.nodes.at(node_id);
+        std::string stop_name = first_nonempty({node.scenic_name, node.name});
+        if (first_stop.empty()) first_stop = stop_name;
+        last_stop = stop_name;
+        stops.push_back(stop_name);
+        crow::json::wvalue::list point;
+        point.push_back(node.latitude);
+        point.push_back(node.longitude);
+        coordinates.push_back(crow::json::wvalue(std::move(point)));
+    }
+
+    crow::json::wvalue::list segments;
+    for (const auto& edge : route.edges) {
+        const auto& from = graph.nodes.at(edge.from);
+        const auto& to = graph.nodes.at(edge.to);
+        crow::json::wvalue segment;
+        segment["from"] = first_nonempty({from.scenic_name, from.name});
+        segment["to"] = first_nonempty({to.scenic_name, to.name});
+        segment["transport"] = transport_label(edge.mode);
+        segment["transportMode"] = edge.mode;
+        segment["distance"] = edge.distance;
+        segment["duration"] = edge.duration;
+        segment["congestion"] = edge.congestion;
+        segments.push_back(std::move(segment));
+    }
+
+    std::ostringstream distance;
+    distance << std::fixed << std::setprecision(1) << (route.total_distance / 1000.0) << " km";
+
+    crow::json::wvalue item;
+    item["id"] = 0;
+    item["route_id"] = "live-route";
+    item["title"] = !first_stop.empty() && !last_stop.empty() ? first_stop + " 到 " + last_stop : "实时规划路线";
+    item["stops"] = std::move(stops);
+    item["segments"] = std::move(segments);
+    item["coordinates"] = std::move(coordinates);
+    item["distance"] = distance.str();
+    item["time"] = duration_label(std::to_string(route.total_duration / 60));
+    item["cost"] = route.total_distance <= 0 ? 0 : std::max(0, static_cast<int>(route.total_distance / 1000.0 * 2));
+    item["intensity"] = route.total_distance > 3500 ? "中等" : "轻松";
+    item["transport"] = requested_transport.empty() ? "混合" : transport_label(requested_transport);
+    item["bestFor"] = optimization + " 优先";
+    item["total_distance_meters"] = static_cast<int>(route.total_distance);
+    item["total_duration_seconds"] = route.total_duration;
+    item["usedTransportFallback"] = route.used_transport_fallback;
+    return item;
+}
+
+std::vector<std::string> split_by_char(const std::string& value, char separator) {
+    std::vector<std::string> parts;
+    std::stringstream stream(value);
+    std::string item;
+    while (std::getline(stream, item, separator)) {
+        if (!item.empty()) parts.push_back(item);
+    }
+    return parts;
+}
+
+void append_polyline_coordinates(const std::string& polyline, crow::json::wvalue::list& coordinates) {
+    for (const auto& point_text : split_by_char(polyline, ';')) {
+        double longitude = 0.0;
+        double latitude = 0.0;
+        if (!parse_location(point_text, longitude, latitude)) continue;
+        crow::json::wvalue::list point;
+        point.push_back(latitude);
+        point.push_back(longitude);
+        coordinates.push_back(crow::json::wvalue(std::move(point)));
+    }
+}
+
+struct AmapRouteSegment {
+    std::string instruction;
+    std::string road;
+    std::string transport;
+    double distance = 0.0;
+    int duration = 0;
+    std::string polyline;
+};
+
+struct AmapRoutePlan {
+    std::vector<AmapPlace> places;
+    std::vector<AmapRouteSegment> segments;
+    double total_distance = 0.0;
+    int total_duration = 0;
+};
+
+std::string amap_direction_path(const std::string& travel_mode) {
+    if (travel_mode == "driving" || travel_mode == "car") return "/v3/direction/driving";
+    if (travel_mode == "bike") return "/v4/direction/bicycling";
+    if (travel_mode == "transit" || travel_mode == "bus" || travel_mode == "subway") return "/v3/direction/transit/integrated";
+    return "/v3/direction/walking";
+}
+
+std::string amap_direction_transport(const std::string& travel_mode) {
+    if (travel_mode == "driving" || travel_mode == "car") return "驾车";
+    if (travel_mode == "bike") return "骑行";
+    if (travel_mode == "transit" || travel_mode == "bus" || travel_mode == "subway") return "地铁公交";
+    return "步行";
+}
+
+crow::json::rvalue first_path_from_amap_payload(const crow::json::rvalue& payload) {
+    if (payload.has("route") && payload["route"].has("paths") && payload["route"]["paths"].size() > 0) {
+        return payload["route"]["paths"][0];
+    }
+    if (payload.has("data") && payload["data"].has("paths") && payload["data"]["paths"].size() > 0) {
+        return payload["data"]["paths"][0];
+    }
+    throw std::runtime_error("高德没有返回可用路线");
+}
+
+crow::json::rvalue first_transit_from_amap_payload(const crow::json::rvalue& payload) {
+    if (payload.has("route") && payload["route"].has("transits") && payload["route"]["transits"].size() > 0) {
+        return payload["route"]["transits"][0];
+    }
+    throw std::runtime_error("高德没有返回可用公交/地铁路线");
+}
+
+std::string amap_json_string_field(const crow::json::rvalue& value, const std::string& key) {
+    try {
+        if (value.has(key)) return static_cast<std::string>(value[key]);
+    } catch (...) {
+    }
+    return "";
+}
+
+void append_amap_steps(const crow::json::rvalue& path,
+                       const std::string& transport,
+                       AmapRoutePlan& plan) {
+    std::vector<std::string> step_keys = {"steps", "rides"};
+    for (const auto& key : step_keys) {
+        if (!path.has(key)) continue;
+        for (const auto& step : path[key]) {
+            AmapRouteSegment segment;
+            segment.instruction = step.has("instruction") ? json_value_string(step["instruction"]) : "";
+            segment.road = step.has("road") ? json_value_string(step["road"]) : "";
+            segment.transport = transport;
+            segment.distance = step.has("distance") ? to_double(static_cast<std::string>(step["distance"])) : 0.0;
+            segment.duration = step.has("duration") ? to_int(static_cast<std::string>(step["duration"])) : 0;
+            segment.polyline = step.has("polyline") ? json_value_string(step["polyline"]) : "";
+            if (!segment.instruction.empty() || !segment.polyline.empty()) {
+                plan.segments.push_back(segment);
+            }
+        }
+        return;
+    }
+}
+
+void append_transit_walk_steps(const crow::json::rvalue& walking, AmapRoutePlan& plan) {
+    try {
+        if (!walking.has("steps")) return;
+        for (const auto& step : walking["steps"]) {
+            AmapRouteSegment segment;
+            segment.instruction = step.has("instruction") ? json_value_string(step["instruction"]) : "步行";
+            segment.road = step.has("road") ? json_value_string(step["road"]) : "";
+            segment.transport = "步行";
+            segment.distance = step.has("distance") ? to_double(static_cast<std::string>(step["distance"])) : 0.0;
+            segment.duration = step.has("duration") ? to_int(static_cast<std::string>(step["duration"])) : 0;
+            segment.polyline = step.has("polyline") ? json_value_string(step["polyline"]) : "";
+            if (!segment.instruction.empty() || !segment.polyline.empty()) plan.segments.push_back(segment);
+        }
+    } catch (...) {
+    }
+}
+
+void append_transit_buslines(const crow::json::rvalue& bus, AmapRoutePlan& plan) {
+    try {
+        if (!bus.has("buslines")) return;
+        for (const auto& line : bus["buslines"]) {
+            std::string line_name = line.has("name") ? json_value_string(line["name"]) : "公交/地铁";
+            std::string departure = line.has("departure_stop") ? amap_json_string_field(line["departure_stop"], "name") : "";
+            std::string arrival = line.has("arrival_stop") ? amap_json_string_field(line["arrival_stop"], "name") : "";
+
+            AmapRouteSegment segment;
+            segment.instruction = departure.empty() || arrival.empty()
+                ? line_name
+                : "乘坐 " + line_name + "，从 " + departure + " 到 " + arrival;
+            segment.road = line_name;
+            segment.transport = "地铁公交";
+            segment.distance = line.has("distance") ? to_double(static_cast<std::string>(line["distance"])) : 0.0;
+            segment.duration = line.has("duration") ? to_int(static_cast<std::string>(line["duration"])) : 0;
+            segment.polyline = line.has("polyline") ? json_value_string(line["polyline"]) : "";
+            plan.segments.push_back(segment);
+        }
+    } catch (...) {
+    }
+}
+
+void append_transit_segments(const crow::json::rvalue& transit, AmapRoutePlan& plan) {
+    try {
+        if (!transit.has("segments")) return;
+        for (const auto& segment : transit["segments"]) {
+            if (segment.has("walking")) append_transit_walk_steps(segment["walking"], plan);
+            if (segment.has("bus")) append_transit_buslines(segment["bus"], plan);
+        }
+    } catch (...) {
+    }
+}
+
+AmapRoutePlan plan_amap_route(const std::string& key,
+                              const std::string& city,
+                              const std::string& travel_mode,
+                              const std::vector<std::string>& place_texts) {
+    if (place_texts.size() < 2) throw std::runtime_error("请选择起点和终点");
+
+    AmapRoutePlan plan;
+    for (size_t index = 0; index < place_texts.size(); ++index) {
+        try {
+            plan.places.push_back(resolve_amap_place(key, place_texts[index], city));
+        } catch (const std::exception& error) {
+            throw std::runtime_error("第 " + std::to_string(index + 1) + " 个地点「" + place_texts[index] + "」识别失败：" + error.what());
+        }
+    }
+
+    std::string path = amap_direction_path(travel_mode);
+    std::string transport = amap_direction_transport(travel_mode);
+    for (size_t i = 0; i + 1 < plan.places.size(); ++i) {
+        std::vector<std::pair<std::string, std::string>> params = {
+            {"key", key},
+            {"origin", plan.places[i].location},
+            {"destination", plan.places[i + 1].location},
+            {"output", "JSON"}
+        };
+        if (travel_mode == "transit" || travel_mode == "bus" || travel_mode == "subway") {
+            params.push_back({"city", first_nonempty({plan.places[i].city, city}, "北京")});
+            params.push_back({"cityd", first_nonempty({plan.places[i + 1].city, city}, "北京")});
+            params.push_back({"strategy", travel_mode == "subway" ? "5" : "0"});
+            params.push_back({"nightflag", "0"});
+        }
+
+        try {
+            auto payload = amap_request_json(path, params);
+
+            if (travel_mode == "transit" || travel_mode == "bus" || travel_mode == "subway") {
+                auto transit = first_transit_from_amap_payload(payload);
+                double distance = transit.has("distance") ? to_double(static_cast<std::string>(transit["distance"])) : 0.0;
+                int duration = transit.has("duration") ? to_int(static_cast<std::string>(transit["duration"])) : 0;
+                plan.total_distance += distance;
+                plan.total_duration += duration;
+                append_transit_segments(transit, plan);
+                continue;
+            }
+
+            auto route_path = first_path_from_amap_payload(payload);
+            double distance = route_path.has("distance") ? to_double(static_cast<std::string>(route_path["distance"])) : 0.0;
+            int duration = route_path.has("duration") ? to_int(static_cast<std::string>(route_path["duration"])) : 0;
+            plan.total_distance += distance;
+            plan.total_duration += duration;
+            append_amap_steps(route_path, transport, plan);
+        } catch (const std::exception& error) {
+            throw std::runtime_error(
+                "第 " + std::to_string(i + 1) + " 段「" +
+                plan.places[i].name + " → " + plan.places[i + 1].name +
+                "」规划失败：" + error.what()
+            );
+        }
+    }
+    return plan;
+}
+
+crow::json::wvalue amap_route_json(const AmapRoutePlan& plan, const std::string& travel_mode) {
+    crow::json::wvalue::list stops;
+    crow::json::wvalue::list requested_places;
+    for (const auto& place : plan.places) {
+        stops.push_back(place.name);
+        crow::json::wvalue item;
+        item["name"] = place.name;
+        item["address"] = place.address;
+        item["city"] = place.city;
+        item["longitude"] = place.longitude;
+        item["latitude"] = place.latitude;
+        requested_places.push_back(std::move(item));
+    }
+
+    crow::json::wvalue::list segments;
+    crow::json::wvalue::list coordinates;
+    for (const auto& segment : plan.segments) {
+        crow::json::wvalue item;
+        item["from"] = segment.instruction.empty() ? "按路线前进" : segment.instruction;
+        item["to"] = segment.road;
+        item["transport"] = segment.transport;
+        item["transportMode"] = travel_mode;
+        item["distance"] = segment.distance;
+        item["duration"] = segment.duration;
+        item["congestion"] = 0;
+        segments.push_back(std::move(item));
+        append_polyline_coordinates(segment.polyline, coordinates);
+    }
+
+    if (coordinates.empty()) {
+        for (const auto& place : plan.places) {
+            crow::json::wvalue::list point;
+            point.push_back(place.latitude);
+            point.push_back(place.longitude);
+            coordinates.push_back(crow::json::wvalue(std::move(point)));
+        }
+    }
+
+    std::ostringstream distance;
+    distance << std::fixed << std::setprecision(1) << (plan.total_distance / 1000.0) << " km";
+
+    crow::json::wvalue data;
+    data["id"] = 0;
+    data["route_id"] = "amap-route";
+    data["title"] = plan.places.front().name + " 到 " + plan.places.back().name;
+    data["stops"] = std::move(stops);
+    data["requestedPlaces"] = std::move(requested_places);
+    data["segments"] = std::move(segments);
+    data["coordinates"] = std::move(coordinates);
+    data["distance"] = distance.str();
+    data["time"] = duration_label(std::to_string(plan.total_duration / 60));
+    data["cost"] = travel_mode == "walk" ? 0 : std::max(3, static_cast<int>(plan.total_distance / 1000.0 * 2));
+    data["intensity"] = plan.total_distance > 3500 ? "中等" : "轻松";
+    data["transport"] = amap_direction_transport(travel_mode);
+    data["bestFor"] = "高德路径规划";
+    data["total_distance_meters"] = static_cast<int>(plan.total_distance);
+    data["total_duration_seconds"] = plan.total_duration;
+    data["usedAmap"] = true;
+    data["usedTransportFallback"] = false;
+    return data;
+}
+
 crow::json::wvalue route_coordinates_json(const std::string& packed_coordinates) {
     crow::json::wvalue::list coordinates;
     for (const auto& point : split_pipe(packed_coordinates)) {
@@ -293,46 +1083,77 @@ crow::json::wvalue route_coordinates_json(const std::string& packed_coordinates)
     return crow::json::wvalue(std::move(coordinates));
 }
 
-std::string scenic_fallback_image(int id) {
-    static const std::vector<std::string> images = {
-        "https://images.unsplash.com/photo-1624193367099-c65ec0976e7e?auto=format&fit=crop&w=1200&q=80",
-        "https://images.unsplash.com/photo-1599571234909-29ed5d1321d6?auto=format&fit=crop&w=1200&q=80",
-        "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1200&q=80",
-        "https://images.unsplash.com/photo-1566054757965-8c4085344c96?auto=format&fit=crop&w=1200&q=80",
-        "https://images.unsplash.com/photo-1547981609-4b6bfe67ca0b?auto=format&fit=crop&w=1200&q=80",
-        "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=1200&q=80",
-        "https://images.unsplash.com/photo-1519608487953-e999c86e7455?auto=format&fit=crop&w=1200&q=80",
-        "https://images.unsplash.com/photo-1523906834658-6e24ef2386f9?auto=format&fit=crop&w=1200&q=80"
-    };
-    if (id >= 1 && id <= static_cast<int>(images.size())) return images[id - 1];
-    return "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1200&q=80";
+bool contains_any(const std::string& text, const std::vector<std::string>& needles) {
+    for (const auto& needle : needles) {
+        if (!needle.empty() && text.find(needle) != std::string::npos) return true;
+    }
+    return false;
 }
 
-std::string public_image_url(int id, const std::string& database_image) {
-    if (database_image.empty() || database_image.find("example.com") != std::string::npos) {
-        return scenic_fallback_image(id);
+bool unusable_image_url(const std::string& url) {
+    return url.empty() ||
+           url.find("example.com") != std::string::npos ||
+           url.find("upload.wikimedia.org") != std::string::npos ||
+           url.find("placeholder") != std::string::npos ||
+           url.find("undefined") != std::string::npos ||
+           url.find("null") != std::string::npos;
+}
+
+std::string scenic_fallback_image(const std::string& name, const std::string& category, const std::string& tags) {
+    std::string profile = name + " " + category + " " + tags;
+
+    if (contains_any(profile, {"博物馆", "展览", "纪念馆", "Museum"})) {
+        return "https://images.unsplash.com/photo-1566127992631-137a642a90f4?auto=format&fit=crop&w=1200&q=80";
     }
-    return split_pipe(database_image).empty() ? database_image : split_pipe(database_image).front();
+    if (contains_any(profile, {"公园", "园林", "植物园", "湿地", "湖", "山", "Park"})) {
+        return "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1200&q=80";
+    }
+    if (contains_any(profile, {"古迹", "遗址", "寺", "庙", "宫", "长城", "历史", "Historic"})) {
+        return "https://images.unsplash.com/photo-1513415756790-2ac1db1297d0?auto=format&fit=crop&w=1200&q=80";
+    }
+    if (contains_any(profile, {"商业", "步行街", "购物", "美食", "街区", "夜市"})) {
+        return "https://images.unsplash.com/photo-1519608487953-e999c86e7455?auto=format&fit=crop&w=1200&q=80";
+    }
+    if (contains_any(profile, {"海", "沙滩", "海滩", "岛", "湾"})) {
+        return "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1200&q=80";
+    }
+    return "https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?auto=format&fit=crop&w=1200&q=80";
+}
+
+std::string public_image_url(const std::string& database_image,
+                             const std::string& name,
+                             const std::string& category,
+                             const std::string& tags) {
+    auto parts = split_pipe(database_image);
+    std::string candidate = parts.empty() ? database_image : parts.front();
+    if (unusable_image_url(candidate)) {
+        return scenic_fallback_image(name, category, tags);
+    }
+    return candidate;
 }
 
 crow::json::wvalue scenic_json(const PgResult& rows, int row) {
     std::string image = first_nonempty({rows.value(row, "thumbnail_url"), rows.value(row, "images")});
     int id = to_int(rows.value(row, "id"));
+    std::string category = first_nonempty({rows.value(row, "category")}, "景点");
+    std::string tags = rows.value(row, "tags");
 
     crow::json::wvalue item;
     item["id"] = id;
     item["name"] = rows.value(row, "name");
-    item["category"] = first_nonempty({rows.value(row, "category")}, "景点");
+    item["category"] = category;
     item["district"] = first_nonempty({rows.value(row, "city"), rows.value(row, "address")}, "北京");
     item["rating"] = to_double(rows.value(row, "rating"));
     item["duration"] = duration_label(rows.value(row, "duration_minutes"));
     item["ticket"] = static_cast<int>(to_double(rows.value(row, "ticket_price")));
     item["crowd"] = crowd_label(to_int(rows.value(row, "crowd_level"), 2));
-    item["tags"] = string_list(split_pipe(rows.value(row, "tags")));
-    item["image"] = public_image_url(id, image);
+    item["tags"] = string_list(split_pipe(tags));
+    item["image"] = public_image_url(image, rows.value(row, "name"), category, tags);
     item["description"] = rows.value(row, "description");
     item["address"] = rows.value(row, "address");
     item["openingHours"] = rows.value(row, "opening_hours");
+    if (!rows.value(row, "search_score").empty()) item["score"] = to_double(rows.value(row, "search_score"));
+    if (!rows.value(row, "match_reason").empty()) item["matchReason"] = rows.value(row, "match_reason");
     return item;
 }
 
@@ -397,13 +1218,61 @@ const std::string scenic_select_sql = R"SQL(
            s.ticket_price, s.duration_minutes, s.crowd_level, s.thumbnail_url,
            COALESCE(c.name, '景点') AS category,
            COALESCE(array_to_string(s.tags, '|'), '') AS tags,
-           COALESCE(array_to_string(s.images, '|'), '') AS images
+           COALESCE(array_to_string(s.images, '|'), '') AS images,
+           (
+               CASE WHEN $2 = '' THEN 0 WHEN lower(s.name) = lower($2) THEN 120 ELSE 0 END +
+               CASE WHEN $2 = '' THEN 0 WHEN lower(s.name) LIKE lower($2) || '%' THEN 80 ELSE 0 END +
+               CASE WHEN $2 = '' THEN 0 WHEN lower(s.name) LIKE '%' || lower($2) || '%' THEN 60 ELSE 0 END +
+               CASE WHEN $2 = '' THEN 0 WHEN lower(COALESCE(c.name, '')) LIKE '%' || lower($2) || '%' THEN 42 ELSE 0 END +
+               CASE WHEN $2 = '' THEN 0 WHEN lower(COALESCE(array_to_string(s.tags, ' '), '')) LIKE '%' || lower($2) || '%' THEN 48 ELSE 0 END +
+               CASE WHEN $2 = '' THEN 0 WHEN lower(COALESCE(s.description, '')) LIKE '%' || lower($2) || '%' THEN 18 ELSE 0 END +
+               (s.rating * 8) +
+               LEAST(s.favorite_count, 10000) / 500.0 +
+               LEAST(s.view_count, 100000) / 5000.0
+           )::numeric(10,2) AS search_score,
+           CASE
+               WHEN $2 = '' THEN '综合评分和热度排序'
+               WHEN lower(s.name) = lower($2) THEN '名称精确匹配'
+               WHEN lower(s.name) LIKE lower($2) || '%' THEN '名称前缀匹配'
+               WHEN lower(s.name) LIKE '%' || lower($2) || '%' THEN '名称包含关键词'
+               WHEN lower(COALESCE(array_to_string(s.tags, ' '), '')) LIKE '%' || lower($2) || '%' THEN '标签匹配'
+               WHEN lower(COALESCE(c.name, '')) LIKE '%' || lower($2) || '%' THEN '类型匹配'
+               ELSE '描述内容匹配'
+           END AS match_reason
     FROM scenic_spots s
     LEFT JOIN categories c ON c.id = s.category_id
     WHERE s.status = 1
       AND ($1 = '' OR c.name = $1)
-      AND ($2 = '' OR lower(s.name || ' ' || COALESCE(s.description, '') || ' ' || COALESCE(c.name, '')) LIKE '%' || lower($2) || '%')
-    ORDER BY s.rating DESC, s.view_count DESC, s.id
+      AND ($3 = '' OR s.ticket_price <= $3::numeric)
+      AND (
+          $2 = ''
+          OR lower(s.name) LIKE '%' || lower($2) || '%'
+          OR lower(COALESCE(c.name, '')) LIKE '%' || lower($2) || '%'
+          OR lower(COALESCE(array_to_string(s.tags, ' '), '')) LIKE '%' || lower($2) || '%'
+          OR (
+              NOT EXISTS (
+                  SELECT 1
+                  FROM scenic_spots candidate
+                  LEFT JOIN categories candidate_category ON candidate_category.id = candidate.category_id
+                  WHERE candidate.status = 1
+                    AND (
+                        lower(candidate.name) LIKE '%' || lower($2) || '%'
+                        OR lower(COALESCE(candidate_category.name, '')) LIKE '%' || lower($2) || '%'
+                        OR lower(COALESCE(array_to_string(candidate.tags, ' '), '')) LIKE '%' || lower($2) || '%'
+                    )
+              )
+              AND lower(COALESCE(s.description, '')) LIKE '%' || lower($2) || '%'
+          )
+      )
+    ORDER BY
+      CASE WHEN $4 = 'rating' THEN s.rating END DESC,
+      CASE WHEN $4 = 'price' THEN s.ticket_price END ASC,
+      CASE WHEN $4 = 'hot' THEN s.view_count END DESC,
+      search_score DESC,
+      s.rating DESC,
+      s.view_count DESC,
+      s.id
+    LIMIT $5::int
 )SQL";
 
 const std::string diary_select_sql = R"SQL(
@@ -419,8 +1288,11 @@ crow::response list_scenic(const crow::request& req) {
     try {
         std::string category = req.url_params.get("category") ? req.url_params.get("category") : "";
         std::string query = req.url_params.get("q") ? req.url_params.get("q") : "";
+        std::string max_ticket = req.url_params.get("max_ticket") ? req.url_params.get("max_ticket") : "";
+        std::string sort = req.url_params.get("sort") ? req.url_params.get("sort") : "relevance";
+        std::string limit = req.url_params.get("limit") ? req.url_params.get("limit") : "50";
         PgConnection db;
-        auto rows = exec_params(db, scenic_select_sql, {category, query});
+        auto rows = exec_params(db, scenic_select_sql, {category, query, max_ticket, sort, limit});
 
         crow::json::wvalue::list items;
         for (int row = 0; row < rows.rows(); ++row) items.push_back(scenic_json(rows, row));
@@ -563,6 +1435,36 @@ int main(int argc, char** argv) {
         return list_scenic(req);
     });
 
+    CROW_ROUTE(app, "/api/v1/search/suggestions")([](const crow::request& req) -> crow::response {
+        try {
+            std::string query = req.url_params.get("q") ? req.url_params.get("q") : "";
+            PgConnection db;
+            auto rows = exec_params(db, R"SQL(
+                SELECT keyword
+                FROM (
+                    SELECT name AS keyword, 1 AS rank FROM scenic_spots WHERE status = 1
+                    UNION
+                    SELECT c.name AS keyword, 2 AS rank FROM categories c
+                    UNION
+                    SELECT unnest(tags) AS keyword, 3 AS rank FROM scenic_spots WHERE status = 1
+                ) source
+                WHERE $1 = '' OR lower(keyword) LIKE '%' || lower($1) || '%'
+                GROUP BY keyword
+                ORDER BY MIN(rank), keyword
+                LIMIT 8
+            )SQL", {query});
+
+            crow::json::wvalue::list items;
+            for (int row = 0; row < rows.rows(); ++row) items.push_back(rows.value(row, "keyword"));
+
+            crow::json::wvalue data;
+            data["items"] = std::move(items);
+            return crow::response(ok(std::move(data)));
+        } catch (const std::exception& error) {
+            return json_error(500, error.what());
+        }
+    });
+
     CROW_ROUTE(app, "/api/v1/scenic-spots/<int>")([](int id) -> crow::response {
         try {
             PgConnection db;
@@ -636,7 +1538,7 @@ int main(int argc, char** argv) {
             int limit = 10;
             if (auto limit_param = req.url_params.get("limit")) limit = std::stoi(limit_param);
             PgConnection db;
-            auto rows = exec_params(db, scenic_select_sql + " LIMIT " + std::to_string(limit), {"", ""});
+            auto rows = exec_params(db, scenic_select_sql, {"", "", "", "rating", std::to_string(limit)});
             crow::json::wvalue::list items;
             for (int row = 0; row < rows.rows(); ++row) {
                 crow::json::wvalue rec;
@@ -647,6 +1549,31 @@ int main(int argc, char** argv) {
             }
             crow::json::wvalue data;
             data["recommendations"] = std::move(items);
+            return crow::response(ok(std::move(data)));
+        } catch (const std::exception& error) {
+            return json_error(500, error.what());
+        }
+    });
+
+    CROW_ROUTE(app, "/api/v1/route-nodes")([]() -> crow::response {
+        try {
+            PgConnection db;
+            RouteGraphData graph = load_route_graph(db);
+
+            std::vector<RouteNode> nodes;
+            nodes.reserve(graph.nodes.size());
+            for (const auto& [id, node] : graph.nodes) nodes.push_back(node);
+            std::sort(nodes.begin(), nodes.end(), [](const RouteNode& left, const RouteNode& right) {
+                if (left.type != right.type) return left.type > right.type;
+                return left.id < right.id;
+            });
+
+            crow::json::wvalue::list items;
+            for (const auto& node : nodes) items.push_back(route_node_json(node));
+
+            crow::json::wvalue data;
+            data["total"] = static_cast<int>(items.size());
+            data["items"] = std::move(items);
             return crow::response(ok(std::move(data)));
         } catch (const std::exception& error) {
             return json_error(500, error.what());
@@ -687,33 +1614,63 @@ int main(int argc, char** argv) {
         }
     });
 
-    CROW_ROUTE(app, "/api/v1/routes/plan").methods("POST"_method)([](const crow::request&) -> crow::response {
+    CROW_ROUTE(app, "/api/v1/routes/plan").methods("POST"_method)([](const crow::request& req) -> crow::response {
         try {
+            auto body = crow::json::load(req.body);
+            if (!body) return json_error(400, "Invalid JSON");
+
+            int start_node_id = json_int(body, "startNodeId");
+            int end_node_id = json_int(body, "endNodeId");
+            std::vector<int> waypoints = json_int_array(body, "waypointNodeIds");
+            std::string start_text = trim_text(json_string(body, "startText"));
+            std::string end_text = trim_text(json_string(body, "endText"));
+            std::vector<std::string> waypoint_texts = json_string_array(body, "waypointTexts");
+            std::string raw_transport = json_string(body, "travelMode", "mixed");
+            std::string transport = normalize_transport(raw_transport);
+            std::string optimization = normalize_optimization(json_string(body, "optimization", "balanced"));
+            int crowd_tolerance = std::max(1, std::min(4, json_int(body, "crowdTolerance", 3)));
+            std::string city = trim_text(json_string(body, "city", "北京"));
+
+            if (!start_text.empty() || !end_text.empty()) {
+                if (start_text.empty() || end_text.empty()) {
+                    return json_error(400, "请输入出发点和目的地");
+                }
+                std::string key = amap_key();
+                if (key.empty()) {
+                    return json_error(500, "后端未设置 AMAP_WEB_SERVICE_KEY，无法使用高德路径规划");
+                }
+
+                std::vector<std::string> place_texts;
+                place_texts.push_back(start_text);
+                for (const auto& waypoint : waypoint_texts) place_texts.push_back(waypoint);
+                place_texts.push_back(end_text);
+
+                std::string amap_mode = raw_transport == "driving" || raw_transport == "car" ? "driving" :
+                                        raw_transport == "bike" ? "bike" :
+                                        raw_transport == "transit" || raw_transport == "bus" || raw_transport == "subway" ? raw_transport :
+                                        "walk";
+                AmapRoutePlan route = plan_amap_route(key, city, amap_mode, place_texts);
+                return crow::response(ok(amap_route_json(route, amap_mode)));
+            }
+
+            if (start_node_id <= 0 || end_node_id <= 0) {
+                return json_error(400, "请选择起点和终点");
+            }
+
             PgConnection db;
-            auto rows = exec_sql(db, R"SQL(
-                SELECT rp.id::text, rp.title, rp.travel_mode, rp.total_distance::text,
-                       rp.total_duration::text, rp.optimization_type,
-                       COALESCE((
-                           SELECT string_agg((point.value->>0) || ',' || (point.value->>1), '|' ORDER BY point.ordinality)
-                           FROM jsonb_array_elements(rp.route_geometry->'coordinates') WITH ORDINALITY AS point(value, ordinality)
-                       ), '') AS coordinates,
-                       COALESCE(array_to_string(ARRAY(
-                           SELECT gn.name
-                           FROM unnest(array_cat(ARRAY[rp.start_node_id],
-                                array_cat(COALESCE(rp.waypoint_node_ids, ARRAY[]::integer[]), ARRAY[rp.end_node_id])))
-                                WITH ORDINALITY AS ids(node_id, ord)
-                           JOIN graph_nodes gn ON gn.id = ids.node_id
-                           ORDER BY ids.ord
-                       ), '|'), '') AS stops
-                FROM route_plans rp
-                ORDER BY rp.id
-                LIMIT 1
-            )SQL");
-            if (rows.rows() == 0) return json_error(404, "No route plan found");
-            crow::json::wvalue data = route_json(rows, 0);
-            data["route_id"] = "db-route-" + rows.value(0, "id");
-            data["total_distance_meters"] = to_int(rows.value(0, "total_distance"));
-            data["total_duration_seconds"] = to_int(rows.value(0, "total_duration"));
+            RouteGraphData graph = load_route_graph(db);
+
+            std::vector<int> points;
+            points.push_back(start_node_id);
+            for (int waypoint : waypoints) {
+                if (waypoint != start_node_id && waypoint != end_node_id) points.push_back(waypoint);
+            }
+            points.push_back(end_node_id);
+
+            RouteSearchResult route = plan_route_with_waypoints(graph, points, transport, optimization, crowd_tolerance);
+            if (!route.success) return json_error(404, route.error.empty() ? "无法规划路线" : route.error);
+
+            crow::json::wvalue data = computed_route_json(graph, route, optimization, transport);
             return crow::response(ok(std::move(data)));
         } catch (const std::exception& error) {
             return json_error(500, error.what());

@@ -1,17 +1,32 @@
 <template>
   <div class="space-y-6">
-    <section class="grid gap-6 lg:grid-cols-[0.75fr_1.25fr]">
+    <section class="grid gap-6 lg:grid-cols-[0.72fr_1.28fr]">
       <div class="rounded-md border border-slate-200 bg-white p-5">
         <h1 class="text-2xl font-bold">发现景点</h1>
-        <p class="mt-2 text-sm leading-6 text-slate-500">搜索景点名称、类型、标签或描述，快速找到适合自己的目的地。</p>
+        <p class="mt-2 text-sm leading-6 text-slate-500">按关键词、类型、价格和排序规则检索景点。</p>
 
         <form class="mt-5 space-y-4" @submit.prevent="runSearch">
-          <input
-            v-model="query"
-            class="h-11 w-full rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-teal-700"
-            placeholder="例如：故宫、博物馆、摄影、低预算"
-            type="search"
-          >
+          <div>
+            <label class="text-sm font-semibold text-slate-700">关键词</label>
+            <input
+              v-model="query"
+              class="mt-2 h-11 w-full rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-teal-700"
+              placeholder="故宫、博物馆、摄影、低预算"
+              type="search"
+              @input="loadSuggestions"
+            >
+            <div v-if="suggestions.length" class="mt-2 flex flex-wrap gap-2">
+              <button
+                v-for="item in suggestions"
+                :key="item"
+                type="button"
+                class="rounded-md bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-teal-50 hover:text-teal-800"
+                @click="useSuggestion(item)"
+              >
+                {{ item }}
+              </button>
+            </div>
+          </div>
 
           <div>
             <label class="text-sm font-semibold text-slate-700">景点类型</label>
@@ -29,6 +44,16 @@
             </div>
           </div>
 
+          <div>
+            <label class="text-sm font-semibold text-slate-700">排序方式</label>
+            <select v-model="sort" class="mt-2 h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm outline-none focus:border-teal-700">
+              <option value="relevance">相关度优先</option>
+              <option value="rating">评分优先</option>
+              <option value="price">低价优先</option>
+              <option value="hot">热度优先</option>
+            </select>
+          </div>
+
           <button class="w-full rounded-md bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800">
             搜索景点
           </button>
@@ -39,14 +64,14 @@
         <div class="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 class="text-lg font-semibold">搜索结果</h2>
-            <p class="mt-1 text-sm text-slate-500">共找到 {{ filteredSpots.length }} 个景点</p>
+            <p class="mt-1 text-sm text-slate-500">找到 {{ spots.length }} 个景点，结果由后端相关度算法排序。</p>
           </div>
           <span class="rounded-md bg-teal-50 px-3 py-1 text-sm font-semibold text-teal-800">{{ sourceLabel }}</span>
         </div>
 
         <div class="mt-5 grid gap-4 md:grid-cols-2">
           <router-link
-            v-for="spot in filteredSpots"
+            v-for="spot in spots"
             :key="spot.id"
             :to="`/spots/${spot.id}`"
             class="overflow-hidden rounded-md border border-slate-200 bg-white transition hover:-translate-y-0.5 hover:border-teal-700 hover:shadow-sm"
@@ -68,11 +93,15 @@
                 <span>门票 ¥{{ spot.ticket }}</span>
                 <span>{{ spot.duration }}</span>
               </div>
+              <div class="mt-3 flex items-center justify-between text-xs">
+                <span class="rounded-md bg-teal-50 px-2 py-1 font-medium text-teal-800">{{ spot.matchReason || '综合推荐' }}</span>
+                <span class="font-semibold text-slate-500">相关度 {{ Math.round(Number(spot.score || 0)) }}</span>
+              </div>
             </div>
           </router-link>
         </div>
 
-        <div v-if="!filteredSpots.length" class="mt-5 rounded-md border border-dashed border-slate-300 p-8 text-center">
+        <div v-if="!spots.length" class="mt-5 rounded-md border border-dashed border-slate-300 p-8 text-center">
           <div class="text-lg font-semibold">没有找到匹配景点</div>
           <p class="mt-2 text-sm text-slate-500">试试缩短关键词，或放宽门票预算。</p>
         </div>
@@ -93,31 +122,33 @@ const router = useRouter()
 const query = ref(typeof route.query.q === 'string' ? route.query.q : '')
 const category = ref('')
 const maxTicket = ref(120)
+const sort = ref('relevance')
 const spots = ref(fallbackSpots)
+const suggestions = ref([])
 const sourceLabel = ref('本地数据')
 
 const categories = computed(() => [...new Set(spots.value.map(spot => spot.category).filter(Boolean))])
 
-const filteredSpots = computed(() => {
-  const keyword = query.value.trim().toLowerCase()
-  return spots.value
-    .filter(spot => !category.value || spot.category === category.value)
-    .filter(spot => Number(spot.ticket ?? 0) <= maxTicket.value)
-    .filter(spot => {
-      if (!keyword) return true
-      return [spot.name, spot.category, spot.district, spot.description, ...(spot.tags || [])]
-        .join(' ')
-        .toLowerCase()
-        .includes(keyword)
-    })
-    .sort((a, b) => Number(b.rating || 0) - Number(a.rating || 0))
-})
+const loadSuggestions = async () => {
+  try {
+    const response = await tourismApi.searchSuggestions({ q: query.value.trim() })
+    suggestions.value = response.items || []
+  } catch (error) {
+    suggestions.value = []
+  }
+}
 
 const loadSpots = async () => {
   try {
-    const response = await tourismApi.scenicSpots({ q: query.value.trim() })
-    spots.value = response.items?.length ? response.items : fallbackSpots
-    sourceLabel.value = response.items?.length ? '数据库结果' : '本地数据'
+    const response = await tourismApi.scenicSpots({
+      q: query.value.trim(),
+      category: category.value,
+      max_ticket: String(maxTicket.value),
+      sort: sort.value,
+      limit: 50
+    })
+    spots.value = response.items || []
+    sourceLabel.value = '数据库检索'
   } catch (error) {
     spots.value = fallbackSpots
     sourceLabel.value = '本地数据'
@@ -127,6 +158,12 @@ const loadSpots = async () => {
 const runSearch = () => {
   router.push({ path: '/search', query: query.value.trim() ? { q: query.value.trim() } : {} })
   loadSpots()
+  loadSuggestions()
+}
+
+const useSuggestion = (item) => {
+  query.value = item
+  runSearch()
 }
 
 watch(
@@ -134,8 +171,14 @@ watch(
   value => {
     query.value = typeof value === 'string' ? value : ''
     loadSpots()
+    loadSuggestions()
   }
 )
 
-onMounted(loadSpots)
+watch([category, maxTicket, sort], loadSpots)
+
+onMounted(() => {
+  loadSpots()
+  loadSuggestions()
+})
 </script>

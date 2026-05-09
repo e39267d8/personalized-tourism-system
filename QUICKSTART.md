@@ -127,3 +127,15 @@ http://127.0.0.1:3000/
 - AIGC 摘要/润色是占位逻辑
 - 路线规划接口还没有真正调用 Dijkstra 动态计算
 - 当前没有接入高德实时数据
+
+## 8. 可选：导入高德 POI 数据
+
+如果你有高德开放平台 Web 服务 Key，可以先生成 SQL，再导入数据库：
+
+```bat
+cd C:\Users\seele\Desktop\code\personalized-tourism-system
+python scripts\import_amap_pois.py --key 你的高德Key --city 北京 --keywords 景点 --output database\amap_pois.sql
+psql -U postgres -d tourism_system -f database\amap_pois.sql
+```
+
+导入后重新打开搜索页，站内搜索会自动检索新增景点。

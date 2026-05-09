@@ -97,7 +97,7 @@ endif()
 target_link_libraries(tourism_server PRIVATE ${PostgreSQL_LIBRARIES})
 
 if(WIN32)
-    target_link_libraries(tourism_server PRIVATE ws2_32 wsock32)
+    target_link_libraries(tourism_server PRIVATE ws2_32 wsock32 wininet)
 endif()
 
 # ============================================
