@@ -134,7 +134,7 @@ export const budgetPlans = [
     title: '中轴线完整体验',
     route: '前门 -> 天安门 -> 故宫 -> 景山',
     includes: ['核心门票约 62 元', '餐饮约 80 元', '交通约 20 元'],
-    tradeoff: '体验完整，适合课程演示和首次旅游用户。'
+    tradeoff: '体验完整，适合首次到访的旅行者。'
   },
   {
     id: 'comfort',
@@ -390,8 +390,8 @@ export const achievements = [
 ]
 
 export const dashboardStats = [
-  { label: '演示景点', value: '8', detail: '含地理坐标与标签' },
-  { label: '路线边', value: '32', detail: '支持 Dijkstra 演示' },
+  { label: '精选景点', value: '8', detail: '含地理坐标与标签' },
+  { label: '路线连接', value: '32', detail: '支持城市路线规划' },
   { label: '游记样例', value: '3', detail: '可编辑可扩展' },
-  { label: '成就徽章', value: '4', detail: '适合答辩展示' }
+  { label: '成就徽章', value: '4', detail: '记录旅行成长' }
 ]

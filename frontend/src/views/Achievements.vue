@@ -6,7 +6,7 @@
           <div class="inline-flex rounded-md bg-amber-50 px-3 py-1 text-sm font-semibold text-amber-800">成长体系</div>
           <h1 class="mt-4 text-3xl font-bold tracking-tight text-slate-950">成就系统与数字纪念章</h1>
           <p class="mt-3 max-w-2xl text-sm leading-7 text-slate-600">
-            把路线完成、游记发布、预算控制和景点评价转化为可展示的徽章，增强用户留存，也适合课程展示“旅游后”场景。
+            把路线完成、游记发布、预算控制和景点评价转化为可收藏的徽章，记录每一次旅行成长。
           </p>
         </div>
         <div class="grid grid-cols-3 gap-3">
@@ -68,7 +68,7 @@
         <div class="flex items-center justify-between">
           <div>
             <h2 class="text-lg font-semibold text-slate-950">数字纪念章</h2>
-            <p class="mt-1 text-sm text-slate-500">先做展示，后续可接真实链上或本地证书。</p>
+            <p class="mt-1 text-sm text-slate-500">记录旅程中的主题探索、内容创作与路线完成进度。</p>
           </div>
           <button class="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100">生成证书</button>
         </div>
@@ -105,12 +105,12 @@ const rules = [
 const collectibles = [
   {
     name: '中轴线纪念章',
-    token: 'DEMO-AXIS-001',
-    copy: '完成北京中轴线演示路线后获得，用于展示旅游后的沉淀体验。'
+    token: 'AXIS-001',
+    copy: '完成北京中轴线主题路线后获得，记录一次完整的历史文化探索。'
   },
   {
     name: '老城漫步纪念章',
-    token: 'DEMO-WALK-001',
+    token: 'WALK-001',
     copy: '完成鼓楼到北海 citywalk 并发布游记后获得。'
   }
 ]

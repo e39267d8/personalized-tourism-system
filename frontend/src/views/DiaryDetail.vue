@@ -125,6 +125,13 @@ const displayScore = computed(() => {
 const ratingCount = computed(() => diary.value.ratingCount || 0)
 
 async function loadDiary() {
+  // Prefer the just-published client copy so detail uses the same uploaded image
+  // that the plaza card is already showing.
+  if (diaryStore.justPublished && diaryStore.justPublished.id === props.id) {
+    diary.value = { ...diaryStore.justPublished }
+    return
+  }
+
   try {
     const data = await tourismApi.diaryDetail(props.id)
     diary.value = data

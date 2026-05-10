@@ -7,8 +7,14 @@
         :src="currentImage"
         :alt="diary.title"
         class="w-full h-full object-cover"
+        @error="handleImageError"
       />
-      <div v-else class="text-slate-400 text-sm">No Image</div>
+      <img
+        v-else
+        :src="fallbackImage"
+        :alt="diary.title"
+        class="w-full h-full object-cover"
+      />
 
       <!-- Navigation arrows -->
       <template v-if="imageList.length > 1">
@@ -80,6 +86,7 @@
 
 <script setup>
 import { ref, computed } from 'vue'
+import { diaryDisplayImages, diaryFallbackImage, handleDiaryImageError } from '@/utils/images'
 
 const props = defineProps({
   diary: { type: Object, required: true }
@@ -88,12 +95,16 @@ const props = defineProps({
 const currentIdx = ref(0)
 
 const imageList = computed(() => {
-  if (props.diary.images && props.diary.images.length) return props.diary.images
-  if (props.diary.cover) return [props.diary.cover]
-  return []
+  return diaryDisplayImages(props.diary)
 })
 
+const fallbackImage = computed(() => diaryFallbackImage(props.diary))
+
 const currentImage = computed(() => imageList.value[currentIdx.value] || '')
+
+function handleImageError(event) {
+  handleDiaryImageError(event, props.diary)
+}
 
 function prevImage() {
   currentIdx.value = (currentIdx.value - 1 + imageList.value.length) % imageList.value.length

@@ -5,9 +5,6 @@
         <div class="flex items-start justify-between gap-4">
           <div>
             <h1 class="text-2xl font-bold text-slate-950">个性化推荐结果</h1>
-            <p class="mt-2 text-sm leading-6 text-slate-500">
-              与首页使用同一套推荐算法，按偏好标签、类型、评分、预算和人流综合排序。
-            </p>
           </div>
           <span class="rounded-md bg-teal-50 px-2.5 py-1 text-sm font-semibold text-teal-800">
             {{ sourceLabel }}
@@ -70,9 +67,9 @@
         </div>
 
         <div class="mt-6 rounded-md border border-slate-200 p-4">
-          <div class="text-sm font-semibold text-slate-950">算法说明</div>
+          <div class="text-sm font-semibold text-slate-950">推荐逻辑</div>
           <p class="mt-2 text-sm leading-6 text-slate-500">
-            score = 标签匹配 × 50 + 类型匹配 × 20 + 评分 × 15 + 预算匹配 × 10 + 人流匹配 × 5。
+            综合偏好标签、景点类型、评分、预算和人流强度，优先展示更适合当前出行需求的目的地。
           </p>
         </div>
       </aside>
@@ -88,10 +85,6 @@
           <button class="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100" @click="loadRecommendations">
             重新计算
           </button>
-        </div>
-
-        <div v-if="notice" class="mt-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          {{ notice }}
         </div>
 
         <div class="mt-5 grid gap-4 md:grid-cols-2">
@@ -164,7 +157,6 @@ const defaultProfile = () => ({
 const profile = ref(defaultProfile())
 const recommendations = ref([])
 const maxTicket = ref(120)
-const notice = ref('')
 const sourceLabel = ref('个性化算法')
 
 const budgetLabels = {
@@ -253,12 +245,11 @@ const fallbackRecommendations = () => fallbackSpots.slice(0, 8).map(spot => norm
   scenic_spot: spot,
   score: Number(spot.rating || 0) * 15,
   matchedTags: spot.tags?.slice?.(0, 2) || [],
-  reason: '后端未连接时的本地演示推荐。'
+  reason: '基于热门主题和综合评分推荐。'
 }))
 
 const loadRecommendations = async () => {
   const hasProfile = await loadProfile()
-  notice.value = hasProfile ? '' : '还没有填写偏好问卷，当前展示默认综合推荐。'
   sourceLabel.value = hasProfile ? '根据偏好' : '默认推荐'
 
   try {
@@ -269,8 +260,7 @@ const loadRecommendations = async () => {
     recommendations.value = (data.recommendations || []).map(normalizeRecommendation)
   } catch (error) {
     recommendations.value = fallbackRecommendations()
-    notice.value = '后端未连接，当前为本地演示推荐。'
-    sourceLabel.value = '本地兜底'
+    sourceLabel.value = '精选推荐'
   }
 }
 

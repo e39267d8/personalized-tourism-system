@@ -3,8 +3,6 @@
     <section class="grid gap-6 lg:grid-cols-[0.72fr_1.28fr]">
       <div class="rounded-md border border-slate-200 bg-white p-5">
         <h1 class="text-2xl font-bold">发现景点</h1>
-        <p class="mt-2 text-sm leading-6 text-slate-500">按关键词、类型、价格和排序规则检索景点。</p>
-
         <form class="mt-5 space-y-4" @submit.prevent="runSearch">
           <div>
             <label class="text-sm font-semibold text-slate-700">关键词</label>
@@ -64,7 +62,7 @@
         <div class="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 class="text-lg font-semibold">搜索结果</h2>
-            <p class="mt-1 text-sm text-slate-500">找到 {{ spots.length }} 个景点，结果由后端相关度算法排序。</p>
+            <p class="mt-1 text-sm text-slate-500">找到 {{ spots.length }} 个景点，已按综合相关度排序。</p>
           </div>
           <span class="rounded-md bg-teal-50 px-3 py-1 text-sm font-semibold text-teal-800">{{ sourceLabel }}</span>
         </div>
@@ -131,7 +129,7 @@ const maxTicket = ref(120)
 const sort = ref('relevance')
 const spots = ref(fallbackSpots)
 const suggestions = ref([])
-const sourceLabel = ref('本地数据')
+const sourceLabel = ref('精选景点')
 
 const categories = computed(() => [...new Set(spots.value.map(spot => spot.category).filter(Boolean))])
 
@@ -154,10 +152,10 @@ const loadSpots = async () => {
       limit: 50
     })
     spots.value = response.items || []
-    sourceLabel.value = '数据库检索'
+    sourceLabel.value = '智能检索'
   } catch (error) {
     spots.value = fallbackSpots
-    sourceLabel.value = '本地数据'
+    sourceLabel.value = '精选景点'
   }
 }
 

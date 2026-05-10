@@ -53,6 +53,10 @@
           </label>
         </div>
 
+        <div v-if="isProcessingImages || imageUploadError" class="mt-3 rounded-lg border px-3 py-2 text-xs" :class="imageUploadError ? 'border-rose-100 bg-rose-50 text-rose-600' : 'border-teal-100 bg-teal-50 text-teal-700'">
+          {{ imageUploadError || '正在压缩图片...' }}
+        </div>
+
         <!-- Empty state -->
         <div v-if="!form.images.length" class="flex-1 flex flex-col items-center justify-center py-12">
           <label class="flex flex-col items-center cursor-pointer group">
@@ -189,7 +193,14 @@
 
           <!-- Writing area -->
           <div class="flex-1 rounded-lg bg-slate-50/50 focus-within:bg-white focus-within:shadow-inner transition-all">
-            <editor-content :editor="editor" class="px-4 py-3 prose-editor" />
+            <div
+              ref="editorEl"
+              class="px-4 py-3 prose-editor"
+              contenteditable="true"
+              data-placeholder="开始写你的旅行故事..."
+              @input="syncEditorContent"
+              @blur="syncEditorContent"
+            />
           </div>
         </div>
 
@@ -219,7 +230,7 @@
       <div class="flex items-center gap-2.5">
         <button
           @click="saveDraft"
-          :disabled="saving"
+          :disabled="saving || isProcessingImages"
           class="rounded-lg border border-slate-200 px-3.5 py-2 text-sm text-slate-600 hover:bg-slate-50 transition disabled:opacity-50"
         >
           {{ saving ? '保存中...' : '存草稿' }}
@@ -232,7 +243,7 @@
         </button>
         <button
           @click="publishDiary"
-          :disabled="saving"
+          :disabled="saving || isProcessingImages"
           class="rounded-lg px-5 py-2 text-sm font-medium bg-teal-700 text-white hover:bg-teal-800 shadow-sm transition disabled:opacity-50"
         >
           发布
@@ -258,23 +269,25 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { useEditor, EditorContent } from '@tiptap/vue-3'
-import StarterKit from '@tiptap/starter-kit'
-import Underline from '@tiptap/extension-underline'
-import Image from '@tiptap/extension-image'
-import Placeholder from '@tiptap/extension-placeholder'
 import DiaryPostcard from '@/components/DiaryPostcard.vue'
 import { tourismApi } from '@/services/tourismApi'
 import { diaries as demoDiaries } from '@/data/demoData'
 import { diaryStore, setJustPublished } from '@/stores/diaryStore'
+import { normalizeDiaryImages } from '@/utils/images'
 
 const props = defineProps({
   id: { type: Number, default: 0 }
 })
 
 const router = useRouter()
+
+const MAX_DIARY_IMAGES = 9
+const MAX_DIARY_IMAGE_DIMENSION = 1600
+const MAX_DIARY_IMAGE_BYTES = 900 * 1024
+const INITIAL_IMAGE_QUALITY = 0.82
+const MIN_IMAGE_QUALITY = 0.58
 
 const form = ref({
   title: '',
@@ -286,10 +299,14 @@ const form = ref({
 })
 const tagInput = ref('')
 const saving = ref(false)
+const isProcessingImages = ref(false)
+const imageUploadError = ref('')
 const showPreview = ref(false)
 const showMoodPicker = ref(false)
 const showEmojiPicker = ref(false)
 const currentPreviewIdx = ref(0)
+const editorEl = ref(null)
+const editorHtml = ref('')
 
 // Mood options
 const moodOptions = [
@@ -336,31 +353,125 @@ const contentLength = computed(() => {
   return text.length
 })
 
-const previewDiary = computed(() => ({
-  title: form.value.title || '未命名日记',
-  content: editor.value?.getHTML() || '',
-  images: form.value.images,
-  cover: form.value.images[0] || '',
-  date: form.value.date,
-  location: form.value.location,
-  mood: form.value.mood,
-  tags: parsedTags.value,
-  author: { nickname: diaryStore.user.nickname, avatar: '' }
+const normalizedFormImages = computed(() => normalizeDiaryImages({
+  ...form.value,
+  cover: form.value.images[0],
+  tags: parsedTags.value
 }))
 
-// Tiptap Editor
-const editor = useEditor({
-  extensions: [
-    StarterKit,
-    Underline,
-    Image,
-    Placeholder.configure({ placeholder: '开始写你的旅行故事...' })
-  ],
-  content: '',
-  editorProps: {
-    attributes: {
-      class: 'outline-none min-h-[260px] text-slate-700 text-[15px] leading-8 tracking-wide'
+const previewDiary = computed(() => {
+  const images = normalizedFormImages.value
+  return {
+    title: form.value.title || '未命名日记',
+    content: editor.value?.getHTML() || '',
+    images,
+    cover: images[0] || '',
+    date: form.value.date,
+    location: form.value.location,
+    mood: form.value.mood,
+    tags: parsedTags.value,
+    author: { nickname: diaryStore.user.nickname, avatar: '' },
+    disableLocalImageFallback: true
+  }
+})
+
+function syncEditorContent() {
+  editorHtml.value = editorEl.value?.innerHTML || ''
+}
+
+function setEditorContent(html = '') {
+  editorHtml.value = html
+  if (editorEl.value) {
+    editorEl.value.innerHTML = html
+  }
+}
+
+function focusEditor() {
+  editorEl.value?.focus()
+}
+
+function execEditorCommand(command, value = null) {
+  focusEditor()
+  document.execCommand(command, false, value)
+  syncEditorContent()
+}
+
+function createEditorChain() {
+  const chain = {
+    focus() {
+      focusEditor()
+      return chain
+    },
+    toggleHeading({ level }) {
+      execEditorCommand('formatBlock', `H${level}`)
+      return chain
+    },
+    setParagraph() {
+      execEditorCommand('formatBlock', 'P')
+      return chain
+    },
+    toggleBold() {
+      execEditorCommand('bold')
+      return chain
+    },
+    toggleItalic() {
+      execEditorCommand('italic')
+      return chain
+    },
+    toggleUnderline() {
+      execEditorCommand('underline')
+      return chain
+    },
+    toggleStrike() {
+      execEditorCommand('strikeThrough')
+      return chain
+    },
+    toggleBulletList() {
+      execEditorCommand('insertUnorderedList')
+      return chain
+    },
+    toggleOrderedList() {
+      execEditorCommand('insertOrderedList')
+      return chain
+    },
+    toggleBlockquote() {
+      execEditorCommand('formatBlock', 'BLOCKQUOTE')
+      return chain
+    },
+    insertContent(value) {
+      execEditorCommand('insertText', value)
+      return chain
+    },
+    undo() {
+      execEditorCommand('undo')
+      return chain
+    },
+    redo() {
+      execEditorCommand('redo')
+      return chain
+    },
+    run() {
+      syncEditorContent()
+      return true
     }
+  }
+  return chain
+}
+
+const editor = ref({
+  chain: createEditorChain,
+  commands: {
+    setContent: setEditorContent
+  },
+  getHTML() {
+    syncEditorContent()
+    return editorHtml.value
+  },
+  getText() {
+    return editorEl.value?.innerText || editorHtml.value.replace(/<[^>]*>/g, '')
+  },
+  isActive() {
+    return false
   }
 })
 
@@ -379,23 +490,93 @@ function inlineBtnClass(active) {
 }
 
 // Image handling
-function handleImageUpload(event) {
-  const files = Array.from(event.target.files)
-  const remaining = 9 - form.value.images.length
-  const filesToProcess = files.slice(0, remaining)
+function estimateDataUrlBytes(dataUrl) {
+  const base64 = String(dataUrl).split(',')[1] || ''
+  return Math.ceil(base64.length * 0.75)
+}
 
-  filesToProcess.forEach(file => {
-    const reader = new FileReader()
-    reader.onload = (e) => {
-      form.value.images.push(e.target.result)
+function loadImageFromFile(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file)
+    const image = new Image()
+    image.onload = () => {
+      URL.revokeObjectURL(url)
+      resolve(image)
     }
-    reader.readAsDataURL(file)
+    image.onerror = () => {
+      URL.revokeObjectURL(url)
+      reject(new Error('Image load failed'))
+    }
+    image.src = url
   })
-  event.target.value = ''
+}
+
+async function compressDiaryImage(file) {
+  const image = await loadImageFromFile(file)
+  const scale = Math.min(
+    1,
+    MAX_DIARY_IMAGE_DIMENSION / image.naturalWidth,
+    MAX_DIARY_IMAGE_DIMENSION / image.naturalHeight
+  )
+  const width = Math.max(1, Math.round(image.naturalWidth * scale))
+  const height = Math.max(1, Math.round(image.naturalHeight * scale))
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+  const ctx = canvas.getContext('2d')
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(0, 0, width, height)
+  ctx.drawImage(image, 0, 0, width, height)
+
+  let quality = INITIAL_IMAGE_QUALITY
+  let dataUrl = canvas.toDataURL('image/jpeg', quality)
+  while (estimateDataUrlBytes(dataUrl) > MAX_DIARY_IMAGE_BYTES && quality > MIN_IMAGE_QUALITY) {
+    quality = Math.max(MIN_IMAGE_QUALITY, quality - 0.08)
+    dataUrl = canvas.toDataURL('image/jpeg', quality)
+  }
+  return dataUrl
+}
+
+function diaryImagePayload() {
+  return normalizeDiaryImages({
+    ...form.value,
+    cover: form.value.images[0],
+    tags: parsedTags.value
+  }).slice(0, MAX_DIARY_IMAGES)
+}
+
+async function handleImageUpload(event) {
+  const files = Array.from(event.target.files)
+  const remaining = MAX_DIARY_IMAGES - form.value.images.length
+  const filesToProcess = files.slice(0, remaining)
+  imageUploadError.value = ''
+
+  if (!filesToProcess.length) {
+    event.target.value = ''
+    return
+  }
+
+  isProcessingImages.value = true
+  try {
+    for (const file of filesToProcess) {
+      if (!file.type.startsWith('image/')) continue
+      const compressed = await compressDiaryImage(file)
+      form.value.images.push(compressed)
+    }
+    if (files.length > remaining) {
+      imageUploadError.value = `最多只能上传 ${MAX_DIARY_IMAGES} 张图片，已自动忽略多余图片。`
+    }
+  } catch {
+    imageUploadError.value = '有图片处理失败，请换一张图片再试。'
+  } finally {
+    isProcessingImages.value = false
+    event.target.value = ''
+  }
 }
 
 function removeImage(idx) {
   form.value.images.splice(idx, 1)
+  imageUploadError.value = ''
   if (currentPreviewIdx.value >= form.value.images.length) {
     currentPreviewIdx.value = Math.max(0, form.value.images.length - 1)
   }
@@ -428,13 +609,14 @@ async function publishDiary() {
     form.value.title = '未命名日记'
   }
   saving.value = true
+  const images = diaryImagePayload()
 
   const payload = {
     title: form.value.title,
     content: editor.value?.getHTML() || '',
     date: form.value.date,
     location: form.value.location,
-    images: form.value.images,
+    images,
     tags: parsedTags.value,
     status: 1
   }
@@ -446,8 +628,8 @@ async function publishDiary() {
     date: form.value.date,
     location: form.value.location,
     mood: form.value.moodLabel || '',
-    cover: form.value.images[0] || '',
-    images: form.value.images,
+    cover: images[0] || '',
+    images,
     tags: parsedTags.value,
     excerpt: (editor.value?.getText() || '').slice(0, 80) + '...',
     content: editor.value?.getHTML() || '',
@@ -455,7 +637,8 @@ async function publishDiary() {
     stats: { views: 0, likes: 0, comments: 0 },
     ratingScore: 0,
     ratingCount: 0,
-    bookmarkCount: 0
+    bookmarkCount: 0,
+    disableLocalImageFallback: true
   }
 
   // Try API
@@ -484,12 +667,13 @@ async function saveDiaryWithStatus(status) {
     form.value.title = '未命名日记'
   }
   saving.value = true
+  const images = diaryImagePayload()
   const payload = {
     title: form.value.title,
     content: editor.value?.getHTML() || '',
     date: form.value.date,
     location: form.value.location,
-    images: form.value.images,
+    images,
     tags: parsedTags.value,
     status
   }
@@ -516,7 +700,7 @@ async function loadExistingDiary() {
     form.value.date = data.date || ''
     form.value.location = data.location || ''
     form.value.mood = data.mood || ''
-    form.value.images = data.images || []
+    form.value.images = normalizeDiaryImages(data).slice(0, MAX_DIARY_IMAGES)
     tagInput.value = (data.tags || []).join(', ')
     if (editor.value && data.content) {
       editor.value.commands.setContent(data.content)
@@ -528,7 +712,7 @@ async function loadExistingDiary() {
       form.value.date = demo.date
       form.value.location = demo.location || ''
       form.value.mood = demo.mood || ''
-      form.value.images = demo.images || []
+      form.value.images = normalizeDiaryImages(demo).slice(0, MAX_DIARY_IMAGES)
       tagInput.value = (demo.tags || []).join(', ')
       if (editor.value && demo.content) {
         editor.value.commands.setContent(demo.content)
@@ -538,10 +722,6 @@ async function loadExistingDiary() {
 }
 
 onMounted(loadExistingDiary)
-
-onBeforeUnmount(() => {
-  editor.value?.destroy()
-})
 </script>
 
 <style scoped>
@@ -549,12 +729,18 @@ onBeforeUnmount(() => {
   outline: none;
   min-height: 260px;
 }
-.prose-editor :deep(.tiptap p.is-editor-empty:first-child::before) {
+.prose-editor[contenteditable="true"] {
+  outline: none;
+  min-height: 260px;
+  color: #334155;
+  font-size: 15px;
+  line-height: 2;
+  letter-spacing: 0;
+}
+.prose-editor[contenteditable="true"]:empty::before {
   content: attr(data-placeholder);
-  float: left;
   color: #94a3b8;
   pointer-events: none;
-  height: 0;
 }
 .prose-editor :deep(h1) {
   font-size: 1.5rem;

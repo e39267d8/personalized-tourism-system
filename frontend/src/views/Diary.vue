@@ -36,7 +36,7 @@
             <div class="rounded-xl overflow-hidden bg-white border border-slate-100 shadow-sm hover:shadow-md transition-shadow duration-300 h-full flex flex-col scale-card">
               <div class="relative overflow-hidden aspect-[4/3]">
                 <img
-                  :src="diary.cover || (diary.images && diary.images[0])"
+                  :src="diaryCardImage(diary)"
                   :alt="diary.title"
                   class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                   @error="handleImageError($event, diary)"
@@ -169,7 +169,7 @@ import { ref, computed, onMounted } from 'vue'
 import { tourismApi } from '@/services/tourismApi'
 import { diaries as demoDiaries } from '@/data/demoData'
 import { diaryStore } from '@/stores/diaryStore'
-import { fallbackImageForSpot } from '@/utils/images'
+import { diaryCoverImage, handleDiaryImageError } from '@/utils/images'
 
 const PAGE_SIZE = 6
 
@@ -252,13 +252,18 @@ const sortedDiaries = computed(() => {
   if (pinJustPublished.value && diaryStore.justPublished) {
     const idx = list.findIndex(d => d.id === diaryStore.justPublished.id)
     if (idx >= 0) {
-      pinned = list.splice(idx, 1)[0]
+      list.splice(idx, 1)
+      pinned = diaryStore.justPublished
     } else {
       pinned = diaryStore.justPublished
     }
   } else if (diaryStore.justPublished) {
-    const exists = list.some(d => d.id === diaryStore.justPublished.id)
-    if (!exists) list.push(diaryStore.justPublished)
+    const idx = list.findIndex(d => d.id === diaryStore.justPublished.id)
+    if (idx >= 0) {
+      list[idx] = { ...list[idx], ...diaryStore.justPublished }
+    } else {
+      list.push(diaryStore.justPublished)
+    }
   }
 
   // Filter by search
@@ -317,10 +322,11 @@ function onSortChange() {
 }
 
 function handleImageError(event, diary) {
-  if (event?.target) {
-    event.target.onerror = null
-    event.target.src = fallbackImageForSpot({ name: diary.title, category: diary.location, tags: diary.tags })
-  }
+  handleDiaryImageError(event, diary)
+}
+
+function diaryCardImage(diary) {
+  return diaryCoverImage(diary)
 }
 
 async function loadDiaries() {

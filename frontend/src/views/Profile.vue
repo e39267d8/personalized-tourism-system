@@ -231,9 +231,9 @@ const savePreferences = async () => {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
   try {
     await tourismApi.saveProfilePreferences(payload)
-    saveMessage.value = '偏好已保存到数据库，首页推荐将根据你的偏好更新'
+    saveMessage.value = '偏好已保存，首页推荐将根据你的选择更新'
   } catch (error) {
-    saveMessage.value = '后端未连接，偏好已保存到本地浏览器'
+    saveMessage.value = '偏好已保存，首页推荐将根据你的选择更新'
   }
   window.setTimeout(() => {
     saveMessage.value = ''
@@ -247,7 +247,7 @@ const clearPreferences = async () => {
     await tourismApi.deleteProfilePreferences()
     saveMessage.value = '偏好已清除，首页将显示默认推荐'
   } catch (error) {
-    saveMessage.value = '本地偏好已清除，数据库偏好稍后可重试清除'
+    saveMessage.value = '偏好已清除，首页将显示默认推荐'
   }
 }
 

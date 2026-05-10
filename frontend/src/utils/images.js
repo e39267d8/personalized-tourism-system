@@ -1,7 +1,10 @@
+import { localSpotAliases, localSpotImageUrlForKey, localSpotImageUrlForSeed } from '@/data/localSpotImages'
+
 const KNOWN_GENERIC_IMAGE_MARKERS = [
   'photo-1469854523086-cc02fe5d8800',
   'photo-1566127992631-137a642a90f4',
   'photo-1500530855697-b586d89ba3ee',
+  'photo-1566054757965-8c4085344c96',
   'photo-1513415756790-2ac1db1297d0',
   'photo-1519608487953-e999c86e7455',
   'photo-1444723121867-7a241cacace9',
@@ -72,6 +75,41 @@ const looksEmpty = (value) => {
   return KNOWN_GENERIC_IMAGE_MARKERS.some(marker => text.includes(marker))
 }
 
+const normalizeImageText = (value) => String(value || '').trim()
+
+const imageCandidatesFrom = (value) => {
+  if (!value) return []
+  if (Array.isArray(value)) return value
+  if (typeof value === 'string') return value.split('|')
+  return []
+}
+
+const imageCandidatesFromSpot = (spot = {}) => [
+  spot.imageUrl,
+  spot.image_url,
+  spot.photoUrl,
+  spot.photo_url,
+  spot.thumbnailUrl,
+  spot.thumbnail_url,
+  spot.image,
+  spot.cover,
+  ...imageCandidatesFrom(spot.images)
+].map(normalizeImageText).filter(Boolean)
+
+const isAmapImageUrl = (value) => {
+  const text = normalizeImageText(value).toLowerCase()
+  return text.includes('amap.com') || text.includes('autonavi.com')
+}
+
+export const isUsableImageUrl = (value) => {
+  const text = normalizeImageText(value)
+  if (looksEmpty(text)) return false
+  if (/^data:image\/[a-z0-9.+-]+;base64,/i.test(text)) return true
+  if (/^https?:\/\//i.test(text)) return true
+  if (text.startsWith('/') && !text.startsWith('//')) return true
+  return false
+}
+
 const fallbackTypeForSpot = (spot = {}) => {
   const profile = [
     spot.name,
@@ -88,14 +126,103 @@ const fallbackTypeForSpot = (spot = {}) => {
 
 export const fallbackImageForSpot = (spot = {}) => svgDataUri(fallbackTypeForSpot(spot))
 
+export const normalizeDiaryImages = (diary = {}) => {
+  const candidates = []
+  if (diary.cover) candidates.push(diary.cover)
+  if (Array.isArray(diary.images)) {
+    candidates.push(...diary.images)
+  } else if (typeof diary.images === 'string') {
+    candidates.push(...diary.images.split('|'))
+  }
+
+  const seen = new Set()
+  return candidates
+    .map(normalizeImageText)
+    .filter(isUsableImageUrl)
+    .filter((url) => {
+      if (seen.has(url)) return false
+      seen.add(url)
+      return true
+    })
+}
+
+export const diaryFallbackImage = (diary = {}) => fallbackImageForSpot({
+  name: diary.title,
+  category: diary.location || diary.category,
+  tags: diary.tags || []
+})
+
+export const diaryDisplayImages = (diary = {}) => {
+  const images = normalizeDiaryImages(diary)
+  if (images.length || diary.disableLocalImageFallback) return images
+  const localImage = localSpotImageUrl({
+    ...diary,
+    name: diary.title || diary.name,
+    category: diary.location || diary.category
+  })
+  if (localImage) return [localImage]
+  const genericLocalImage = localSpotImageUrlForSeed(`${diary.id || ''}|${diary.title || ''}|${diary.location || ''}`)
+  return genericLocalImage ? [genericLocalImage] : []
+}
+
+export const diaryCoverImage = (diary = {}) => diaryDisplayImages(diary)[0] || diaryFallbackImage(diary)
+
+export const handleDiaryImageError = (event, diary = {}) => {
+  if (event?.target) {
+    const current = event.target.getAttribute('src') || ''
+    const localImage = diary.disableLocalImageFallback
+      ? ''
+      : localSpotImageUrl({
+        ...diary,
+        name: diary.title || diary.name,
+        category: diary.location || diary.category
+      }) || localSpotImageUrlForSeed(`${diary.id || ''}|${diary.title || ''}|${diary.location || ''}`)
+    if (localImage && current !== localImage) {
+      event.target.src = localImage
+    } else {
+      event.target.onerror = null
+      event.target.src = diaryFallbackImage(diary)
+    }
+  }
+}
+
+export const localSpotImageUrl = (spot = {}) => {
+  const profile = [
+    spot.name,
+    spot.title,
+    spot.location,
+    spot.address,
+    spot.category,
+    spot.description,
+    spot.pinyin,
+    spot.slug,
+    ...imageCandidatesFrom(spot.tags)
+  ].join(' ').toLowerCase()
+
+  const matched = localSpotAliases.find(([key, aliases]) =>
+    profile.includes(key.toLowerCase()) ||
+    aliases.some(alias => profile.includes(String(alias).toLowerCase()))
+  )
+  return matched ? localSpotImageUrlForKey(matched[0]) : ''
+}
+
 export const spotImageUrl = (spot = {}) => {
-  const candidate = spot.imageUrl || spot.image_url || spot.photoUrl || spot.photo_url || spot.image || spot.cover
-  return looksEmpty(candidate) ? fallbackImageForSpot(spot) : candidate
+  const candidates = imageCandidatesFromSpot(spot)
+  const amapImage = candidates.find(candidate => isAmapImageUrl(candidate) && isUsableImageUrl(candidate))
+  if (amapImage) return amapImage
+  return localSpotImageUrl(spot) || fallbackImageForSpot(spot)
 }
 
 export const handleSpotImageError = (event, spot = {}) => {
   if (event?.target) {
-    event.target.onerror = null
-    event.target.src = fallbackImageForSpot(spot)
+    const current = event.target.getAttribute('src') || ''
+    const localImage = localSpotImageUrl(spot)
+    const fallbackImage = fallbackImageForSpot(spot)
+    if (localImage && current !== localImage) {
+      event.target.src = localImage
+    } else {
+      event.target.onerror = null
+      event.target.src = fallbackImage
+    }
   }
 }

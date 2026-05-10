@@ -82,7 +82,7 @@
         </div>
 
         <div v-if="!reviews.length" class="mt-4 rounded-md border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">
-          暂无评价，之后可以在这里接入用户评价发布功能。
+          暂无评价，期待第一位旅行者留下体验。
         </div>
       </div>
     </section>

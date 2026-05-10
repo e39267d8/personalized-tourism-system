@@ -84,10 +84,6 @@
           </router-link>
         </div>
 
-        <div v-if="recommendationNotice" class="mt-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          {{ recommendationNotice }}
-        </div>
-
         <div class="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           <router-link
             v-for="item in recommendations"
@@ -165,7 +161,6 @@
       <div class="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h2 class="text-2xl font-bold">精选路线</h2>
-          <p class="mt-2 text-sm text-slate-500">把几个景点串成一条能实际执行的行程。</p>
         </div>
         <router-link to="/route" class="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100">
           打开地图
@@ -203,7 +198,6 @@ const routes = ref(fallbackRoutes)
 const plans = ref(fallbackBudgetPlans)
 const recommendations = ref([])
 const hasUserProfile = ref(false)
-const recommendationNotice = ref('')
 
 const quickSearches = [
   { title: '第一次来北京', copy: '经典地标和中轴线', query: '中轴线' },
@@ -216,7 +210,7 @@ const featuredRoute = computed(() => routes.value[0])
 const affordablePlans = computed(() => plans.value.filter(plan => plan.budget <= budget.value).slice(0, 2))
 const recommendationSubtitle = computed(() => {
   if (hasUserProfile.value) return '根据你的偏好问卷，按标签匹配、类型、评分、预算和人流综合排序。'
-  return '完善个人偏好后可获得更精准推荐，当前展示默认综合推荐。'
+  return '结合热门主题、预算区间和游玩节奏，为你筛选适合的目的地。'
 })
 
 const submitSearch = () => {
@@ -276,13 +270,12 @@ const fallbackRecommendations = () => fallbackSpots.slice(0, 6).map((spot) => no
   scenic_spot: spot,
   score: Number(spot.rating || 0) * 15,
   matchedTags: spot.tags?.slice?.(0, 2) || [],
-  reason: '后端未连接时的本地演示推荐。'
+  reason: '基于热门主题和综合评分推荐。'
 }))
 
 const loadRecommendations = async () => {
   const profile = await readUserProfile()
   hasUserProfile.value = Boolean(profile)
-  recommendationNotice.value = profile ? '' : '完善个人偏好后可获得更精准推荐。'
 
   try {
     const payload = profile ? { ...profile, limit: 6 } : { limit: 6 }
@@ -290,7 +283,6 @@ const loadRecommendations = async () => {
     recommendations.value = (data.recommendations || []).map(normalizeRecommendation)
   } catch (error) {
     recommendations.value = fallbackRecommendations()
-    recommendationNotice.value = '后端未连接，当前为本地演示推荐。'
   }
 }
 
