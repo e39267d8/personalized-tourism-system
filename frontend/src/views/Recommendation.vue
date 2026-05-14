@@ -183,6 +183,13 @@ const filteredRecommendations = computed(() =>
   recommendations.value.filter(item => Number(item.scenicSpot.ticket || 0) <= maxTicket.value)
 )
 
+const normalizeProfile = (value = {}) => ({
+  ...defaultProfile(),
+  ...value,
+  preferredCategories: Array.isArray(value.preferredCategories) ? value.preferredCategories : [],
+  preferredTags: Array.isArray(value.preferredTags) ? value.preferredTags : []
+})
+
 const hasMeaningfulProfile = (value) => {
   if (!value) return false
   return Boolean(
@@ -205,62 +212,195 @@ const readLocalProfile = () => {
   }
 }
 
+const budgetMaxTicket = (value) => ({
+  low: 60,
+  medium: 120,
+  high: 300
+})[value?.budgetLevel] || 120
+
+const categoryAliases = {
+  历史古迹: ['历史古迹', '历史', '古建', '世界遗产', '中轴线', '故宫'],
+  博物馆: ['博物馆', '展览', '室内'],
+  自然公园: ['自然公园', '城市公园', '公园', '自然', '日落', '轻徒步'],
+  城市地标: ['城市地标', '地标', '中轴线', '步行'],
+  商业街区: ['商业街区', '购物', '夜游', '美食'],
+  美食街区: ['美食街区', '美食', '夜游', '商业街区'],
+  摄影打卡: ['摄影打卡', '摄影', '观景摄影', '日落', '俯瞰'],
+  亲子休闲: ['亲子休闲', '亲子', '室内', '公园', '低预算'],
+  城市漫步: ['城市漫步', 'citywalk', '胡同', '步行', '轻徒步']
+}
+
+const spotTags = (spot) =>
+  Array.isArray(spot.tags) ? spot.tags : String(spot.tags || '').split(/[,\s，、]+/).filter(Boolean)
+
+const spotText = (spot) => [
+  spot.name,
+  spot.category,
+  spot.district,
+  spot.description,
+  ...spotTags(spot)
+].filter(Boolean).join(' ')
+
+const unique = (items) => [...new Set(items.filter(Boolean))]
+
+const matchedCategories = (spot, selectedCategories) => {
+  const text = spotText(spot)
+  return selectedCategories.filter(category => {
+    const aliases = categoryAliases[category] || [category]
+    return aliases.some(alias => text.includes(alias))
+  })
+}
+
+const matchedTags = (spot, selectedTags) => {
+  const text = spotText(spot)
+  return selectedTags.filter(tag => text.includes(tag))
+}
+
+const durationHours = (value) => {
+  const match = String(value || '').match(/[\d.]+/)
+  return match ? Number(match[0]) : 2
+}
+
+const preferenceScore = (spot, prefs) => {
+  const categories = matchedCategories(spot, prefs.preferredCategories)
+  const tags = matchedTags(spot, prefs.preferredTags)
+  const ticket = Number(spot.ticket || 0)
+  const hours = durationHours(spot.duration)
+  const crowd = String(spot.crowd || '')
+  let score = Number(spot.rating || 0) * 10
+
+  score += categories.length * 18
+  score += tags.length * 14
+
+  if (ticket <= budgetMaxTicket(prefs)) score += 12
+  else score -= Math.min(18, Math.ceil((ticket - budgetMaxTicket(prefs)) / 10))
+
+  if (prefs.crowdPreference === 'avoid_crowded') {
+    if (crowd.includes('低')) score += 12
+    else if (crowd.includes('中')) score += 4
+    else if (crowd.includes('高')) score -= 10
+  }
+  if (prefs.crowdPreference === 'popular') {
+    if (crowd.includes('高')) score += 10
+    else if (crowd.includes('中')) score += 6
+    if (Number(spot.rating || 0) >= 4.6) score += 6
+  }
+
+  if (prefs.intensity === 'light') {
+    if (hours <= 2) score += 10
+    else if (hours <= 3) score += 3
+    else score -= 8
+  }
+  if (prefs.intensity === 'high') {
+    if (hours >= 3) score += 10
+    else if (hours >= 2.5) score += 6
+  }
+  if (prefs.intensity === 'medium' && hours >= 1.5 && hours <= 3) score += 5
+
+  return {
+    score: Math.max(1, Math.min(99, Math.round(score))),
+    categories,
+    tags
+  }
+}
+
+const recommendationReason = (spot, prefs, matches) => {
+  const parts = []
+  if (matches.categories.length) parts.push(`匹配你的「${matches.categories.join('、')}」类型偏好`)
+  if (matches.tags.length) parts.push(`命中「${matches.tags.join('、')}」标签`)
+
+  const ticket = Number(spot.ticket || 0)
+  if (ticket <= budgetMaxTicket(prefs)) parts.push(`门票符合${budgetLabels[prefs.budgetLevel] || budgetLabels.medium}`)
+  if (prefs.crowdPreference === 'avoid_crowded') parts.push('更适合避开拥挤的人流选择')
+  if (prefs.crowdPreference === 'popular') parts.push('兼顾热门程度和评分表现')
+  if (prefs.intensity === 'light') parts.push('游玩节奏轻松')
+  if (prefs.intensity === 'high') parts.push('适合更充实的行程')
+
+  return `${(parts.length ? parts.slice(0, 3) : ['综合评分、成本和游玩节奏更均衡']).join('，')}。`
+}
+
+const personalizedRecommendation = (spot, item = {}) => {
+  const prefs = normalizeProfile(profile.value)
+  const localMatch = preferenceScore(spot, prefs)
+  const backendScore = Number(item.score ?? spot.score ?? 0)
+  const score = backendScore
+    ? Math.round(localMatch.score * 0.85 + Math.min(100, backendScore) * 0.15)
+    : localMatch.score
+  const localTags = unique([
+    ...localMatch.categories,
+    ...localMatch.tags,
+    ...spotTags(spot)
+  ]).slice(0, 3)
+
+  return {
+    scenicSpot: spot,
+    score,
+    matchedTags: localTags,
+    reason: recommendationReason(spot, prefs, localMatch)
+  }
+}
+
 const loadProfile = async () => {
+  const local = readLocalProfile()
+  if (local && hasMeaningfulProfile(local)) {
+    profile.value = normalizeProfile(local)
+    return true
+  }
+
   try {
     const data = await tourismApi.getProfilePreferences()
-    if (data.exists && data.profile) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(data.profile))
-      profile.value = { ...defaultProfile(), ...data.profile }
+    const remote = data.exists && data.profile ? normalizeProfile(data.profile) : null
+    if (remote && hasMeaningfulProfile(remote)) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(remote))
+      profile.value = remote
       return true
     }
-  } catch (error) {
-    const local = readLocalProfile()
     if (local) {
-      profile.value = { ...defaultProfile(), ...local }
+      profile.value = normalizeProfile(local)
+      return hasMeaningfulProfile(local)
+    }
+    if (remote) {
+      profile.value = remote
+      return false
+    }
+  } catch (error) {
+    if (local) {
+      profile.value = normalizeProfile(local)
       return hasMeaningfulProfile(local)
     }
     return false
   }
 
-  const local = readLocalProfile()
-  if (local) {
-    profile.value = { ...defaultProfile(), ...local }
-    return hasMeaningfulProfile(local)
-  }
   profile.value = defaultProfile()
   return false
 }
 
 const normalizeRecommendation = (item) => {
   const scenicSpot = item.scenic_spot || item.scenicSpot || item
-  return {
-    scenicSpot,
-    score: Number(item.score ?? scenicSpot.score ?? Number(scenicSpot.rating || 0) * 15),
-    matchedTags: item.matchedTags || scenicSpot.tags?.slice?.(0, 2) || [],
-    reason: item.reason || '基于综合评分推荐。'
-  }
+  return personalizedRecommendation(scenicSpot, item)
 }
 
-const fallbackRecommendations = () => fallbackSpots.slice(0, 8).map(spot => normalizeRecommendation({
-  scenic_spot: spot,
-  score: Number(spot.rating || 0) * 15,
-  matchedTags: spot.tags?.slice?.(0, 2) || [],
-  reason: '基于热门主题和综合评分推荐。'
-}))
+const fallbackRecommendations = () =>
+  fallbackSpots
+    .map(spot => normalizeRecommendation({ scenic_spot: spot }))
+    .sort((left, right) => right.score - left.score)
 
 const loadRecommendations = async () => {
   const hasProfile = await loadProfile()
   sourceLabel.value = hasProfile ? '根据偏好' : '默认推荐'
+  maxTicket.value = budgetMaxTicket(profile.value)
 
   try {
     const data = await tourismApi.personalizedRecommendations({
       ...profile.value,
       limit: 12
     })
-    recommendations.value = (data.recommendations || []).map(normalizeRecommendation)
+    const items = (data.recommendations || []).map(normalizeRecommendation)
+    recommendations.value = (items.length ? items : fallbackRecommendations())
+      .sort((left, right) => right.score - left.score)
   } catch (error) {
     recommendations.value = fallbackRecommendations()
-    sourceLabel.value = '精选推荐'
+    sourceLabel.value = hasProfile ? '根据偏好' : '默认推荐'
   }
 }
 
