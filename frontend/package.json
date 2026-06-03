@@ -1,33 +1,31 @@
 {
   "name": "personalized-tourism-frontend",
   "version": "1.0.0",
-  "description": "个性化旅游系统前端 - Vue.js + Tailwind CSS",
+  "description": "个性化旅游系统前端 - Vue 3 + Tailwind CSS",
+  "type": "module",
   "private": true,
   "scripts": {
-    "dev": "vite",
+    "dev": "node scripts/vite-dev.mjs",
     "build": "vite build",
-    "preview": "vite preview",
-    "lint": "eslint . --ext .vue,.js,.jsx,.cjs,.mjs --fix",
+    "preview": "node scripts/vite-preview.mjs",
+    "lint": "eslint . --ext .vue,.js,.jsx,.cjs,.mjs",
+    "lint:fix": "eslint . --ext .vue,.js,.jsx,.cjs,.mjs --fix",
     "test": "vitest"
   },
   "dependencies": {
-    "vue": "^3.4.0",
-    "vue-router": "^4.2.5",
-    "pinia": "^2.1.7",
     "axios": "^1.6.5",
-    "@vue-leaflet/vue-leaflet": "^0.10.1",
     "leaflet": "^1.9.4",
-    "dayjs": "^1.11.10",
-    "echarts": "^5.4.3"
+    "vue": "^3.4.0",
+    "vue-router": "^4.2.5"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.0.3",
-    "vite": "^5.0.12",
-    "tailwindcss": "^3.4.1",
-    "postcss": "^8.4.33",
     "autoprefixer": "^10.4.17",
     "eslint": "^8.56.0",
     "eslint-plugin-vue": "^9.20.1",
+    "postcss": "^8.4.33",
+    "tailwindcss": "^3.4.1",
+    "vite": "^5.0.12",
     "vitest": "^1.2.1"
   },
   "engines": {

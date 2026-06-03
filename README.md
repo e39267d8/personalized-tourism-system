@@ -1,426 +1,263 @@
-# 个性化旅游系统
+# TourPilot 个性化旅游系统
 
-> 数据结构课程设计项目 - 智能旅游全生命周期管理系统
+TourPilot 是一个旅游规划全栈项目。前端使用 Vue 3 + Vite + Tailwind CSS，后端使用 C++ Crow，数据库使用 PostgreSQL/PostGIS。项目支持景点搜索、个性化推荐、预算方案、路线规划、游记、成就和 AI 旅行助手。
 
-[![Build Status](https://img.shields.io/badge/build-passing-brightgreen)]()
-[![License](https://img.shields.io/badge/license-MIT-blue)]()
-[![Version](https://img.shields.io/badge/version-1.0.0-orange)]()
+## 核心功能
 
-## 📋 项目概述
+- 首页推荐、搜索景点、景点详情。
+- 预算推荐、个性化推荐。
+- 路线规划和 Leaflet 地图展示。
+- 游记广场、游记编辑、游记详情、点赞收藏评分评论。
+- 个人偏好读取与保存。
+- 登录、注册、退出、保持登录状态、登录后修改密码。
+- AI 旅行助手 `/agent`，通过后端调用真实大模型 API。
 
-本项目是一款以**智能体（Agent）**为核心驱动的个性化旅游系统，实现旅游全生命周期管理：
+## 技术栈
 
-- **旅游前**：智能推荐服务（Top-K 排序、多维度匹配）
-- **旅游中**：多约束路径规划、周边服务精准检索
-- **旅游后**：游记管理、AI 辅助写作、多媒体内容生成
+前端：
 
-### 技术亮点
+- Vue 3
+- Vue Router
+- Vite
+- Tailwind CSS
+- Axios
+- Leaflet
 
-- ✅ **自定义数据结构**：图（邻接表）、优先队列、倒排索引、Trie 树、Huffman 编码
-- ✅ **高效算法**：Dijkstra O((V+E)logV)、Top-K O(nlogK)、全文检索 O(1)
-- ✅ **地理空间支持**：PostgreSQL + PostGIS，支持非直线距离查询
-- ✅ **AI 集成**：AIGC 辅助写作、智能推荐、多媒体生成
+后端：
 
----
+- C++17
+- Crow
+- libpq/PostgreSQL
+- PostgreSQL + PostGIS
+- CMake
 
-## 👥 项目成员
+外部服务：
 
-| 姓名 | 角色 | 负责模块 |
-|------|------|---------|
-| **yhm** (组长) | 统筹与中枢 | 图数据结构、Dijkstra 算法、系统集成 |
-| **zby** | 数据与契约 | 数据库设计、Top-K 推荐、周边查询 |
-| **lxd** | 质量与表现 | 倒排索引、Huffman 压缩、AIGC 集成 |
+- DeepSeek 或兼容 Chat Completions 的大模型接口。
+- 高德 Web Service 路线接口。
+- OpenStreetMap 地图瓦片。
 
----
+## 项目结构
 
-## 🛠️ 技术栈
-
-### 后端（C++）
-- **语言**: C++17
-- **HTTP 服务器**: Crow (轻量级)
-- **数据库驱动**: libpqxx (PostgreSQL)
-- **JSON 处理**: nlohmann/json
-- **构建工具**: CMake
-- **测试框架**: GoogleTest
-
-### 前端（Vue.js）
-- **框架**: Vue 3 + Vite
-- **状态管理**: Pinia
-- **路由**: Vue Router
-- **UI 框架**: Tailwind CSS
-- **地图**: Leaflet
-
-### 数据库
-- **主数据库**: PostgreSQL 15
-- **空间扩展**: PostGIS 3.3
-- **全文检索**: PostgreSQL GIN 索引
-
-### AI 工具
-- **代码生成**: Cursor + Qwen-Coder
-- **架构设计**: Claude 3.5 Sonnet
-- **多媒体生成**: AIGC API
-
----
-
-## 📦 项目结构
-
-```
+```text
 personalized-tourism-system/
-├── backend/                      # C++ 后端
-│   ├── CMakeLists.txt
-│   ├── include/
-│   │   ├── graph/               # 图数据结构
-│   │   │   ├── graph.h
-│   │   │   ├── dijkstra.h
-│   │   ├── recommendation/      # 推荐算法
-│   │   ├── search/              # 检索与压缩
-│   │   └── database/            # 数据库访问
-│   ├── src/
-│   └── tests/
-├── frontend/                     # Vue.js 前端
-│   ├── package.json
-│   ├── src/
-│   │   ├── views/
-│   │   ├── components/
-│   │   └── api/
-│   └── public/
-├── database/                     # 数据库脚本
-│   ├── schema.sql               # 建表脚本
-│   ├── functions.sql            # 存储过程
-│   └── seed_data.sql            # 测试数据
-├── docs/                         # 文档
-│   ├── api.md                   # API 文档
-│   └── algorithms.md            # 算法说明
-├── scripts/                      # 辅助脚本
-└── README.md
+├─ frontend/
+│  ├─ src/
+│  │  ├─ main.js
+│  │  ├─ App.vue
+│  │  ├─ router/
+│  │  ├─ views/
+│  │  ├─ components/
+│  │  ├─ services/tourismApi.js
+│  │  ├─ data/
+│  │  ├─ stores/
+│  │  └─ utils/
+│  ├─ public/images/diary/
+│  ├─ scripts/
+│  └─ package.json
+├─ backend/
+│  ├─ include/
+│  │  ├─ api/
+│  │  ├─ db/
+│  │  ├─ services/
+│  │  └─ support/
+│  ├─ src/
+│  │  ├─ main.cpp
+│  │  ├─ api/
+│  │  ├─ db/
+│  │  ├─ services/
+│  │  ├─ support/
+│  │  └─ graph/
+│  └─ CMakeLists.txt
+├─ database/
+├─ docs/
+├─ QUICKSTART.md
+└─ AGENTS.md
 ```
 
----
+## 前端运行链路
 
-## 🚀 快速开始
+`frontend/src/main.js` 是前端入口：
 
-### 环境要求
+1. 导入 `App.vue`。
+2. 注册 `router/index.js`。
+3. 导入 `index.css`，让 Tailwind 生效。
+4. 导入 `leaflet/dist/leaflet.css`，让地图控件和 marker 样式正常显示。
+5. `createApp(App).use(router).mount('#app')` 挂载应用。
 
-- **后端**: g++ 9+, CMake 3.15+, PostgreSQL 15+
-- **前端**: Node.js 18+, npm 9+
-- **数据库**: PostgreSQL 15 + PostGIS 3.3
+`App.vue` 负责顶部导航、全局搜索和 `<router-view />`。首页、搜索页、详情页、路线页和 AI 助手都在同一个 Vue 单页应用里，通过 Vue Router 切换。
 
-### 1. 克隆项目
+## 后端结构
 
-```bash
-git clone https://github.com/your-repo/personalized-tourism-system.git
-cd personalized-tourism-system
+后端已经拆成模块化结构。`backend/src/main.cpp` 只负责解析启动参数、创建 Crow app、注册路由模块并启动服务。
+
+主要模块：
+
+```text
+backend/src/api/
+├─ auth_routes.cpp            # 登录、注册、退出、当前用户、修改密码
+├─ dashboard_routes.cpp       # /health、dashboard、achievements
+├─ profile_routes.cpp         # profile、preferences
+├─ scenic_routes.cpp          # 景点列表、搜索、详情、建议词、评价
+├─ recommendation_routes.cpp  # 预算方案、个性化推荐
+├─ route_routes.cpp           # 路线节点、路线列表、路线规划
+├─ diary_routes.cpp           # 游记、点赞、收藏、评分、评论
+└─ aigc_routes.cpp            # AIGC 摘要、润色、旅游助手
+
+backend/src/services/
+├─ auth_service.cpp           # PBKDF2 密码哈希、Bearer token 校验
+├─ scenic_service.cpp         # 景点查询和景点 JSON
+├─ budget_service.cpp         # 预算方案
+├─ recommendation_service.cpp # 推荐计算
+├─ route_graph_service.cpp    # 本地路线图规划
+├─ amap_route_service.cpp     # 高德路线服务
+└─ llm_service.cpp            # 大模型 HTTP 调用
 ```
 
-### 2. 数据库配置
+## 环境变量
 
-```bash
-# 创建数据库
-createdb tourism_system
+| 变量 | 用途 | 默认行为 |
+| --- | --- | --- |
+| `TOURISM_DB_CONN` | PostgreSQL 连接串 | 默认 `host=127.0.0.1 port=5432 dbname=tourism_system user=postgres` |
+| `TOURISM_LLM_API_KEY` | 大模型 API Key | 未配置时 AI 助手返回配置错误 |
+| `TOURISM_LLM_BASE_URL` | 大模型接口地址 | 默认 `https://api.deepseek.com` |
+| `TOURISM_LLM_MODEL` | 大模型名称 | 建议显式设置为平台支持的模型 |
+| `AMAP_WEB_SERVICE_KEY` / `AMAP_KEY` | 覆盖高德 Web Service Key | 未配置时使用后端内置免费高德 key |
 
-# 启用 PostGIS 扩展
-psql -d tourism_system -c "CREATE EXTENSION postgis;"
+DeepSeek key 不允许写入仓库，只能放本地环境变量：
 
-# 执行建表脚本
-psql -d tourism_system -f database/schema.sql
-psql -d tourism_system -f database/functions.sql
-
-# （可选）插入测试数据
-psql -d tourism_system -f database/seed_data.sql
+```powershell
+$env:TOURISM_LLM_API_KEY="你的 DeepSeek API Key"
+$env:TOURISM_LLM_BASE_URL="https://api.deepseek.com"
+$env:TOURISM_LLM_MODEL="deepseek-chat"
 ```
 
-### 3. 编译后端
+高德 key 已经有内置默认值。如需临时覆盖：
 
-```bash
-cd backend
-mkdir build && cd build
-
-# 配置
-cmake .. -DCMAKE_BUILD_TYPE=Debug
-
-# 编译
-make -j$(nproc)
-
-# 运行测试
-ctest
-
-# 启动服务器
-./tourism_server
+```powershell
+$env:AMAP_WEB_SERVICE_KEY="你的高德 Web Service Key"
 ```
 
-### 4. 启动前端
+PowerShell 的 `$env:...` 只对当前窗口和它启动的子进程生效。需要在启动后端的同一个窗口里设置环境变量。
 
-```bash
+## 图片来源规则
+
+景点图片只使用三层来源：
+
+1. 后端接口返回的数据库图片，通常来自高德导入或人工维护。
+2. 前端本地拼音图片，目录为 `frontend/public/images/diary/`，映射在 `frontend/src/data/imageCatalog.js`。
+3. 前端 SVG 占位图，由 `frontend/src/utils/images.js` 生成。
+
+后端不再用外部随机图片做景点 fallback。
+
+## 登录与演示账号
+
+当前账号系统支持用户名或邮箱登录。前端会把后端返回的 token 保存到 `localStorage.token`，并在请求时通过 `Authorization: Bearer <token>` 发送给后端。
+
+演示账号：
+
+```text
+用户名：demo_user
+邮箱：demo@example.com
+密码：demo123456
+```
+
+需要登录的页面和操作：`/profile`、`/achievements`、`/diary/new`、`/diary/edit/:id`，以及游记点赞、收藏、评分、评论、创建、编辑、删除。首页、搜索、景点详情、路线规划、AI 助手和游记详情仍可匿名浏览。
+
+## 快速启动
+
+```powershell
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\schema.sql
+psql -U postgres -d tourism_system -f database\imports\amap_pois.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seed_demo.sql
+
+$env:TOURISM_LLM_API_KEY="你的 DeepSeek API Key"
+$env:TOURISM_LLM_BASE_URL="https://api.deepseek.com"
+$env:TOURISM_LLM_MODEL="deepseek-chat"
+$env:PATH="C:\Program Files\PostgreSQL\15\bin;$env:PATH"
+
+cmake -S backend -B backend\build-codex-verify-mingw
+cmake --build backend\build-codex-verify-mingw
+backend\build-codex-verify-mingw\bin\tourism_server.exe --host 127.0.0.1 --port 8080
+```
+
+另开一个窗口启动前端：
+
+```powershell
 cd frontend
-
-# 安装依赖
 npm install
-
-# 开发模式
 npm run dev
-
-# 生产构建
-npm run build
 ```
 
-### 5. 访问系统
+打开：
 
-打开浏览器访问：http://localhost:3000
+- 前端：http://127.0.0.1:3000
+- 健康检查：http://127.0.0.1:8080/health
+- AI 助手：http://127.0.0.1:3000/agent
 
----
+## 验证命令
 
-## 📚 核心算法说明
+```powershell
+cmake --build backend\build-codex-verify-mingw
 
-### 1. 图数据结构与路径规划
-
-**数据结构**: 邻接表（支持多重边）
-
-```cpp
-class Graph {
-  std::unordered_map<int64_t, Node> nodes;
-  std::unordered_map<int64_t, std::vector<Edge>> adj_list;
-};
+cd frontend
+npm.cmd run lint
+npm.cmd run build
 ```
 
-**Dijkstra 算法**: O((V+E)logV)
+后端冒烟：
 
-```cpp
-PathResult dijkstra(const Graph& g, int64_t start, int64_t end) {
-  // 最小堆优化
-  std::priority_queue<PDI, std::vector<PDI>, std::greater<PDI>> pq;
-  // ... 详见 src/graph/dijkstra.cpp
-}
+```powershell
+Invoke-WebRequest http://127.0.0.1:8080/health
+Invoke-WebRequest "http://127.0.0.1:8080/api/v1/scenic-spots?limit=2"
+Invoke-WebRequest "http://127.0.0.1:8080/api/v1/search/suggestions?q=故宫"
+Invoke-WebRequest http://127.0.0.1:8080/api/v1/routes
+Invoke-WebRequest http://127.0.0.1:8080/api/v1/diaries
 ```
 
-**特性**:
-- ✅ 支持多交通方式（步行、自行车、汽车、公交）
-- ✅ 动态权重更新（拥挤度）
-- ✅ 双向搜索优化
+登录冒烟：
 
-### 2. Top-K 推荐排序
-
-**算法**: 快速选择 (QuickSelect) - 平均 O(n)
-
-```cpp
-std::vector<Item> topK(std::vector<Item>& items, int k) {
-  // 基于快速选择的 Top-K 选择
-  // ... 详见 src/recommendation/topk.cpp
-}
+```powershell
+Invoke-WebRequest `
+  -Method POST `
+  -Uri http://127.0.0.1:8080/api/v1/auth/login `
+  -ContentType "application/json" `
+  -Body '{"identifier":"demo_user","password":"demo123456"}'
 ```
 
-**多维匹配**: KD-Tree - O(logN)
+AI 助手冒烟：
 
-### 3. 倒排索引与全文检索
-
-**数据结构**: Trie 树 + 压缩倒排列表
-
-```cpp
-class InvertedIndex {
-  Trie dictionary;
-  std::unordered_map<std::string, PostingList> index;
-};
+```powershell
+Invoke-WebRequest `
+  -Method POST `
+  -Uri http://127.0.0.1:8080/api/v1/aigc/travel-chat `
+  -ContentType "application/json" `
+  -Body '{"message":"帮我规划北京三日游","destination":"北京","days":3,"budget":1000,"style":"balanced"}'
 ```
 
-**查询**: O(1) 关键词查找
+路线文本规划冒烟：
 
-### 4. Huffman 无损压缩
-
-**算法**: 贪心构建 Huffman 树 - O(nlogn)
-
-```cpp
-HuffmanTree buildHuffman(const std::map<char, int>& freq) {
-  // 构建 Huffman 树
-  // ... 详见 src/search/huffman.cpp
-}
+```powershell
+Invoke-WebRequest `
+  -Method POST `
+  -Uri http://127.0.0.1:8080/api/v1/routes/plan `
+  -ContentType "application/json" `
+  -Body '{"city":"北京","startText":"前门大街","endText":"故宫博物院","waypointTexts":["天安门广场"],"travelMode":"walk","optimization":"balanced"}'
 ```
 
----
+## 常见问题
 
-## 🧪 测试
+- 后端启动后立刻回到 PowerShell：通常是缺 DLL。先执行 `$env:PATH="C:\Program Files\PostgreSQL\15\bin;$env:PATH"` 再启动。
+- 前端页面能打开但 API 失败：先访问 `/health`，确认后端正在 `127.0.0.1:8080` 运行。
+- 登录失败：确认 `database\seed_demo.sql` 已执行；旧数据库也可用 `demo_user / demo123456` 首次登录并自动升级密码哈希。
+- AI 助手失败：检查 `TOURISM_LLM_API_KEY` 是否在启动后端的同一个窗口设置。
+- 路线规划失败：高德 key 已有内置默认值；若仍失败，检查网络是否能访问 `https://restapi.amap.com`。
 
-### 运行单元测试
+## 更多文档
 
-```bash
-cd backend/build
-
-# 运行所有测试
-ctest
-
-# 运行特定测试
-./test_graph
-./test_dijkstra
-./test_topk
-./test_inverted_index
-```
-
-### 性能基准
-
-```bash
-# 性能测试脚本
-python3 scripts/benchmark.py
-```
-
-**目标性能**:
-- Dijkstra (200 节点): < 10ms
-- Top-K (K=10, n=10000): < 50ms
-- 倒排索引查询：< 5ms
-
----
-
-## 📖 API 文档
-
-完整 API 文档请参阅：[docs/api.md](docs/api.md)
-
-### 核心接口示例
-
-#### 1. 获取景点列表
-
-```bash
-curl http://localhost:8080/api/v1/scenic-spots \
-  -G \
-  -d "page=1" \
-  -d "page_size=20" \
-  -d "sort=rating"
-```
-
-#### 2. 路径规划
-
-```bash
-curl http://localhost:8080/api/v1/routes/plan \
-  -X POST \
-  -H "Content-Type: application/json" \
-  -d '{
-    "waypoints": [
-      {"longitude": 116.397, "latitude": 39.916},
-      {"longitude": 116.400, "latitude": 39.920}
-    ],
-    "transport_mode": "walk",
-    "optimization": "time"
-  }'
-```
-
----
-
-## 📅 开发里程碑
-
-| 阶段 | 时间 | 目标 | 状态 |
-|------|------|------|------|
-| **M1** | W5 | 架构基线、数据字典 v1.0 | ✅ 完成 |
-| **M2** | W8 | 可运行框架、数据库建表 | ✅ 完成 |
-| **M3** | W9 | 期中验收、核心功能演示 | 🔄 进行中 |
-| **M4** | W12 | 所有算法实现、性能压测 | ⏳ 待开始 |
-| **M5** | W14 | 系统集成、测试覆盖率 85%+ | ⏳ 待开始 |
-| **M6** | W16 | 最终验收、答辩 | ⏳ 待开始 |
-
----
-
-## 🔧 开发指南
-
-### 代码规范
-
-**C++**:
-- 遵循 Google C++ Style Guide
-- 使用 clang-format 格式化代码
-- 所有公共 API 必须有文档注释
-
-**Vue.js**:
-- 使用 ESLint + Prettier
-- 组件采用 Composition API
-- 所有 API 调用封装在 `src/api/` 目录
-
-### Git 工作流
-
-```bash
-# 创建功能分支
-git checkout -b feature/your-feature
-
-# 提交代码
-git add .
-git commit -m "feat: add new feature"
-
-# 推送并创建 PR
-git push origin feature/your-feature
-```
-
-### 添加新算法
-
-1. 在 `include/` 目录创建头文件
-2. 在 `src/` 目录创建实现文件
-3. 在 `tests/` 目录创建单元测试
-4. 更新 `CMakeLists.txt`
-5. 编写算法文档
-
----
-
-## ⚠️ 注意事项
-
-### 课程要求约束
-
-1. **核心数据结构必须自定义实现**
-   - ❌ 禁止使用 BGL、LEMON 等图算法库
-   - ❌ 禁止使用现成推荐系统库
-   - ✅ 必须手写 Graph、Dijkstra、Top-K、倒排索引
-
-2. **时间复杂度要求**
-   - 核心检索、排序类功能：禁止 O(n) 暴力遍历
-   - 路径规划：O((V+E)logV)
-   - Top-K: O(nlogK) 或 O(n)
-   - 全文检索：O(1) 或 O(logN)
-
-3. **数据规模**
-   - 图节点 ≥ 200
-   - 边 ≥ 200
-   - 建筑物 ≥ 20
-   - 服务设施 ≥ 50（10+ 类型）
-
----
-
-## 📝 常见问题
-
-### Q1: 如何生成测试数据？
-
-```bash
-python3 scripts/generate_test_data.py --nodes 200 --edges 500
-```
-
-### Q2: PostGIS 安装失败？
-
-参考官方文档：https://postgis.net/install/
-
-或使用 Docker:
-```bash
-docker run -d --name postgis \
-  -e POSTGRES_PASSWORD=postgres \
-  -p 5432:5432 \
-  postgis/postgis:15-3.3
-```
-
-### Q3: CMake 找不到依赖？
-
-确保已安装：
-```bash
-# Ubuntu/Debian
-sudo apt-get install libpq-dev cmake g++
-
-# Windows (使用 vcpkg)
-vcpkg install pqxx crow nlohmann-json
-```
-
----
-
-## 📄 许可证
-
-MIT License
-
----
-
-## 🙏 致谢
-
-- 课程指导教师
-- 使用的所有开源库作者
-- AI 辅助工具（Claude、Qwen-Coder、Cursor）
-
----
-
-**最后更新**: 2026-03-31  
-**维护者**: yhm, zby, lxd
+- [快速运行手册](QUICKSTART.md)
+- [AI/Agent 接手说明](AGENTS.md)
+- [系统架构](docs/architecture.md)
+- [后端拆分记录](docs/backend-refactor.md)
+- [前端学习说明](docs/frontend-guide.md)
+- [运行中 API 文档](docs/api-runtime.md)

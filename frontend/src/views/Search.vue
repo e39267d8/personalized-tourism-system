@@ -1,0 +1,187 @@
+<template>
+  <div class="space-y-6">
+    <section class="grid gap-6 lg:grid-cols-[0.72fr_1.28fr]">
+      <div class="rounded-md border border-slate-200 bg-white p-5">
+        <h1 class="text-2xl font-bold">发现景点</h1>
+        <form class="mt-5 space-y-4" @submit.prevent="runSearch">
+          <div>
+            <label class="text-sm font-semibold text-slate-700">关键词</label>
+            <input
+              v-model="query"
+              class="mt-2 h-11 w-full rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-teal-700"
+              placeholder="故宫、博物馆、摄影、低预算"
+              type="search"
+              @input="loadSuggestions"
+            >
+            <div v-if="suggestions.length" class="mt-2 flex flex-wrap gap-2">
+              <button
+                v-for="item in suggestions"
+                :key="item"
+                type="button"
+                class="rounded-md bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-teal-50 hover:text-teal-800"
+                @click="useSuggestion(item)"
+              >
+                {{ item }}
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label class="text-sm font-semibold text-slate-700">景点类型</label>
+            <select v-model="category" class="mt-2 h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm outline-none focus:border-teal-700">
+              <option value="">全部类型</option>
+              <option v-for="item in categories" :key="item" :value="item">{{ item }}</option>
+            </select>
+          </div>
+          <div>
+            <label class="text-sm font-semibold text-slate-700">最高门票预算</label>
+            <div class="mt-2 flex items-center gap-3">
+              <input v-model.number="maxTicket" type="range" min="0" max="120" step="10" class="flex-1 accent-teal-700">
+              <span class="w-16 text-right text-sm font-bold">¥{{ maxTicket }}</span>
+            </div>
+          </div>
+
+          <div>
+            <label class="text-sm font-semibold text-slate-700">排序方式</label>
+            <select v-model="sort" class="mt-2 h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm outline-none focus:border-teal-700">
+              <option value="relevance">相关度优先</option>
+              <option value="rating">评分优先</option>
+              <option value="price">低价优先</option>
+              <option value="hot">热度优先</option>
+            </select>
+          </div>
+
+          <button class="w-full rounded-md bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800">
+            搜索景点
+          </button>
+        </form>
+      </div>
+
+      <div class="rounded-md border border-slate-200 bg-white p-5">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 class="text-lg font-semibold">搜索结果</h2>
+            <p class="mt-1 text-sm text-slate-500">找到 {{ spots.length }} 个景点，已按综合相关度排序。</p>
+          </div>
+          <span class="rounded-md bg-teal-50 px-3 py-1 text-sm font-semibold text-teal-800">{{ sourceLabel }}</span>
+        </div>
+
+        <div class="mt-5 grid gap-4 md:grid-cols-2">
+          <router-link
+            v-for="spot in spots"
+            :key="spot.id"
+            :to="`/spots/${spot.id}`"
+            class="overflow-hidden rounded-md border border-slate-200 bg-white transition hover:-translate-y-0.5 hover:border-teal-700 hover:shadow-sm"
+          >
+            <img
+              :src="spotImageUrl(spot)"
+              :alt="spot.name"
+              class="h-40 w-full object-cover"
+              @error="event => handleSpotImageError(event, spot)"
+            >
+            <div class="p-4">
+              <div class="flex items-start justify-between gap-3">
+                <div>
+                  <h3 class="font-semibold text-slate-950">{{ spot.name }}</h3>
+                  <div class="mt-1 text-sm text-slate-500">{{ spot.category }} · {{ spot.district }}</div>
+                </div>
+                <span class="rounded-md bg-amber-50 px-2 py-1 text-sm font-bold text-amber-800">{{ spot.rating }}</span>
+              </div>
+              <p class="mt-3 line-clamp-2 text-sm leading-6 text-slate-500">{{ spot.description }}</p>
+              <div class="mt-4 flex flex-wrap gap-2">
+                <span v-for="tag in spot.tags" :key="tag" class="rounded-md bg-slate-100 px-2 py-1 text-xs text-slate-600">{{ tag }}</span>
+              </div>
+              <div class="mt-4 flex items-center justify-between border-t border-slate-100 pt-3 text-sm text-slate-500">
+                <span>门票 ¥{{ spot.ticket }}</span>
+                <span>{{ spot.duration }}</span>
+              </div>
+              <div class="mt-3 flex items-center justify-between text-xs">
+                <span class="rounded-md bg-teal-50 px-2 py-1 font-medium text-teal-800">{{ spot.matchReason || '综合推荐' }}</span>
+                <span class="font-semibold text-slate-500">相关度 {{ Math.round(Number(spot.score || 0)) }}</span>
+              </div>
+            </div>
+          </router-link>
+        </div>
+
+        <div v-if="!spots.length" class="mt-5 rounded-md border border-dashed border-slate-300 p-8 text-center">
+          <div class="text-lg font-semibold">没有找到匹配景点</div>
+          <p class="mt-2 text-sm text-slate-500">试试缩短关键词，或放宽门票预算。</p>
+        </div>
+      </div>
+    </section>
+  </div>
+</template>
+
+<script setup>
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { scenicSpots as fallbackSpots } from '@/data/demoData'
+import { tourismApi } from '@/services/tourismApi'
+import { handleSpotImageError, spotImageUrl } from '@/utils/images'
+
+const route = useRoute()
+const router = useRouter()
+
+const query = ref(typeof route.query.q === 'string' ? route.query.q : '')
+const category = ref('')
+const maxTicket = ref(120)
+const sort = ref('relevance')
+const spots = ref(fallbackSpots)
+const suggestions = ref([])
+const sourceLabel = ref('精选景点')
+
+const categories = computed(() => [...new Set(spots.value.map(spot => spot.category).filter(Boolean))])
+
+const loadSuggestions = async () => {
+  try {
+    const response = await tourismApi.searchSuggestions({ q: query.value.trim() })
+    suggestions.value = response.items || []
+  } catch (error) {
+    suggestions.value = []
+  }
+}
+
+const loadSpots = async () => {
+  try {
+    const response = await tourismApi.scenicSpots({
+      q: query.value.trim(),
+      category: category.value,
+      max_ticket: String(maxTicket.value),
+      sort: sort.value,
+      limit: 50
+    })
+    spots.value = response.items || []
+    sourceLabel.value = '智能检索'
+  } catch (error) {
+    spots.value = fallbackSpots
+    sourceLabel.value = '精选景点'
+  }
+}
+
+const runSearch = () => {
+  router.push({ path: '/search', query: query.value.trim() ? { q: query.value.trim() } : {} })
+  loadSpots()
+  loadSuggestions()
+}
+
+const useSuggestion = (item) => {
+  query.value = item
+  runSearch()
+}
+
+watch(
+  () => route.query.q,
+  value => {
+    query.value = typeof value === 'string' ? value : ''
+    loadSpots()
+    loadSuggestions()
+  }
+)
+
+watch([category, maxTicket, sort], loadSpots)
+
+onMounted(() => {
+  loadSpots()
+  loadSuggestions()
+})
+</script>

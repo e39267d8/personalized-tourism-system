@@ -3,6 +3,7 @@
 # ============================================
 # C++ 编译
 backend/build/
+backend/build*/
 *.o
 *.obj
 *.exe
@@ -51,6 +52,10 @@ credentials.json
 # ============================================
 *.sql.bak
 database/seed_data.sql
+database/amap_pois*.sql
+
+__pycache__/
+scripts/__pycache__/
 
 # ============================================
 # 日志

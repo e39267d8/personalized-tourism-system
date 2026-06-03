@@ -1,436 +1,258 @@
-# 快速启动指南 ⚡
+# TourPilot 快速运行手册
 
-> 5 分钟快速启动个性化旅游系统开发环境
+这份文档只讲如何把项目跑起来。项目根目录假设为：
 
----
-
-## 🎯 前置条件检查
-
-### 必需软件
-
-```bash
-# 检查 C++ 编译器
-g++ --version
-# 需要：g++ 9+
-
-# 检查 CMake
-cmake --version
-# 需要：CMake 3.15+
-
-# 检查 Node.js
-node --version
-# 需要：Node.js 18+
-
-# 检查 PostgreSQL
-psql --version
-# 需要：PostgreSQL 15+
-
-# 检查 Git
-git --version
+```text
+C:\Users\seele\Desktop\code\personalized-tourism-system
 ```
 
-### 可选但推荐
+## 1. 准备环境
 
-- Docker（用于 PostgreSQL + PostGIS 容器化）
-- VS Code + C/C++ 插件
-- VS Code + Volar (Vue 3 插件)
+需要：
 
----
+- Node.js 18+
+- npm 9+
+- CMake 3.15+
+- C++17 编译器
+- PostgreSQL 15
+- PostGIS
+- libpq/PostgreSQL 开发库
+- standalone Asio
 
-## 🚀 快速启动（使用 Docker）
+## 2. 初始化数据库
 
-### Step 1: 启动数据库（Docker 方式）
+如果数据库不存在，先创建：
 
-```bash
-# 启动 PostgreSQL + PostGIS 容器
-docker run -d \
-  --name tourism-db \
-  -e POSTGRES_PASSWORD=postgres \
-  -p 5432:5432 \
-  -v tourism-data:/var/lib/postgresql/data \
-  postgis/postgis:15-3.3
-
-echo "✅ 数据库已启动"
+```powershell
+createdb -U postgres tourism_system
 ```
 
-### Step 2: 初始化数据库
+初始化：
 
-```bash
-# 等待容器启动
-sleep 5
-
-# 创建数据库
-docker exec -it tourism-db createdb -U postgres tourism_system
-
-# 执行建表脚本
-docker exec -i tourism-db psql -U postgres -d tourism_system < database/schema.sql
-
-# 执行函数脚本
-docker exec -i tourism-db psql -U postgres -d tourism_system < database/functions.sql
-
-# 生成测试数据
-docker exec -i tourism-db psql -U postgres -d tourism_system < scripts/seed_data.sql
-
-echo "✅ 数据库初始化完成"
+```powershell
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\schema.sql
+psql -U postgres -d tourism_system -f database\imports\amap_pois.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seed_demo.sql
+psql -U postgres -d tourism_system -f database\maintenance\repair_data_quality.sql
+psql -U postgres -d tourism_system -f database\verify_demo.sql
 ```
 
-### Step 3: 编译后端
+如需覆盖数据库连接：
 
-```bash
-cd backend
-
-# 创建构建目录
-mkdir build && cd build
-
-# 配置（Debug 模式）
-cmake .. -DCMAKE_BUILD_TYPE=Debug
-
-# 编译
-make -j$(nproc)
-# Windows: make -j4
-
-# 运行测试
-ctest
-
-echo "✅ 后端编译完成"
+```powershell
+$env:TOURISM_DB_CONN="host=127.0.0.1 port=5432 dbname=tourism_system user=postgres password=你的密码"
 ```
 
-### Step 4: 启动后端服务器
+## 3. 配置外部 API
 
-```bash
-# 在 backend/build 目录
-./tourism_server
+DeepSeek 必须通过环境变量配置，不要写入仓库：
 
-# 输出应显示：
-# ============================================
-# Personalized Tourism System Server
-# ============================================
-# Host: 0.0.0.0
-# Port: 8080
-# ...
+```powershell
+$env:TOURISM_LLM_API_KEY="你的 DeepSeek API Key"
+$env:TOURISM_LLM_BASE_URL="https://api.deepseek.com"
+$env:TOURISM_LLM_MODEL="deepseek-chat"
 ```
 
-打开新终端测试：
+高德路线服务已经在后端内置免费默认 key。通常不需要配置；如果要覆盖：
 
-```bash
-curl http://localhost:8080/health
-# 应返回：{"status":"ok","message":"..."}
+```powershell
+$env:AMAP_WEB_SERVICE_KEY="你的高德 Web Service Key"
 ```
 
-### Step 5: 启动前端
+## 4. 构建后端
 
-```bash
-# 在新终端，进入 frontend 目录
-cd frontend
-
-# 安装依赖（首次运行）
-npm install
-
-# 启动开发服务器
-npm run dev
-
-# 输出应显示：
-# ➜  Local:   http://localhost:3000/
+```powershell
+cmake -S backend -B backend\build-codex-verify-mingw
+cmake --build backend\build-codex-verify-mingw
 ```
 
-打开浏览器访问：**http://localhost:3000**
+如果后端启动后立刻退出，先把 PostgreSQL 的 DLL 目录加到当前窗口 PATH：
 
----
-
-## 🐳 完整 Docker Compose 方案（推荐）
-
-创建 `docker-compose.yml`:
-
-```yaml
-version: '3.8'
-
-services:
-  db:
-    image: postgis/postgis:15-3.3
-    environment:
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: tourism_system
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-      - ./database:/docker-entrypoint-initdb.d
-
-  backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    ports:
-      - "8080:8080"
-    depends_on:
-      - db
-    environment:
-      DATABASE_URL: postgresql://postgres:postgres@db:5432/tourism_system
-
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    ports:
-      - "3000:3000"
-    depends_on:
-      - backend
-
-volumes:
-  postgres-data:
+```powershell
+$env:PATH="C:\Program Files\PostgreSQL\15\bin;$env:PATH"
 ```
 
-一键启动：
+## 5. 启动后端
 
-```bash
-docker-compose up -d
+```powershell
+backend\build-codex-verify-mingw\bin\tourism_server.exe --host 127.0.0.1 --port 8080
 ```
 
----
+正常情况下，这个窗口会一直被后端服务占用，不会立刻回到 PowerShell 提示符。
 
-## 🔧 手动配置（无 Docker）
+验证：
 
-### Step 1: 安装 PostgreSQL + PostGIS
-
-**Ubuntu/Debian**:
-
-```bash
-sudo apt-get update
-sudo apt-get install postgresql-15 postgresql-15-postgis-3
+```powershell
+Invoke-WebRequest http://127.0.0.1:8080/health
 ```
 
-**Windows**:
+## 6. 启动前端
 
-1. 下载：https://www.postgresql.org/download/windows/
-2. 安装时选择 PostGIS 组件
-3. 或使用 Stack Builder
+另开一个窗口：
 
-**macOS**:
-
-```bash
-brew install postgresql@15
-brew install postgis
-```
-
-### Step 2: 创建数据库
-
-```bash
-# 创建数据库
-createdb tourism_system
-
-# 启用 PostGIS
-psql -d tourism_system -c "CREATE EXTENSION postgis;"
-
-# 执行脚本
-psql -d tourism_system -f database/schema.sql
-psql -d tourism_system -f database/functions.sql
-```
-
-### Step 3: 生成测试数据
-
-```bash
-cd scripts
-python3 generate_test_data.py --output seed_data.sql
-
-# 导入数据
-psql -d tourism_system -f seed_data.sql
-```
-
-### Step 4: 编译后端
-
-```bash
-cd backend
-mkdir build && cd build
-
-# 配置
-cmake .. -DCMAKE_BUILD_TYPE=Debug
-
-# 编译
-make -j4
-
-# 测试
-ctest
-```
-
-### Step 5: 启动服务
-
-```bash
-# 后端（终端 1）
-cd backend/build
-./tourism_server
-
-# 前端（终端 2）
+```powershell
 cd frontend
 npm install
 npm run dev
 ```
 
----
+默认地址：
 
-## ✅ 验证安装
-
-### 1. 测试数据库连接
-
-```bash
-psql -d tourism_system -c "SELECT PostGIS_Version();"
+```text
+http://127.0.0.1:3000
 ```
 
-### 2. 测试后端 API
+指定端口：
 
-```bash
-# 健康检查
-curl http://localhost:8080/health
-
-# 获取景点列表
-curl http://localhost:8080/api/v1/scenic-spots?page=1&page_size=5
-
-# 测试路径规划
-curl -X POST http://localhost:8080/api/v1/routes/plan \
-  -H "Content-Type: application/json" \
-  -d '{"waypoints":[{"longitude":116.397,"latitude":39.916},{"longitude":116.400,"latitude":39.920}],"transport_mode":"walk"}'
+```powershell
+npm run dev -- --host 127.0.0.1 --port 4187
 ```
 
-### 3. 测试前端
+当前 `npm run dev` 使用 `node scripts/vite-dev.mjs`，用于绕过 Windows 下 Vite 配置加载的路径访问问题。
 
-打开浏览器访问：**http://localhost:3000**
+## 7. 构建前端
 
-应该看到：
-- ✅ 顶部导航栏
-- ✅ 欢迎横幅
-- ✅ 功能卡片（智能推荐、路径规划、游记管理）
-- ✅ 地图展示（Leaflet）
-
----
-
-## 🐛 常见问题排查
-
-### 问题 1: CMake 找不到 PostgreSQL
-
-**错误**: `Could NOT find PostgreSQL`
-
-**解决**:
-
-```bash
-# Ubuntu/Debian
-sudo apt-get install libpq-dev
-
-# Windows (vcpkg)
-vcpkg install pqxx
-
-# macOS
-brew install libpq
+```powershell
+cd frontend
+npm.cmd run lint
+npm.cmd run build
 ```
 
-### 问题 2: npm install 失败
+## 8. 冒烟验证
 
-**错误**: `npm ERR! code ENOENT`
+后端：
 
-**解决**:
-
-```bash
-# 清理 npm 缓存
-npm cache clean --force
-
-# 删除 node_modules 和 package-lock.json
-rm -rf node_modules package-lock.json
-
-# 重新安装
-npm install
+```powershell
+Invoke-WebRequest http://127.0.0.1:8080/health
+Invoke-WebRequest "http://127.0.0.1:8080/api/v1/scenic-spots?limit=2"
+Invoke-WebRequest http://127.0.0.1:8080/api/v1/scenic-categories
+Invoke-WebRequest "http://127.0.0.1:8080/api/v1/search/suggestions?q=故宫"
+Invoke-WebRequest "http://127.0.0.1:8080/api/v1/budget-plans?budget=200"
+Invoke-WebRequest http://127.0.0.1:8080/api/v1/routes
+Invoke-WebRequest http://127.0.0.1:8080/api/v1/diaries
 ```
 
-### 问题 3: PostGIS 扩展创建失败
+登录：
 
-**错误**: `could not open extension control file`
+```powershell
+$login = Invoke-RestMethod `
+  -Method POST `
+  -Uri http://127.0.0.1:8080/api/v1/auth/login `
+  -ContentType "application/json" `
+  -Body '{"identifier":"demo_user","password":"demo123456"}'
 
-**解决**:
-
-```bash
-# 检查 PostGIS 是否安装
-psql -c "SELECT * FROM pg_available_extensions WHERE name = 'postgis';"
-
-# 如果为空，安装 PostGIS
-# Ubuntu/Debian: sudo apt-get install postgresql-15-postgis-3
-# macOS: brew install postgis
+$token = $login.data.token
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8080/api/v1/auth/me `
+  -Headers @{ Authorization = "Bearer $token" }
 ```
 
-### 问题 4: 端口被占用
+高德文本路线规划：
 
-**错误**: `Address already in use`
-
-**解决**:
-
-```bash
-# 查找占用端口的进程
-# Linux/macOS
-lsof -i :8080
-# Windows
-netstat -ano | findstr :8080
-
-# 杀死进程
-kill -9 <PID>
-
-# 或修改端口
-./tourism_server --port 8081
+```powershell
+Invoke-WebRequest `
+  -Method POST `
+  -Uri http://127.0.0.1:8080/api/v1/routes/plan `
+  -ContentType "application/json" `
+  -Body '{"city":"北京","startText":"前门大街","endText":"故宫博物院","waypointTexts":["天安门广场"],"travelMode":"walk","optimization":"balanced"}'
 ```
 
-### 问题 5: 前端无法连接后端 API
+本地节点路线规划：
 
-**错误**: `Network Error` 或 CORS 错误
-
-**解决**:
-
-检查 `frontend/vite.config.js`:
-
-```javascript
-server: {
-  proxy: {
-    '/api': {
-      target: 'http://localhost:8080',  // 确保端口正确
-      changeOrigin: true
-    }
-  }
-}
+```powershell
+Invoke-WebRequest `
+  -Method POST `
+  -Uri http://127.0.0.1:8080/api/v1/routes/plan `
+  -ContentType "application/json" `
+  -Body '{"startNodeId":1,"endNodeId":3,"waypointNodeIds":[2],"travelMode":"walk","optimization":"balanced","crowdTolerance":3}'
 ```
 
----
+AI 助手：
 
-## 📚 下一步学习资源
+```powershell
+Invoke-WebRequest `
+  -Method POST `
+  -Uri http://127.0.0.1:8080/api/v1/aigc/travel-chat `
+  -ContentType "application/json" `
+  -Body '{"message":"帮我规划北京三日游","destination":"北京","days":3,"budget":1000,"style":"balanced"}'
+```
 
-### PostgreSQL + PostGIS
+前端页面：
 
-- 官方文档：https://postgis.net/documentation/
-- 中文教程：https://www.postgis.net.cn/
+- `http://127.0.0.1:3000/`
+- `http://127.0.0.1:3000/login`
+- `http://127.0.0.1:3000/register`
+- `http://127.0.0.1:3000/search?q=故宫`
+- `http://127.0.0.1:3000/spots/3`
+- `http://127.0.0.1:3000/route`
+- `http://127.0.0.1:3000/agent`
 
-### C++ 图算法
+## 9. 图片来源
 
-- 《算法导论》第 22-25 章
-- CP-Algorithms: https://cp-algorithms.com/graph/dijkstra.html
+景点图片只走三层来源：
 
-### Vue.js 3
+1. 后端返回的数据库图片，来自高德导入或人工维护。
+2. 前端本地拼音图片，位于 `frontend/public/images/diary/`。
+3. 前端 SVG 占位图。
 
-- 官方文档：https://vuejs.org/
-- Vue Router: https://router.vuejs.org/
-- Pinia: https://pinia.vuejs.org/
+## 10. 演示账号
 
-### Crow HTTP 服务器
+```text
+用户名：demo_user
+邮箱：demo@example.com
+密码：demo123456
+```
 
-- GitHub: https://github.com/CrowCpp/Crow
-- 文档：https://crowcpp.org/
+需要登录后访问：`/profile`、`/achievements`、`/diary/new`、`/diary/edit/:id`。游记点赞、收藏、评分、评论也需要登录。
 
----
+## 11. 常见问题
 
-## 🎉 成功启动！
+### 后端启动后立刻返回 PowerShell
 
-如果所有步骤顺利完成，你现在拥有：
+检查退出码：
 
-✅ **数据库**: PostgreSQL + PostGIS，包含完整的表结构和测试数据  
-✅ **后端**: C++ HTTP 服务器运行在 http://localhost:8080  
-✅ **前端**: Vue.js 开发服务器运行在 http://localhost:3000  
-✅ **测试**: GoogleTest 单元测试通过  
+```powershell
+backend\build-codex-verify-mingw\bin\tourism_server.exe --help
+$LASTEXITCODE
+```
 
-**开始开发吧！** 🚀
+如果是 `-1073741515`，通常是缺少运行时 DLL。执行：
 
----
+```powershell
+$env:PATH="C:\Program Files\PostgreSQL\15\bin;$env:PATH"
+```
 
-**最后更新**: 2026-03-31  
-**维护者**: yhm, zby, lxd
+### 前端页面能打开，但接口报错
+
+前端请求 `/api/v1/...`，由 Vite 代理到 `http://127.0.0.1:8080`。先确认：
+
+```powershell
+Invoke-WebRequest http://127.0.0.1:8080/health
+```
+
+### 登录失败
+
+确认已经执行：
+
+```powershell
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seed_demo.sql
+```
+
+演示账号是 `demo_user / demo123456`。如果数据库里仍是旧的 `demo_hash_not_for_production`，后端会在首次成功登录后自动升级为 PBKDF2 密码哈希。
+
+### AI 助手没有回复
+
+检查：
+
+- `TOURISM_LLM_API_KEY` 是否在启动后端的同一个窗口设置。
+- `TOURISM_LLM_BASE_URL` 是否能访问。
+- `TOURISM_LLM_MODEL` 是否是平台支持的模型。
+- 后端终端是否有外部 API 请求失败日志。
+
+### 地图不显示
+
+检查：
+
+- `frontend/src/main.js` 是否导入 `leaflet/dist/leaflet.css`。
+- 浏览器是否能访问 OpenStreetMap 瓦片。
+- 路线页地图容器是否有高度。
