@@ -1,141 +1,258 @@
-# Windows 快速运行指南
+# TourPilot 快速运行手册
 
-这份指南按你当前的 Windows + PostgreSQL 15 + PostGIS 环境编写。
+这份文档只讲如何把项目跑起来。项目根目录假设为：
 
-## 1. 打开命令行
-
-建议使用 `cmd` 或 PowerShell 都可以。下面命令以 `cmd` 为例。
-
-```bat
-cd C:\Users\seele\Desktop\code\personalized-tourism-system
-set PATH=C:\Program Files\PostgreSQL\15\bin;%PATH%
-set PGCLIENTENCODING=UTF8
-chcp 65001
+```text
+C:\Users\seele\Desktop\code\personalized-tourism-system
 ```
 
-检查 PostGIS 是否可用：
+## 1. 准备环境
 
-```bat
-psql -U postgres -d postgres -c "SELECT version();"
-```
+需要：
+
+- Node.js 18+
+- npm 9+
+- CMake 3.15+
+- C++17 编译器
+- PostgreSQL 15
+- PostGIS
+- libpq/PostgreSQL 开发库
+- standalone Asio
 
 ## 2. 初始化数据库
 
-如果你要重建演示数据库，执行：
+如果数据库不存在，先创建：
 
-```bat
-psql -U postgres -d postgres -c "DROP DATABASE IF EXISTS tourism_system;"
-psql -U postgres -d postgres -c "CREATE DATABASE tourism_system WITH ENCODING 'UTF8';"
+```powershell
+createdb -U postgres tourism_system
+```
+
+初始化：
+
+```powershell
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\schema.sql
+psql -U postgres -d tourism_system -f database\imports\amap_pois.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seed_demo.sql
+psql -U postgres -d tourism_system -f database\maintenance\repair_data_quality.sql
 psql -U postgres -d tourism_system -f database\verify_demo.sql
 ```
 
-成功时你应该看到类似数量：
+如需覆盖数据库连接：
 
-| 表 | 行数 |
-|---|---:|
-| `scenic_spots` | 8 |
-| `graph_nodes` | 15 |
-| `graph_edges` | 32 |
-| `travel_diaries` | 3 |
-| `route_plans` | 3 |
-| `achievements` | 3 |
-
-## 3. 编译后端
-
-如果你使用当前项目里的构建方式：
-
-```bat
-cd C:\Users\seele\Desktop\code\personalized-tourism-system\backend
-cmake -S . -B build-codex-mingw -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Debug -DASIO_INCLUDE_DIR=C:\tmp\asio\include -DPostgreSQL_ROOT="C:\Program Files\PostgreSQL\15"
-cmake --build build-codex-mingw
+```powershell
+$env:TOURISM_DB_CONN="host=127.0.0.1 port=5432 dbname=tourism_system user=postgres password=你的密码"
 ```
 
-如果提示找不到 `asio.hpp`，需要先准备 Standalone Asio，并把 `-DASIO_INCLUDE_DIR=` 改成你本机 `asio.hpp` 所在目录。
+## 3. 配置外部 API
 
-## 4. 启动后端
+DeepSeek 必须通过环境变量配置，不要写入仓库：
 
-```bat
-cd C:\Users\seele\Desktop\code\personalized-tourism-system\backend
-set PATH=C:\Program Files\PostgreSQL\15\bin;%PATH%
-build-codex-mingw\bin\tourism_server.exe --host 127.0.0.1 --port 8080
+```powershell
+$env:TOURISM_LLM_API_KEY="你的 DeepSeek API Key"
+$env:TOURISM_LLM_BASE_URL="https://api.deepseek.com"
+$env:TOURISM_LLM_MODEL="deepseek-chat"
 ```
 
-如果你的数据库需要密码，先设置连接字符串：
+高德路线服务已经在后端内置免费默认 key。通常不需要配置；如果要覆盖：
 
-```bat
-set TOURISM_DB_CONN=host=127.0.0.1 port=5432 dbname=tourism_system user=postgres password=你的密码
+```powershell
+$env:AMAP_WEB_SERVICE_KEY="你的高德 Web Service Key"
 ```
 
-后端启动后，新开一个终端测试：
+## 4. 构建后端
 
-```bat
-powershell -Command "Invoke-RestMethod http://127.0.0.1:8080/health"
-powershell -Command "Invoke-RestMethod http://127.0.0.1:8080/api/v1/scenic-spots"
+```powershell
+cmake -S backend -B backend\build-codex-verify-mingw
+cmake --build backend\build-codex-verify-mingw
 ```
 
-`/health` 里应看到：
+如果后端启动后立刻退出，先把 PostgreSQL 的 DLL 目录加到当前窗口 PATH：
 
-```json
-{
-  "status": "ok",
-  "database": "connected"
-}
+```powershell
+$env:PATH="C:\Program Files\PostgreSQL\15\bin;$env:PATH"
 ```
 
-## 5. 启动前端
+## 5. 启动后端
 
-```bat
-cd C:\Users\seele\Desktop\code\personalized-tourism-system\frontend
+```powershell
+backend\build-codex-verify-mingw\bin\tourism_server.exe --host 127.0.0.1 --port 8080
+```
+
+正常情况下，这个窗口会一直被后端服务占用，不会立刻回到 PowerShell 提示符。
+
+验证：
+
+```powershell
+Invoke-WebRequest http://127.0.0.1:8080/health
+```
+
+## 6. 启动前端
+
+另开一个窗口：
+
+```powershell
+cd frontend
 npm install
 npm run dev
 ```
 
-浏览器打开 Vite 输出的地址，通常是：
+默认地址：
 
 ```text
-http://127.0.0.1:3000/
+http://127.0.0.1:3000
 ```
 
-前端会把 `/api` 自动代理到后端 `http://127.0.0.1:8080`。
+指定端口：
 
-## 6. 常见问题
-
-| 问题 | 解决 |
-|---|---|
-| `psql` 不是内部或外部命令 | 执行 `set PATH=C:\Program Files\PostgreSQL\15\bin;%PATH%` |
-| `postgis.control` 不存在 | PostGIS 没装完整，需要安装 PostgreSQL 15 对应的 PostGIS |
-| `postgis-3.dll` 找不到 | 把 PostGIS 的 `bin/lib/share` 文件复制或安装到 PostgreSQL 15 目录，重启终端 |
-| 中文乱码 | 执行 `chcp 65001` 和 `set PGCLIENTENCODING=UTF8` |
-| 后端启动后数据库连接失败 | 检查 `TOURISM_DB_CONN`、用户名、密码、数据库名 |
-| 前端页面没数据 | 先确认 `http://127.0.0.1:8080/health` 是否 database connected |
-| 端口 8080 被占用 | 后端改用 `--port 8081`，同时修改 `frontend/vite.config.js` 代理地址 |
-
-## 7. 当前演示范围
-
-已经是真实数据库功能：
-
-- 景点列表读取数据库
-- 路线列表读取数据库
-- 成就列表读取数据库
-- 旅游日记查询、新增、编辑、删除写入数据库
-
-仍然是演示功能：
-
-- 预算推荐是后端内置规则
-- AIGC 摘要/润色是占位逻辑
-- 路线规划接口还没有真正调用 Dijkstra 动态计算
-- 当前没有接入高德实时数据
-
-## 8. 可选：导入高德 POI 数据
-
-如果你有高德开放平台 Web 服务 Key，可以先生成 SQL，再导入数据库：
-
-```bat
-cd C:\Users\seele\Desktop\code\personalized-tourism-system
-python scripts\import_amap_pois.py --key 你的高德Key --city 北京 --keywords 景点 --output database\amap_pois.sql
-psql -U postgres -d tourism_system -f database\amap_pois.sql
+```powershell
+npm run dev -- --host 127.0.0.1 --port 4187
 ```
 
-导入后重新打开搜索页，站内搜索会自动检索新增景点。
+当前 `npm run dev` 使用 `node scripts/vite-dev.mjs`，用于绕过 Windows 下 Vite 配置加载的路径访问问题。
+
+## 7. 构建前端
+
+```powershell
+cd frontend
+npm.cmd run lint
+npm.cmd run build
+```
+
+## 8. 冒烟验证
+
+后端：
+
+```powershell
+Invoke-WebRequest http://127.0.0.1:8080/health
+Invoke-WebRequest "http://127.0.0.1:8080/api/v1/scenic-spots?limit=2"
+Invoke-WebRequest http://127.0.0.1:8080/api/v1/scenic-categories
+Invoke-WebRequest "http://127.0.0.1:8080/api/v1/search/suggestions?q=故宫"
+Invoke-WebRequest "http://127.0.0.1:8080/api/v1/budget-plans?budget=200"
+Invoke-WebRequest http://127.0.0.1:8080/api/v1/routes
+Invoke-WebRequest http://127.0.0.1:8080/api/v1/diaries
+```
+
+登录：
+
+```powershell
+$login = Invoke-RestMethod `
+  -Method POST `
+  -Uri http://127.0.0.1:8080/api/v1/auth/login `
+  -ContentType "application/json" `
+  -Body '{"identifier":"demo_user","password":"demo123456"}'
+
+$token = $login.data.token
+Invoke-RestMethod `
+  -Uri http://127.0.0.1:8080/api/v1/auth/me `
+  -Headers @{ Authorization = "Bearer $token" }
+```
+
+高德文本路线规划：
+
+```powershell
+Invoke-WebRequest `
+  -Method POST `
+  -Uri http://127.0.0.1:8080/api/v1/routes/plan `
+  -ContentType "application/json" `
+  -Body '{"city":"北京","startText":"前门大街","endText":"故宫博物院","waypointTexts":["天安门广场"],"travelMode":"walk","optimization":"balanced"}'
+```
+
+本地节点路线规划：
+
+```powershell
+Invoke-WebRequest `
+  -Method POST `
+  -Uri http://127.0.0.1:8080/api/v1/routes/plan `
+  -ContentType "application/json" `
+  -Body '{"startNodeId":1,"endNodeId":3,"waypointNodeIds":[2],"travelMode":"walk","optimization":"balanced","crowdTolerance":3}'
+```
+
+AI 助手：
+
+```powershell
+Invoke-WebRequest `
+  -Method POST `
+  -Uri http://127.0.0.1:8080/api/v1/aigc/travel-chat `
+  -ContentType "application/json" `
+  -Body '{"message":"帮我规划北京三日游","destination":"北京","days":3,"budget":1000,"style":"balanced"}'
+```
+
+前端页面：
+
+- `http://127.0.0.1:3000/`
+- `http://127.0.0.1:3000/login`
+- `http://127.0.0.1:3000/register`
+- `http://127.0.0.1:3000/search?q=故宫`
+- `http://127.0.0.1:3000/spots/3`
+- `http://127.0.0.1:3000/route`
+- `http://127.0.0.1:3000/agent`
+
+## 9. 图片来源
+
+景点图片只走三层来源：
+
+1. 后端返回的数据库图片，来自高德导入或人工维护。
+2. 前端本地拼音图片，位于 `frontend/public/images/diary/`。
+3. 前端 SVG 占位图。
+
+## 10. 演示账号
+
+```text
+用户名：demo_user
+邮箱：demo@example.com
+密码：demo123456
+```
+
+需要登录后访问：`/profile`、`/achievements`、`/diary/new`、`/diary/edit/:id`。游记点赞、收藏、评分、评论也需要登录。
+
+## 11. 常见问题
+
+### 后端启动后立刻返回 PowerShell
+
+检查退出码：
+
+```powershell
+backend\build-codex-verify-mingw\bin\tourism_server.exe --help
+$LASTEXITCODE
+```
+
+如果是 `-1073741515`，通常是缺少运行时 DLL。执行：
+
+```powershell
+$env:PATH="C:\Program Files\PostgreSQL\15\bin;$env:PATH"
+```
+
+### 前端页面能打开，但接口报错
+
+前端请求 `/api/v1/...`，由 Vite 代理到 `http://127.0.0.1:8080`。先确认：
+
+```powershell
+Invoke-WebRequest http://127.0.0.1:8080/health
+```
+
+### 登录失败
+
+确认已经执行：
+
+```powershell
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seed_demo.sql
+```
+
+演示账号是 `demo_user / demo123456`。如果数据库里仍是旧的 `demo_hash_not_for_production`，后端会在首次成功登录后自动升级为 PBKDF2 密码哈希。
+
+### AI 助手没有回复
+
+检查：
+
+- `TOURISM_LLM_API_KEY` 是否在启动后端的同一个窗口设置。
+- `TOURISM_LLM_BASE_URL` 是否能访问。
+- `TOURISM_LLM_MODEL` 是否是平台支持的模型。
+- 后端终端是否有外部 API 请求失败日志。
+
+### 地图不显示
+
+检查：
+
+- `frontend/src/main.js` 是否导入 `leaflet/dist/leaflet.css`。
+- 浏览器是否能访问 OpenStreetMap 瓦片。
+- 路线页地图容器是否有高度。

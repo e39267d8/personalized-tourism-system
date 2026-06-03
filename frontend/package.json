@@ -1,28 +1,20 @@
 {
   "name": "personalized-tourism-frontend",
   "version": "1.0.0",
-  "description": "个性化旅游系统前端 - Vue.js + Tailwind CSS",
+  "description": "个性化旅游系统前端 - Vue 3 + Tailwind CSS",
   "type": "module",
   "private": true,
   "scripts": {
-    "dev": "vite",
+    "dev": "node scripts/vite-dev.mjs",
     "build": "vite build",
-    "preview": "vite preview",
-    "lint": "eslint . --ext .vue,.js,.jsx,.cjs,.mjs --fix",
+    "preview": "node scripts/vite-preview.mjs",
+    "lint": "eslint . --ext .vue,.js,.jsx,.cjs,.mjs",
+    "lint:fix": "eslint . --ext .vue,.js,.jsx,.cjs,.mjs --fix",
     "test": "vitest"
   },
   "dependencies": {
-    "@tiptap/extension-image": "^3.23.1",
-    "@tiptap/extension-placeholder": "^3.23.1",
-    "@tiptap/extension-underline": "^3.23.1",
-    "@tiptap/starter-kit": "^3.23.1",
-    "@tiptap/vue-3": "^3.23.1",
-    "@vue-leaflet/vue-leaflet": "^0.10.1",
     "axios": "^1.6.5",
-    "dayjs": "^1.11.10",
-    "echarts": "^5.4.3",
     "leaflet": "^1.9.4",
-    "pinia": "^2.1.7",
     "vue": "^3.4.0",
     "vue-router": "^4.2.5"
   },

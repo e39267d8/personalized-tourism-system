@@ -1,12 +1,13 @@
 """Fetch Amap POIs and generate SQL for this project.
 
 Examples:
-  py scripts/import_amap_pois.py --key YOUR_AMAP_KEY --city 北京 --keywords 景点 --output database/amap_pois.sql
+  py scripts/import_amap_pois.py --key YOUR_AMAP_KEY --city 北京 --keywords 景点 --output database/imports/amap_pois.sql
 
-  py scripts/import_amap_pois.py --key YOUR_AMAP_KEY --preset national-demo --keywords 景点,博物馆,公园 --pages 2 --output database/amap_pois_china.sql
+  py scripts/import_amap_pois.py --key YOUR_AMAP_KEY --preset national-demo --keywords 景点,博物馆,公园 --pages 2 --output database/imports/amap_pois.sql
 
-Then review the generated SQL and import it:
-  psql -U postgres -d tourism_system -f database/amap_pois_china.sql
+The output path is the only official Amap import SQL. Regenerating it will
+overwrite database/imports/amap_pois.sql, so review the file before import:
+  psql -U postgres -d tourism_system -f database/imports/amap_pois.sql
 """
 
 from __future__ import annotations
@@ -17,6 +18,26 @@ import time
 import urllib.parse
 import urllib.request
 from pathlib import Path
+
+IMPORT_HEADER_SQL = """SET client_encoding = 'UTF8';
+BEGIN;
+
+-- 保证高德 POI 导入时所有标准分类都存在。
+INSERT INTO categories (id, name, description, icon, parent_id, sort_order)
+VALUES
+    (1, '旅游景点', '高德 POI 导入时使用的通用景点分类', 'map-pin', NULL, 1),
+    (2, '历史古迹', '历史文化遗产与古建筑', 'landmark', NULL, 2),
+    (3, '博物馆', '展览、文博与公共文化空间', 'museum', NULL, 3),
+    (4, '城市公园', '休闲散步和自然景观', 'trees', NULL, 4),
+    (5, '商业街区', '购物、美食与夜游区域', 'shopping-bag', NULL, 5),
+    (6, '观景摄影', '适合拍照与城市观景的地点', 'camera', NULL, 6),
+    (7, '城市地标', '城市广场、地标建筑与公共空间', 'building-2', NULL, 7)
+ON CONFLICT (id) DO UPDATE SET
+    name = EXCLUDED.name,
+    description = EXCLUDED.description,
+    icon = EXCLUDED.icon,
+    sort_order = EXCLUDED.sort_order;
+"""
 
 
 AMAP_PLACE_TEXT_URL = "https://restapi.amap.com/v3/place/text"
@@ -167,6 +188,31 @@ def first_photo_url(poi: dict) -> str:
     return ""
 
 
+def resolve_category_id(poi: dict, fallback_category_id: int) -> int:
+    typecode = str(poi.get("typecode") or "")
+    text = " ".join(
+        str(poi.get(key) or "")
+        for key in ("name", "type", "address", "cityname", "pname")
+    )
+    rules = [
+        (3, ("博物馆", "纪念馆", "展览", "美术馆", "科技馆", "文化馆")),
+        (7, ("广场", "地标", "城楼", "电视塔", "体育场", "中心")),
+        (5, ("商业", "购物", "步行街", "美食", "小吃", "夜市", "酒吧", "餐厅", "工体", "三里屯", "王府井", "前门")),
+        (4, ("公园", "森林", "湿地", "湖", "山", "自然", "园林", "植物园", "动物园", "颐和园", "圆明园", "北海")),
+        (2, ("历史", "古迹", "古建", "遗址", "故宫", "长城", "寺", "庙", "宫", "塔", "陵", "文化遗产", "天坛", "雍和宫")),
+        (6, ("摄影", "观景", "打卡", "日落", "夜景", "俯瞰")),
+    ]
+    for category_id, keywords in rules:
+        if any(keyword in text for keyword in keywords):
+            return category_id
+
+    if typecode.startswith("1101"):
+        return 4
+    if typecode.startswith("1102"):
+        return 2
+    return fallback_category_id
+
+
 def poi_to_sql(poi: dict, category_id: int) -> str | None:
     location = poi.get("location") or ""
     if "," not in location:
@@ -178,6 +224,7 @@ def poi_to_sql(poi: dict, category_id: int) -> str | None:
     city = poi.get("cityname") or ""
     province = poi.get("pname") or ""
     type_name = (poi.get("type") or "\u666f\u70b9").split(";")[-1]
+    resolved_category_id = resolve_category_id(poi, category_id)
     photo = first_photo_url(poi)
 
     description = f"{name}\uff0c\u4f4d\u4e8e{province}{city}{address}\u3002\u6570\u636e\u6765\u6e90\uff1a\u9ad8\u5fb7\u5730\u56fe\u5f00\u653e\u5e73\u53f0 POI\u3002"
@@ -187,6 +234,13 @@ def poi_to_sql(poi: dict, category_id: int) -> str | None:
 lower(trim(name)) = lower(trim({sql_literal(name)}))
       AND COALESCE(city, '') = {sql_literal(city)}
       AND ST_DWithin(location, {point_expr}, 100)
+""".strip()
+
+    update_category = f"""
+UPDATE scenic_spots
+SET category_id = {resolved_category_id}
+WHERE {identity_where}
+  AND (category_id IS NULL OR category_id = 1);
 """.strip()
 
     update_photo = ""
@@ -214,7 +268,7 @@ SELECT
     {sql_literal(name)},
     {sql_literal(description)},
     {point_expr},
-    {category_id},
+    {resolved_category_id},
     4.20,
     0,
     {sql_literal(address)},
@@ -233,7 +287,7 @@ WHERE NOT EXISTS (
 );
 """.strip()
 
-    return "\n\n".join(item for item in [update_photo, insert_sql] if item)
+    return "\n\n".join(item for item in [update_category, update_photo, insert_sql] if item)
 
 
 def main() -> None:
@@ -249,8 +303,8 @@ def main() -> None:
     parser.add_argument("--pages", type=int, default=3)
     parser.add_argument("--offset", type=int, default=20)
     parser.add_argument("--delay", type=float, default=0.2, help="Seconds between Amap requests")
-    parser.add_argument("--category-id", type=int, default=1)
-    parser.add_argument("--output", default="database/amap_pois.sql")
+    parser.add_argument("--category-id", type=int, default=1, help="Fallback category id when no POI rule matches")
+    parser.add_argument("--output", default="database/imports/amap_pois.sql")
     args = parser.parse_args()
 
     cities = resolve_cities(args.city, args.cities, args.cities_file, args.preset)
@@ -289,7 +343,8 @@ def main() -> None:
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(
-        "SET client_encoding = 'UTF8';\nBEGIN;\n\n"
+        IMPORT_HEADER_SQL
+        + "\n"
         + "\n\n".join(statements)
         + "\n\nCOMMIT;\n",
         encoding="utf-8",

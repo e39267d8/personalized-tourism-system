@@ -86,6 +86,10 @@ CREATE INDEX idx_user_preferences_type ON user_preferences(preference_type);
 CREATE INDEX idx_favorites_user ON user_favorites(user_id);
 CREATE INDEX idx_favorites_spot ON user_favorites(scenic_spot_id);
 
+ALTER TABLE refresh_tokens
+    ADD CONSTRAINT fk_refresh_tokens_user
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
+
 -- =====================================================
 -- 2. 景点分类表
 -- =====================================================
@@ -228,6 +232,9 @@ CREATE TABLE travel_diaries (
     view_count INTEGER DEFAULT 0,
     like_count INTEGER DEFAULT 0,
     comment_count INTEGER DEFAULT 0,
+    rating_score DECIMAL(3,2) DEFAULT 0,
+    rating_count INTEGER DEFAULT 0,
+    bookmark_count INTEGER DEFAULT 0,
     search_vector TSVECTOR,
     aigc_summary TEXT,  -- AI 生成的摘要
     aigc_title TEXT,    -- AI 生成的标题
@@ -241,6 +248,7 @@ CREATE INDEX idx_diaries_user ON travel_diaries(user_id);
 CREATE INDEX idx_diaries_status ON travel_diaries(status);
 CREATE INDEX idx_diaries_created ON travel_diaries(created_at DESC);
 CREATE INDEX idx_diaries_view_count ON travel_diaries(view_count DESC);
+CREATE INDEX idx_diaries_rating_score ON travel_diaries(rating_score DESC);
 
 -- 游记点赞表
 CREATE TABLE diary_likes (
@@ -250,6 +258,45 @@ CREATE TABLE diary_likes (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(diary_id, user_id)
 );
+
+-- 游记评论表
+CREATE TABLE diary_comments (
+    id BIGSERIAL PRIMARY KEY,
+    diary_id INTEGER NOT NULL REFERENCES travel_diaries(id) ON DELETE CASCADE,
+    user_id BIGINT NOT NULL DEFAULT 1,
+    content TEXT NOT NULL,
+    parent_id BIGINT REFERENCES diary_comments(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_diary_comments_diary_id ON diary_comments(diary_id);
+CREATE INDEX idx_diary_comments_parent_id ON diary_comments(parent_id);
+CREATE INDEX idx_diary_comments_created_at ON diary_comments(created_at DESC);
+
+-- 游记收藏表
+CREATE TABLE diary_bookmarks (
+    id BIGSERIAL PRIMARY KEY,
+    diary_id INTEGER NOT NULL REFERENCES travel_diaries(id) ON DELETE CASCADE,
+    user_id BIGINT NOT NULL DEFAULT 1,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(diary_id, user_id)
+);
+
+CREATE INDEX idx_diary_bookmarks_diary_id ON diary_bookmarks(diary_id);
+CREATE INDEX idx_diary_bookmarks_user_id ON diary_bookmarks(user_id);
+
+-- 游记评分表
+CREATE TABLE diary_ratings (
+    id BIGSERIAL PRIMARY KEY,
+    diary_id INTEGER NOT NULL REFERENCES travel_diaries(id) ON DELETE CASCADE,
+    user_id BIGINT NOT NULL DEFAULT 1,
+    score SMALLINT NOT NULL CHECK (score >= 1 AND score <= 5),
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(diary_id, user_id)
+);
+
+CREATE INDEX idx_diary_ratings_diary_id ON diary_ratings(diary_id);
+CREATE INDEX idx_diary_ratings_user_id ON diary_ratings(user_id);
 
 -- =====================================================
 -- 8. 评价表（完整版）

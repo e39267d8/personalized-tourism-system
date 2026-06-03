@@ -35,6 +35,38 @@
     <section class="rounded-md border border-slate-200 bg-white p-6">
       <div class="flex flex-wrap items-start justify-between gap-4">
         <div>
+          <h2 class="text-xl font-bold text-slate-950">账号安全</h2>
+          <p class="mt-2 text-sm leading-6 text-slate-500">登录后可修改密码。忘记密码需要后续接入邮件或验证码服务。</p>
+        </div>
+        <div v-if="passwordMessage" class="rounded-md px-3 py-2 text-sm font-semibold" :class="passwordMessageType === 'error' ? 'bg-rose-50 text-rose-700' : 'bg-teal-50 text-teal-800'">
+          {{ passwordMessage }}
+        </div>
+      </div>
+
+      <form class="mt-5 grid gap-4 lg:grid-cols-[1fr_1fr_auto]" @submit.prevent="submitPasswordChange">
+        <input
+          v-model="passwordForm.oldPassword"
+          autocomplete="current-password"
+          class="h-11 rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-teal-700"
+          placeholder="原密码"
+          type="password"
+        >
+        <input
+          v-model="passwordForm.newPassword"
+          autocomplete="new-password"
+          class="h-11 rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-teal-700"
+          placeholder="新密码，至少 8 位"
+          type="password"
+        >
+        <button class="h-11 rounded-md bg-slate-900 px-5 text-sm font-semibold text-white hover:bg-slate-800">
+          修改密码
+        </button>
+      </form>
+    </section>
+
+    <section class="rounded-md border border-slate-200 bg-white p-6">
+      <div class="flex flex-wrap items-start justify-between gap-4">
+        <div>
           <h2 class="text-xl font-bold text-slate-950">我的旅游偏好问卷</h2>
           <p class="mt-2 text-sm leading-6 text-slate-500">
             保存后首页会根据你的偏好标签、预算和人流选择生成个性化推荐。
@@ -168,8 +200,12 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { achievements as fallbackAchievements, diaries as fallbackDiaries } from '@/data/demoData'
 import { tourismApi } from '@/services/tourismApi'
-
-const STORAGE_KEY = 'tourism_user_profile'
+import { changePassword } from '@/stores/auth'
+import {
+  clearStoredProfile,
+  readStoredProfile,
+  writeStoredProfile
+} from '@/utils/recommendation'
 
 const categoryOptions = ['历史古迹', '博物馆', '自然公园', '城市地标', '商业街区', '美食街区', '摄影打卡', '亲子休闲', '城市漫步']
 const tagOptions = ['历史', '展览', '自然', '摄影', '美食', '低预算', '夜游', '轻徒步', '胡同', '购物']
@@ -191,6 +227,12 @@ const form = reactive(defaultForm())
 const diaries = ref(fallbackDiaries)
 const achievements = ref(fallbackAchievements)
 const saveMessage = ref('')
+const passwordForm = reactive({
+  oldPassword: '',
+  newPassword: ''
+})
+const passwordMessage = ref('')
+const passwordMessageType = ref('success')
 
 const initials = computed(() => (profile.value.nickname || profile.value.username || 'TP').slice(0, 2).toUpperCase())
 
@@ -209,13 +251,8 @@ const applyPreferences = (saved) => {
 }
 
 const applySavedPreferences = () => {
-  const raw = localStorage.getItem(STORAGE_KEY)
-  if (!raw) return
-  try {
-    applyPreferences(JSON.parse(raw))
-  } catch (error) {
-    localStorage.removeItem(STORAGE_KEY)
-  }
+  const saved = readStoredProfile()
+  if (saved) applyPreferences(saved)
 }
 
 const preferencePayload = () => ({
@@ -228,7 +265,7 @@ const preferencePayload = () => ({
 
 const savePreferences = async () => {
   const payload = preferencePayload()
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
+  writeStoredProfile(payload)
   try {
     await tourismApi.saveProfilePreferences(payload)
     saveMessage.value = '偏好已保存，首页推荐将根据你的选择更新'
@@ -241,13 +278,35 @@ const savePreferences = async () => {
 }
 
 const clearPreferences = async () => {
-  localStorage.removeItem(STORAGE_KEY)
+  clearStoredProfile()
   applyPreferences(defaultForm())
   try {
     await tourismApi.deleteProfilePreferences()
     saveMessage.value = '偏好已清除，首页将显示默认推荐'
   } catch (error) {
     saveMessage.value = '偏好已清除，首页将显示默认推荐'
+  }
+}
+
+const submitPasswordChange = async () => {
+  passwordMessage.value = ''
+  if (!passwordForm.oldPassword || !passwordForm.newPassword) {
+    passwordMessageType.value = 'error'
+    passwordMessage.value = '请输入原密码和新密码'
+    return
+  }
+  try {
+    await changePassword({
+      oldPassword: passwordForm.oldPassword,
+      newPassword: passwordForm.newPassword
+    })
+    passwordForm.oldPassword = ''
+    passwordForm.newPassword = ''
+    passwordMessageType.value = 'success'
+    passwordMessage.value = '密码已修改'
+  } catch (error) {
+    passwordMessageType.value = 'error'
+    passwordMessage.value = error.response?.data?.message || '修改失败，请稍后重试'
   }
 }
 
@@ -266,7 +325,7 @@ onMounted(async () => {
     }
     if (preferenceData.exists && preferenceData.profile) {
       applyPreferences(preferenceData.profile)
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(preferenceData.profile))
+      writeStoredProfile(preferenceData.profile)
     }
     diaries.value = diaryData.items?.length ? diaryData.items : fallbackDiaries
     achievements.value = achievementData.items?.length ? achievementData.items : fallbackAchievements

@@ -50,6 +50,9 @@ components:
           type: string
           enum: [自然风光，历史文化，主题乐园，博物馆，美食，购物，娱乐，其他]
           description: 景点类别
+        categoryId:
+          type: integer
+          description: 景点主分类 ID
         opening_hours:
           type: string
           description: 开放时间
@@ -239,6 +242,22 @@ components:
               type: number
           description: 当前位置 (用于就近推荐)
 
+    ScenicCategory:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: 分类 ID
+        name:
+          type: string
+          description: 分类名称
+        icon:
+          type: string
+          description: 分类图标
+        count:
+          type: integer
+          description: 该分类下正常景点数量
+
     RecommendationResponse:
       type: object
       properties:
@@ -252,6 +271,23 @@ components:
 
 paths:
   # === 景点管理 API ===
+  /scenic-categories:
+    get:
+      summary: 获取景点分类列表
+      description: 返回有正常景点关联的稳定分类列表，供前端筛选控件使用。
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ScenicCategory'
+
   /scenic-spots:
     get:
       summary: 获取景点列表
@@ -284,6 +320,12 @@ paths:
           in: query
           schema:
             type: string
+          description: 分类名称过滤，兼容旧调用
+        - name: category_id
+          in: query
+          schema:
+            type: integer
+          description: 分类 ID 过滤；存在时优先于 category
         - name: q
           in: query
           schema:

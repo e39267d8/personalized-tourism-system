@@ -2,16 +2,54 @@ import axios from 'axios'
 
 const client = axios.create({
   baseURL: '/api/v1',
-  timeout: 5000,
+  timeout: 30000,
   headers: {
     'Content-Type': 'application/json'
   }
 })
 
+client.interceptors.request.use(
+  config => {
+    const token = localStorage.getItem('token')
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`
+    }
+    return config
+  },
+  error => Promise.reject(error)
+)
+
+client.interceptors.response.use(
+  response => response,
+  error => {
+    if (error.response?.status === 401) {
+      localStorage.removeItem('token')
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('tourism-auth:unauthorized'))
+        const url = error.config?.url || ''
+        const isAuthCheck = url.includes('/auth/login') || url.includes('/auth/register') || url.includes('/auth/me')
+        const isLoginPage = window.location.pathname === '/login' || window.location.pathname === '/register'
+        if (!isAuthCheck && !isLoginPage) {
+          const redirect = encodeURIComponent(window.location.pathname + window.location.search)
+          window.location.href = `/login?redirect=${redirect}`
+        }
+      }
+    }
+    console.error('API request failed:', error.config?.url || error.message)
+    return Promise.reject(error)
+  }
+)
+
 const unwrap = (response) => response.data?.data ?? response.data
 
 export const tourismApi = {
+  register: (payload) => client.post('/auth/register', payload).then(unwrap),
+  login: (payload) => client.post('/auth/login', payload).then(unwrap),
+  logout: () => client.post('/auth/logout').then(unwrap),
+  authMe: () => client.get('/auth/me').then(unwrap),
+  changePassword: (payload) => client.post('/auth/change-password', payload).then(unwrap),
   dashboard: () => client.get('/dashboard').then(unwrap),
+  scenicCategories: () => client.get('/scenic-categories').then(unwrap),
   scenicSpots: (params) => client.get('/scenic-spots', { params }).then(unwrap),
   searchSuggestions: (params) => client.get('/search/suggestions', { params }).then(unwrap),
   scenicSpot: (id) => client.get(`/scenic-spots/${id}`).then(unwrap),
@@ -39,5 +77,6 @@ export const tourismApi = {
   getProfilePreferences: () => client.get('/profile/preferences').then(unwrap),
   saveProfilePreferences: (payload) => client.put('/profile/preferences', payload).then(unwrap),
   deleteProfilePreferences: () => client.delete('/profile/preferences').then(unwrap),
-  summarizeDiary: (payload) => client.post('/aigc/diary-summary', payload).then(unwrap)
+  summarizeDiary: (payload) => client.post('/aigc/diary-summary', payload).then(unwrap),
+  travelAgentChat: (payload) => client.post('/aigc/travel-chat', payload).then(unwrap)
 }

@@ -97,8 +97,8 @@ const achievementList = ref(achievements)
 
 const rules = [
   { title: '路线完成', copy: '用户完成指定景点序列后解锁，例如前门、天安门、故宫、景山。' },
-  { title: '预算控制', copy: '实际支出低于系统预算时增加预算规划师进度。' },
-  { title: '内容贡献', copy: '发布游记、评价、上传图片都可以转化为成长值。' },
+  { title: '预算控制', copy: '实际支出低于系统预算时，增加预算规划师进度。' },
+  { title: '内容贡献', copy: '发布游记、评价景点、上传图片都可以转化为成长值。' },
   { title: '主题探索', copy: '历史、博物馆、citywalk、摄影等主题可以分别设计徽章。' }
 ]
 

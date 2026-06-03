@@ -1,5 +1,6 @@
-import { diaryImages } from './diaryImages'
+import { diaryImages } from './imageCatalog'
 
+// Local demo data keeps the app usable when the C++ API is not running.
 export const scenicSpots = [
   {
     id: 1,
@@ -11,7 +12,7 @@ export const scenicSpots = [
     ticket: 60,
     crowd: '高',
     tags: ['世界遗产', '中轴线', '亲子'],
-    image: 'https://images.unsplash.com/photo-1624193367099-c65ec0976e7e?auto=format&fit=crop&w=1200&q=80',
+    image: '/images/diary/gugong_0.jpg',
     description: '明清皇家宫殿建筑群，适合做历史文化路线的核心节点。'
   },
   {
@@ -24,7 +25,7 @@ export const scenicSpots = [
     ticket: 0,
     crowd: '中',
     tags: ['地标', '步行', '摄影'],
-    image: 'https://images.unsplash.com/photo-1599571234909-29ed5d1321d6?auto=format&fit=crop&w=1200&q=80',
+    image: '/images/diary/qianmen_0.jpg',
     description: '北京中轴线上的开放式城市广场，可与故宫、前门串联。'
   },
   {
@@ -37,7 +38,7 @@ export const scenicSpots = [
     ticket: 2,
     crowd: '低',
     tags: ['日落', '俯瞰故宫', '轻徒步'],
-    image: 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1200&q=80',
+    image: '/images/diary/jingshangongyuan_0.jpg',
     description: '登上万春亭可以俯瞰故宫和北京中轴线。'
   },
   {
@@ -50,7 +51,7 @@ export const scenicSpots = [
     ticket: 0,
     crowd: '中',
     tags: ['室内', '展览', '低预算'],
-    image: 'https://images.unsplash.com/photo-1566054757965-8c4085344c96?auto=format&fit=crop&w=1200&q=80',
+    image: '/images/diary/guojiabowuguan_0.jpeg',
     description: '大型综合博物馆，适合文化主题推荐和雨天室内路线。'
   },
   {
@@ -63,7 +64,7 @@ export const scenicSpots = [
     ticket: 0,
     crowd: '中',
     tags: ['美食', '夜游', '购物'],
-    image: 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=1200&q=80',
+    image: '/images/diary/qianmen_1.jpg',
     description: '传统商业街区，可作为餐饮和夜游节点。'
   },
   {
@@ -76,7 +77,7 @@ export const scenicSpots = [
     ticket: 20,
     crowd: '低',
     tags: ['胡同', 'citywalk', '摄影'],
-    image: 'https://images.unsplash.com/photo-1516475429286-465d815a0df7?auto=format&fit=crop&w=1200&q=80',
+    image: '/images/diary/shichahai_0.jpg',
     description: '老城地标与水岸街区，适合慢行和摄影。'
   }
 ]

@@ -1,16 +1,4 @@
-import { localSpotAliases, localSpotImageUrlForKey, localSpotImageUrlForSeed } from '@/data/localSpotImages'
-
-const KNOWN_GENERIC_IMAGE_MARKERS = [
-  'photo-1469854523086-cc02fe5d8800',
-  'photo-1566127992631-137a642a90f4',
-  'photo-1500530855697-b586d89ba3ee',
-  'photo-1566054757965-8c4085344c96',
-  'photo-1513415756790-2ac1db1297d0',
-  'photo-1519608487953-e999c86e7455',
-  'photo-1444723121867-7a241cacace9',
-  'photo-1547981609-4b6bfe67ca0b',
-  'photo-1508804185872-d7badad00f7d'
-]
+import { localSpotAliases, localSpotImageUrlForKey, localSpotImageUrlForSeed } from '@/data/imageCatalog'
 
 const FALLBACK_TYPES = [
   {
@@ -25,7 +13,7 @@ const FALLBACK_TYPES = [
   },
   {
     label: '历史古迹',
-    keywords: ['历史', '古迹', '寺', '庙', '遗产', '长城', '故宫'],
+    keywords: ['历史', '古迹', '寺', '庙', '宫', '遗产', '长城', '故宫'],
     colors: ['#7f1d1d', '#b91c1c', '#fee2e2']
   },
   {
@@ -67,15 +55,16 @@ const svgDataUri = ({ label, colors }) => {
   return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`
 }
 
-const looksEmpty = (value) => {
-  if (!value) return true
-  const text = String(value).trim()
-  if (!text || text === 'null' || text === 'undefined') return true
-  if (text.includes('example.com') || text.includes('placeholder')) return true
-  return KNOWN_GENERIC_IMAGE_MARKERS.some(marker => text.includes(marker))
-}
-
 const normalizeImageText = (value) => String(value || '').trim()
+
+const looksEmpty = (value) => {
+  const text = normalizeImageText(value).toLowerCase()
+  return !text ||
+    text === 'null' ||
+    text === 'undefined' ||
+    text.includes('example.com') ||
+    text.includes('placeholder')
+}
 
 const imageCandidatesFrom = (value) => {
   if (!value) return []
@@ -96,15 +85,11 @@ const imageCandidatesFromSpot = (spot = {}) => [
   ...imageCandidatesFrom(spot.images)
 ].map(normalizeImageText).filter(Boolean)
 
-const isAmapImageUrl = (value) => {
-  const text = normalizeImageText(value).toLowerCase()
-  return text.includes('amap.com') || text.includes('autonavi.com')
-}
-
 export const isUsableImageUrl = (value) => {
   const text = normalizeImageText(value)
   if (looksEmpty(text)) return false
   if (/^data:image\/[a-z0-9.+-]+;base64,/i.test(text)) return true
+  if (/^data:image\/svg\+xml/i.test(text)) return true
   if (/^https?:\/\//i.test(text)) return true
   if (text.startsWith('/') && !text.startsWith('//')) return true
   return false
@@ -113,9 +98,13 @@ export const isUsableImageUrl = (value) => {
 const fallbackTypeForSpot = (spot = {}) => {
   const profile = [
     spot.name,
+    spot.title,
+    spot.location,
     spot.category,
     spot.district,
     spot.description,
+    spot.pinyin,
+    spot.slug,
     ...(spot.tags || [])
   ].join(' ').toLowerCase()
 
@@ -146,6 +135,44 @@ export const normalizeDiaryImages = (diary = {}) => {
     })
 }
 
+export const localSpotImageUrl = (spot = {}) => {
+  const profile = [
+    spot.name,
+    spot.title,
+    spot.location,
+    spot.address,
+    spot.category,
+    spot.description,
+    spot.pinyin,
+    spot.slug,
+    ...imageCandidatesFrom(spot.tags)
+  ].join(' ').toLowerCase()
+
+  const matched = localSpotAliases.find(([key, aliases]) =>
+    profile.includes(key.toLowerCase()) ||
+    aliases.some(alias => profile.includes(String(alias).toLowerCase()))
+  )
+  return matched ? localSpotImageUrlForKey(matched[0]) : ''
+}
+
+export const spotImageUrl = (spot = {}) => {
+  const databaseImage = imageCandidatesFromSpot(spot).find(candidate => isUsableImageUrl(candidate))
+  if (databaseImage) return databaseImage
+  return localSpotImageUrl(spot) || fallbackImageForSpot(spot)
+}
+
+export const handleSpotImageError = (event, spot = {}) => {
+  if (!event?.target) return
+  const current = event.target.getAttribute('src') || ''
+  const localImage = localSpotImageUrl(spot)
+  if (localImage && current !== localImage) {
+    event.target.src = localImage
+    return
+  }
+  event.target.onerror = null
+  event.target.src = fallbackImageForSpot(spot)
+}
+
 export const diaryFallbackImage = (diary = {}) => fallbackImageForSpot({
   name: diary.title,
   category: diary.location || diary.category,
@@ -168,61 +195,19 @@ export const diaryDisplayImages = (diary = {}) => {
 export const diaryCoverImage = (diary = {}) => diaryDisplayImages(diary)[0] || diaryFallbackImage(diary)
 
 export const handleDiaryImageError = (event, diary = {}) => {
-  if (event?.target) {
-    const current = event.target.getAttribute('src') || ''
-    const localImage = diary.disableLocalImageFallback
-      ? ''
-      : localSpotImageUrl({
-        ...diary,
-        name: diary.title || diary.name,
-        category: diary.location || diary.category
-      }) || localSpotImageUrlForSeed(`${diary.id || ''}|${diary.title || ''}|${diary.location || ''}`)
-    if (localImage && current !== localImage) {
-      event.target.src = localImage
-    } else {
-      event.target.onerror = null
-      event.target.src = diaryFallbackImage(diary)
-    }
+  if (!event?.target) return
+  const current = event.target.getAttribute('src') || ''
+  const localImage = diary.disableLocalImageFallback
+    ? ''
+    : localSpotImageUrl({
+      ...diary,
+      name: diary.title || diary.name,
+      category: diary.location || diary.category
+    }) || localSpotImageUrlForSeed(`${diary.id || ''}|${diary.title || ''}|${diary.location || ''}`)
+  if (localImage && current !== localImage) {
+    event.target.src = localImage
+    return
   }
-}
-
-export const localSpotImageUrl = (spot = {}) => {
-  const profile = [
-    spot.name,
-    spot.title,
-    spot.location,
-    spot.address,
-    spot.category,
-    spot.description,
-    spot.pinyin,
-    spot.slug,
-    ...imageCandidatesFrom(spot.tags)
-  ].join(' ').toLowerCase()
-
-  const matched = localSpotAliases.find(([key, aliases]) =>
-    profile.includes(key.toLowerCase()) ||
-    aliases.some(alias => profile.includes(String(alias).toLowerCase()))
-  )
-  return matched ? localSpotImageUrlForKey(matched[0]) : ''
-}
-
-export const spotImageUrl = (spot = {}) => {
-  const candidates = imageCandidatesFromSpot(spot)
-  const amapImage = candidates.find(candidate => isAmapImageUrl(candidate) && isUsableImageUrl(candidate))
-  if (amapImage) return amapImage
-  return localSpotImageUrl(spot) || fallbackImageForSpot(spot)
-}
-
-export const handleSpotImageError = (event, spot = {}) => {
-  if (event?.target) {
-    const current = event.target.getAttribute('src') || ''
-    const localImage = localSpotImageUrl(spot)
-    const fallbackImage = fallbackImageForSpot(spot)
-    if (localImage && current !== localImage) {
-      event.target.src = localImage
-    } else {
-      event.target.onerror = null
-      event.target.src = fallbackImage
-    }
-  }
+  event.target.onerror = null
+  event.target.src = diaryFallbackImage(diary)
 }

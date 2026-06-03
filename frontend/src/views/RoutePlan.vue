@@ -127,7 +127,7 @@
         </template>
 
         <div v-else-if="!error" class="mt-4 rounded-md border border-dashed border-slate-300 p-6 text-sm text-slate-500">
-          添加多个途经点后会按列表顺序规划。这里只显示你输入的站点，导航步骤会单独展示实际经过的道路。
+          添加起点、途经点和目的地后会生成路线。后端会优先调用高德路线服务；如果接口不可用，前端会展示演示路线。
         </div>
       </div>
     </section>

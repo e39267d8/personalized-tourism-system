@@ -37,9 +37,24 @@
           </router-link>
         </nav>
 
-        <router-link to="/profile" class="ml-auto hidden rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 sm:block lg:ml-0">
-          个人中心
-        </router-link>
+        <div class="ml-auto hidden items-center gap-2 sm:flex lg:ml-0">
+          <template v-if="authStore.user">
+            <router-link to="/profile" class="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100">
+              {{ authStore.user.nickname || authStore.user.username }}
+            </router-link>
+            <button class="rounded-md px-3 py-2 text-sm font-semibold text-slate-500 hover:bg-slate-100 hover:text-slate-900" @click="handleLogout">
+              退出
+            </button>
+          </template>
+          <template v-else>
+            <router-link to="/login" class="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100">
+              登录
+            </router-link>
+            <router-link to="/register" class="rounded-md bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800">
+              注册
+            </router-link>
+          </template>
+        </div>
       </div>
 
       <div class="border-t border-slate-100 px-4 py-2 md:hidden">
@@ -75,6 +90,7 @@
 <script setup>
 import { ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { authStore, logout } from '@/stores/auth'
 
 const router = useRouter()
 const route = useRoute()
@@ -85,6 +101,7 @@ const navItems = [
   { to: '/search', label: '发现景点' },
   { to: '/recommend', label: '预算推荐' },
   { to: '/route', label: '路线规划' },
+  { to: '/agent', label: 'AI助手' },
   { to: '/diary', label: '旅行日记' },
   { to: '/achievements', label: '成就' }
 ]
@@ -94,6 +111,11 @@ const mobileNavItems = [...navItems, { to: '/profile', label: '我的' }]
 const submitSearch = () => {
   const q = keyword.value.trim()
   router.push({ path: '/search', query: q ? { q } : {} })
+}
+
+async function handleLogout() {
+  await logout()
+  if (route.meta.requiresAuth) router.push('/')
 }
 
 watch(

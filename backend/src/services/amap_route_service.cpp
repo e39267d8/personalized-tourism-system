@@ -20,6 +20,8 @@
 namespace tourism::services {
 namespace {
 
+constexpr const char* kDefaultAmapWebServiceKey = "fbdf40a14e05c09c0e6c56230dd2688f";
+
 struct AmapPlace {
     std::string name;
     std::string address;
@@ -75,8 +77,7 @@ std::string first_nonempty(std::initializer_list<std::string> values, const std:
     return fallback;
 }
 
-std::string duration_label(const std::string& minutes_text) {
-    int minutes = to_int(minutes_text);
+std::string duration_label_from_minutes(int minutes) {
     if (minutes <= 0) return "约 1 小时";
     if (minutes < 60) return std::to_string(minutes) + " 分钟";
     if (minutes % 60 == 0) return std::to_string(minutes / 60) + " 小时";
@@ -135,7 +136,7 @@ std::string http_get_text(const std::string& url) {
     return body;
 #else
     (void)url;
-    throw std::runtime_error("当前后端未实现非 Windows HTTP 客户端");
+    throw std::runtime_error("当前后端尚未实现非 Windows HTTP 客户端");
 #endif
 }
 
@@ -159,11 +160,7 @@ bool retryable_amap_error(const std::string& info) {
 crow::json::rvalue amap_request_json(const std::string& path, const std::vector<std::pair<std::string, std::string>>& params) {
     std::string last_error;
     for (int attempt = 0; attempt < 3; ++attempt) {
-        if (attempt > 0) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(600 * attempt));
-        } else {
-            std::this_thread::sleep_for(std::chrono::milliseconds(180));
-        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(attempt == 0 ? 180 : 600 * attempt));
 
         auto payload = crow::json::load(http_get_text(amap_url(path, params)));
         if (!payload) throw std::runtime_error("高德返回了无效 JSON");
@@ -221,8 +218,9 @@ AmapPlace resolve_amap_place(const std::string& key, const std::string& text, co
     });
 
     if (!geocode_payload.has("geocodes") || geocode_payload["geocodes"].size() == 0) {
-        throw std::runtime_error("无法识别地点：" + query);
+        throw std::runtime_error("无法识别地点");
     }
+
     const auto& geocode = geocode_payload["geocodes"][0];
     AmapPlace place;
     place.name = geocode.has("formatted_address") ? json_value_string(geocode["formatted_address"], query) : query;
@@ -230,7 +228,7 @@ AmapPlace resolve_amap_place(const std::string& key, const std::string& text, co
     place.city = city;
     place.location = geocode.has("location") ? json_value_string(geocode["location"]) : "";
     if (!parse_location(place.location, place.longitude, place.latitude)) {
-        throw std::runtime_error("地点没有可用坐标：" + query);
+        throw std::runtime_error("地点没有可用坐标");
     }
     return place;
 }
@@ -296,9 +294,7 @@ std::string amap_json_string_field(const crow::json::rvalue& value, const std::s
     return "";
 }
 
-void append_amap_steps(const crow::json::rvalue& path,
-                       const std::string& transport,
-                       AmapRoutePlan& plan) {
+void append_amap_steps(const crow::json::rvalue& path, const std::string& transport, AmapRoutePlan& plan) {
     std::vector<std::string> step_keys = {"steps", "rides"};
     for (const auto& key : step_keys) {
         if (!path.has(key)) continue;
@@ -310,9 +306,7 @@ void append_amap_steps(const crow::json::rvalue& path,
             segment.distance = step.has("distance") ? to_double(static_cast<std::string>(step["distance"])) : 0.0;
             segment.duration = step.has("duration") ? to_int(static_cast<std::string>(step["duration"])) : 0;
             segment.polyline = step.has("polyline") ? json_value_string(step["polyline"]) : "";
-            if (!segment.instruction.empty() || !segment.polyline.empty()) {
-                plan.segments.push_back(segment);
-            }
+            if (!segment.instruction.empty() || !segment.polyline.empty()) plan.segments.push_back(segment);
         }
         return;
     }
@@ -380,7 +374,7 @@ AmapRoutePlan plan_amap_route(const std::string& key,
         try {
             plan.places.push_back(resolve_amap_place(key, place_texts[index], city));
         } catch (const std::exception& error) {
-            throw std::runtime_error("第 " + std::to_string(index + 1) + " 个地点「" + place_texts[index] + "」识别失败：" + error.what());
+            throw std::runtime_error("第 " + std::to_string(index + 1) + " 个地点识别失败：" + error.what());
         }
     }
 
@@ -422,7 +416,7 @@ AmapRoutePlan plan_amap_route(const std::string& key,
         } catch (const std::exception& error) {
             throw std::runtime_error(
                 "第 " + std::to_string(i + 1) + " 段「" +
-                plan.places[i].name + " → " + plan.places[i + 1].name +
+                plan.places[i].name + " -> " + plan.places[i + 1].name +
                 "」规划失败：" + error.what()
             );
         }
@@ -480,11 +474,11 @@ crow::json::wvalue amap_route_json(const AmapRoutePlan& plan, const std::string&
     data["segments"] = std::move(segments);
     data["coordinates"] = std::move(coordinates);
     data["distance"] = distance.str();
-    data["time"] = duration_label(std::to_string(plan.total_duration / 60));
+    data["time"] = duration_label_from_minutes(plan.total_duration / 60);
     data["cost"] = travel_mode == "walk" ? 0 : std::max(3, static_cast<int>(plan.total_distance / 1000.0 * 2));
     data["intensity"] = plan.total_distance > 3500 ? "中等" : "轻松";
     data["transport"] = amap_direction_transport(travel_mode);
-    data["bestFor"] = "高德路径规划";
+    data["bestFor"] = "高德路线规划";
     data["total_distance_meters"] = static_cast<int>(plan.total_distance);
     data["total_duration_seconds"] = plan.total_duration;
     data["usedAmap"] = true;
@@ -501,7 +495,7 @@ std::string amap_key() {
     if (const char* value = std::getenv("AMAP_KEY")) {
         if (*value) return value;
     }
-    return "";
+    return kDefaultAmapWebServiceKey;
 }
 
 crow::json::wvalue plan_amap_route_json(const std::string& key,

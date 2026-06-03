@@ -95,15 +95,19 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import DiaryPostcard from '@/components/DiaryPostcard.vue'
 import { tourismApi } from '@/services/tourismApi'
 import { diaries as demoDiaries } from '@/data/demoData'
 import { diaryStore } from '@/stores/diaryStore'
+import { isAuthenticated } from '@/stores/auth'
 
 const props = defineProps({
   id: { type: Number, required: true }
 })
 
+const route = useRoute()
+const router = useRouter()
 const diary = ref({
   id: 0, title: '', content: '', excerpt: '', date: '', location: '',
   images: [], tags: [], author: {}, stats: { views: 0, likes: 0, comments: 0 },
@@ -123,6 +127,12 @@ const displayScore = computed(() => {
   return (diary.value.ratingScore || 0).toFixed(1)
 })
 const ratingCount = computed(() => diary.value.ratingCount || 0)
+
+function ensureAuth() {
+  if (isAuthenticated()) return true
+  router.push({ path: '/login', query: { redirect: route.fullPath } })
+  return false
+}
 
 async function loadDiary() {
   // Prefer the just-published client copy so detail uses the same uploaded image
@@ -213,6 +223,7 @@ async function loadComments() {
 }
 
 function toggleLike() {
+  if (!ensureAuth()) return
   liked.value = !liked.value
   const delta = liked.value ? 1 : -1
   diary.value.stats = { ...diary.value.stats, likes: (diary.value.stats?.likes || 0) + delta }
@@ -225,6 +236,7 @@ function toggleLike() {
 }
 
 function toggleBookmark() {
+  if (!ensureAuth()) return
   bookmarked.value = !bookmarked.value
   const delta = bookmarked.value ? 1 : -1
   diary.value.bookmarkCount = (diary.value.bookmarkCount || 0) + delta
@@ -238,6 +250,7 @@ function toggleBookmark() {
 const hasRatedBefore = ref(false)
 
 function rateDiary(score) {
+  if (!ensureAuth()) return
   const oldScore = userRating.value
   userRating.value = score
 
@@ -268,6 +281,7 @@ function rateDiary(score) {
 
 function submitComment() {
   if (!newComment.value.trim()) return
+  if (!ensureAuth()) return
   const content = newComment.value.trim()
   // Optimistic push
   comments.value.push({

@@ -1,6 +1,17 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { authStore, isAuthenticated, restoreAuth } from '@/stores/auth'
 
 const routes = [
+  {
+    path: '/login',
+    name: 'Login',
+    component: () => import('@/views/Login.vue')
+  },
+  {
+    path: '/register',
+    name: 'Register',
+    component: () => import('@/views/Register.vue')
+  },
   {
     path: '/',
     name: 'Home',
@@ -28,6 +39,11 @@ const routes = [
     component: () => import('@/views/RoutePlan.vue')
   },
   {
+    path: '/agent',
+    name: 'TravelAgent',
+    component: () => import('@/views/TravelAgent.vue')
+  },
+  {
     path: '/diary',
     name: 'DiaryPlaza',
     component: () => import('@/views/Diary.vue')
@@ -35,13 +51,15 @@ const routes = [
   {
     path: '/diary/new',
     name: 'DiaryCreate',
-    component: () => import('@/views/DiaryEditor.vue')
+    component: () => import('@/views/DiaryEditor.vue'),
+    meta: { requiresAuth: true }
   },
   {
     path: '/diary/edit/:id',
     name: 'DiaryEdit',
     component: () => import('@/views/DiaryEditor.vue'),
-    props: route => ({ id: Number(route.params.id) })
+    props: route => ({ id: Number(route.params.id) }),
+    meta: { requiresAuth: true }
   },
   {
     path: '/diary/:id',
@@ -52,18 +70,35 @@ const routes = [
   {
     path: '/achievements',
     name: 'Achievements',
-    component: () => import('@/views/Achievements.vue')
+    component: () => import('@/views/Achievements.vue'),
+    meta: { requiresAuth: true }
   },
   {
     path: '/profile',
     name: 'Profile',
-    component: () => import('@/views/Profile.vue')
+    component: () => import('@/views/Profile.vue'),
+    meta: { requiresAuth: true }
   }
 ]
 
 const router = createRouter({
   history: createWebHistory(),
   routes
+})
+
+router.beforeEach(async (to) => {
+  if (!authStore.initialized) await restoreAuth()
+
+  if (to.meta.requiresAuth && !isAuthenticated()) {
+    return { path: '/login', query: { redirect: to.fullPath } }
+  }
+
+  if ((to.path === '/login' || to.path === '/register') && isAuthenticated()) {
+    const redirect = typeof to.query.redirect === 'string' ? to.query.redirect : '/profile'
+    return redirect
+  }
+
+  return true
 })
 
 export default router

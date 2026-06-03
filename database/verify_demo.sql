@@ -1,6 +1,6 @@
 SET client_encoding = 'UTF8';
 
--- Quick checks after importing schema.sql and seed_demo.sql.
+-- 导入 schema.sql 和 seed_demo.sql 后的快速检查。
 
 SELECT 'users' AS table_name, COUNT(*) AS row_count FROM users
 UNION ALL SELECT 'categories', COUNT(*) FROM categories

@@ -1,23 +1,22 @@
 SET client_encoding = 'UTF8';
 
 -- =====================================================
--- Personalized Tourism System - Demo Seed Data
+-- 个性化旅游系统 - 基础演示数据
 -- =====================================================
--- Small, deterministic data set for local demos.
--- The records are manually curated around central Beijing landmarks.
--- If AMap/Gaode data is used later, keep the same table order and replace
--- the values below with API-generated INSERT statements.
+-- 景点主数据只由 database/imports/amap_pois.sql 管理。
+-- 本文件只负责用户、分类、设施、路线、游记、评论、成就等演示关系数据。
+-- 需要关联景点时，按景点名称从 scenic_spots 动态查找 id，避免和高德导入数据重复。
 -- =====================================================
 
 BEGIN;
 
--- Demo users
+-- 演示用户
 INSERT INTO users
     (id, username, password_hash, email, phone, nickname, gender, birth_date, preferences, status)
 VALUES
-    (1, 'demo_user', 'demo_hash_not_for_production', 'demo@example.com', '13800000001', '演示用户', 0, '2000-01-01', '{"themes":["history","culture"],"budget":"medium","transport":"walk"}', 1),
-    (2, 'traveler_li', 'demo_hash_not_for_production', 'li@example.com', '13800000002', '李同学', 1, '1999-06-12', '{"themes":["museum","citywalk"],"budget":"low","transport":"subway"}', 1),
-    (3, 'planner_wang', 'demo_hash_not_for_production', 'wang@example.com', '13800000003', '王规划', 2, '1998-11-08', '{"themes":["architecture","photo"],"budget":"medium","transport":"bike"}', 1)
+    (1, 'demo_user', 'pbkdf2_sha256$20000$746f757270696c6f745f64656d6f5f31$30816d10380edb332c6eeec9f33fb6184319e03cf491a1f89ede57ddd3031183', 'demo@example.com', '13800000001', '演示用户', 0, '2000-01-01', '{"themes":["history","culture"],"budget":"medium","transport":"walk"}', 1),
+    (2, 'traveler_li', 'pbkdf2_sha256$20000$746f757270696c6f745f64656d6f5f31$30816d10380edb332c6eeec9f33fb6184319e03cf491a1f89ede57ddd3031183', 'li@example.com', '13800000002', '李同学', 1, '1999-06-12', '{"themes":["museum","citywalk"],"budget":"low","transport":"subway"}', 1),
+    (3, 'planner_wang', 'pbkdf2_sha256$20000$746f757270696c6f745f64656d6f5f31$30816d10380edb332c6eeec9f33fb6184319e03cf491a1f89ede57ddd3031183', 'wang@example.com', '13800000003', '王规划', 2, '1998-11-08', '{"themes":["architecture","photo"],"budget":"medium","transport":"bike"}', 1)
 ON CONFLICT (id) DO UPDATE SET
     username = EXCLUDED.username,
     password_hash = EXCLUDED.password_hash,
@@ -40,80 +39,104 @@ ON CONFLICT (user_id, preference_type) DO UPDATE SET
     preference_value = EXCLUDED.preference_value,
     weight = EXCLUDED.weight;
 
--- Categories
+-- 景点分类。id=1 保留为高德导入使用的通用分类。
 INSERT INTO categories
     (id, name, description, icon, parent_id, sort_order)
 VALUES
-    (1, '历史古迹', '历史文化遗产与古建筑', 'landmark', NULL, 1),
-    (2, '博物馆', '展览、文博与公共文化空间', 'museum', NULL, 2),
-    (3, '城市公园', '休闲散步和自然景观', 'trees', NULL, 3),
-    (4, '商业街区', '购物、美食与夜游区域', 'shopping-bag', NULL, 4),
-    (5, '观景摄影', '适合拍照与城市观景的地点', 'camera', NULL, 5)
+    (1, '旅游景点', '高德 POI 导入时使用的通用景点分类', 'map-pin', NULL, 1),
+    (2, '历史古迹', '历史文化遗产与古建筑', 'landmark', NULL, 2),
+    (3, '博物馆', '展览、文博与公共文化空间', 'museum', NULL, 3),
+    (4, '城市公园', '休闲散步和自然景观', 'trees', NULL, 4),
+    (5, '商业街区', '购物、美食与夜游区域', 'shopping-bag', NULL, 5),
+    (6, '观景摄影', '适合拍照与城市观景的地点', 'camera', NULL, 6)
 ON CONFLICT (id) DO UPDATE SET
     name = EXCLUDED.name,
     description = EXCLUDED.description,
     icon = EXCLUDED.icon,
     sort_order = EXCLUDED.sort_order;
 
--- Scenic spots
-INSERT INTO scenic_spots
-    (id, name, description, location, category_id, rating, rating_count, address, city,
-     opening_hours, ticket_price, duration_minutes, crowd_level, images, thumbnail_url,
-     view_count, favorite_count, tags, status)
-VALUES
-    (1, '故宫博物院', '明清皇家宫殿建筑群，适合作为历史文化路线的核心节点。',
-     ST_SetSRID(ST_MakePoint(116.397026, 39.918058), 4326)::geography, 1, 4.80, 1250, '北京市东城区景山前街4号', '北京',
-     '08:30-17:00', 60.00, 240, 4, ARRAY['https://example.com/images/forbidden-city.jpg'], 'https://example.com/images/forbidden-city-thumb.jpg',
-     52000, 8600, ARRAY['历史','宫殿','世界遗产','亲子'], 1),
-    (2, '天安门广场', '北京中轴线上的开放式城市广场，可与故宫、前门串联游览。',
-     ST_SetSRID(ST_MakePoint(116.397477, 39.908692), 4326)::geography, 1, 4.60, 980, '北京市东城区东长安街', '北京',
-     '全天开放', 0.00, 60, 3, ARRAY['https://example.com/images/tiananmen.jpg'], 'https://example.com/images/tiananmen-thumb.jpg',
-     43000, 7200, ARRAY['地标','广场','中轴线'], 1),
-    (3, '景山公园', '登上万春亭可以俯瞰故宫和北京中轴线。',
-     ST_SetSRID(ST_MakePoint(116.396621, 39.925048), 4326)::geography, 3, 4.55, 620, '北京市西城区景山西街44号', '北京',
-     '06:00-21:00', 2.00, 90, 2, ARRAY['https://example.com/images/jingshan.jpg'], 'https://example.com/images/jingshan-thumb.jpg',
-     21000, 3500, ARRAY['公园','观景','摄影'], 1),
-    (4, '北海公园', '皇家园林代表，适合湖边散步和轻松游览。',
-     ST_SetSRID(ST_MakePoint(116.389535, 39.925455), 4326)::geography, 3, 4.50, 540, '北京市西城区文津街1号', '北京',
-     '06:30-20:00', 10.00, 120, 2, ARRAY['https://example.com/images/beihai.jpg'], 'https://example.com/images/beihai-thumb.jpg',
-     18500, 2800, ARRAY['公园','湖景','皇家园林'], 1),
-    (5, '国家博物馆', '大型综合博物馆，适合文化主题推荐和室内路线。',
-     ST_SetSRID(ST_MakePoint(116.401015, 39.905103), 4326)::geography, 2, 4.70, 860, '北京市东城区东长安街16号', '北京',
-     '09:00-17:00', 0.00, 180, 3, ARRAY['https://example.com/images/national-museum.jpg'], 'https://example.com/images/national-museum-thumb.jpg',
-     36000, 5100, ARRAY['博物馆','展览','室内'], 1),
-    (6, '前门大街', '北京传统商业街区，可作为餐饮和夜游节点。',
-     ST_SetSRID(ST_MakePoint(116.397957, 39.899318), 4326)::geography, 4, 4.30, 460, '北京市东城区前门大街', '北京',
-     '全天开放', 0.00, 120, 3, ARRAY['https://example.com/images/qianmen.jpg'], 'https://example.com/images/qianmen-thumb.jpg',
-     24000, 3300, ARRAY['商业街','美食','夜游'], 1),
-    (7, '王府井步行街', '购物、美食与城市夜景体验区域。',
-     ST_SetSRID(ST_MakePoint(116.411013, 39.912657), 4326)::geography, 4, 4.20, 520, '北京市东城区王府井大街', '北京',
-     '全天开放', 0.00, 120, 3, ARRAY['https://example.com/images/wangfujing.jpg'], 'https://example.com/images/wangfujing-thumb.jpg',
-     27500, 3900, ARRAY['购物','美食','步行街'], 1),
-    (8, '鼓楼', '老城地标，适合与什刹海、南锣鼓巷形成城市漫步路线。',
-     ST_SetSRID(ST_MakePoint(116.393776, 39.940269), 4326)::geography, 5, 4.40, 390, '北京市东城区地安门外大街', '北京',
-     '09:30-17:30', 20.00, 90, 2, ARRAY['https://example.com/images/drum-tower.jpg'], 'https://example.com/images/drum-tower-thumb.jpg',
-     16800, 2600, ARRAY['地标','摄影','胡同'], 1)
+INSERT INTO categories (id, name, description, icon, parent_id, sort_order)
+VALUES (7, '城市地标', '城市广场、地标建筑与公共空间', 'building-2', NULL, 7)
 ON CONFLICT (id) DO UPDATE SET
     name = EXCLUDED.name,
     description = EXCLUDED.description,
-    location = EXCLUDED.location,
-    category_id = EXCLUDED.category_id,
-    rating = EXCLUDED.rating,
-    rating_count = EXCLUDED.rating_count,
-    address = EXCLUDED.address,
-    city = EXCLUDED.city,
-    opening_hours = EXCLUDED.opening_hours,
-    ticket_price = EXCLUDED.ticket_price,
-    duration_minutes = EXCLUDED.duration_minutes,
-    crowd_level = EXCLUDED.crowd_level,
-    images = EXCLUDED.images,
-    thumbnail_url = EXCLUDED.thumbnail_url,
-    view_count = EXCLUDED.view_count,
-    favorite_count = EXCLUDED.favorite_count,
-    tags = EXCLUDED.tags,
-    status = EXCLUDED.status;
+    icon = EXCLUDED.icon,
+    sort_order = EXCLUDED.sort_order;
 
--- Nearby facilities
+WITH category_rules(category_id, priority, keywords) AS (
+    VALUES
+        (3, 10, ARRAY['博物馆','纪念馆','展览','美术馆','科技馆','文化馆']::TEXT[]),
+        (7, 20, ARRAY['广场','地标','城楼','电视塔','体育场','中心']::TEXT[]),
+        (5, 30, ARRAY['商业','购物','步行街','美食','小吃','夜市','酒吧','餐厅','工体','三里屯','王府井','前门']::TEXT[]),
+        (4, 40, ARRAY['公园','森林','湿地','湖','山','自然','园林','植物园','动物园','颐和园','圆明园','北海']::TEXT[]),
+        (2, 50, ARRAY['历史','古迹','古建','遗址','故宫','长城','寺','庙','宫','塔','陵','文化遗产','天坛','雍和宫']::TEXT[]),
+        (6, 60, ARRAY['摄影','观景','打卡','日落','夜景','俯瞰']::TEXT[])
+),
+matched_categories AS (
+    SELECT DISTINCT ON (s.id)
+        s.id,
+        r.category_id
+    FROM scenic_spots s
+    JOIN category_rules r ON EXISTS (
+        SELECT 1
+        FROM unnest(r.keywords) AS keyword(value)
+        WHERE COALESCE(s.name, '') ILIKE '%' || keyword.value || '%'
+           OR COALESCE(s.description, '') ILIKE '%' || keyword.value || '%'
+           OR COALESCE(array_to_string(s.tags, ' '), '') ILIKE '%' || keyword.value || '%'
+    )
+    WHERE s.status = 1
+      AND (s.category_id IS NULL OR s.category_id = 1)
+    ORDER BY s.id, r.priority
+)
+UPDATE scenic_spots s
+SET category_id = matched.category_id
+FROM matched_categories matched
+WHERE s.id = matched.id;
+
+-- 从高德导入后的景点表中查找演示关系需要的景点 id。
+CREATE TEMP TABLE tmp_demo_spots ON COMMIT DROP AS
+WITH wanted(key, aliases, ref_lng, ref_lat) AS (
+    VALUES
+        ('gugong', ARRAY['故宫博物院','故宫','紫禁城']::TEXT[], 116.397026::DOUBLE PRECISION, 39.918058::DOUBLE PRECISION),
+        ('tiananmen', ARRAY['天安门广场','天安门']::TEXT[], 116.397477::DOUBLE PRECISION, 39.908692::DOUBLE PRECISION),
+        ('jingshan', ARRAY['景山公园','景山']::TEXT[], 116.396621::DOUBLE PRECISION, 39.925048::DOUBLE PRECISION),
+        ('beihai', ARRAY['北海公园','北海']::TEXT[], 116.389535::DOUBLE PRECISION, 39.925455::DOUBLE PRECISION),
+        ('guobo', ARRAY['中国国家博物馆','国家博物馆','国博']::TEXT[], 116.401015::DOUBLE PRECISION, 39.905103::DOUBLE PRECISION),
+        ('qianmen', ARRAY['前门大街','前门','正阳门']::TEXT[], 116.397957::DOUBLE PRECISION, 39.899318::DOUBLE PRECISION),
+        ('wangfujing', ARRAY['王府井步行街','王府井']::TEXT[], 116.411013::DOUBLE PRECISION, 39.912657::DOUBLE PRECISION),
+        ('gulou', ARRAY['鼓楼','钟楼']::TEXT[], 116.393776::DOUBLE PRECISION, 39.940269::DOUBLE PRECISION)
+),
+candidates AS (
+    SELECT
+        w.key,
+        s.id,
+        s.name,
+        CASE WHEN COALESCE(s.city, '') IN ('北京', '北京市') THEN 0 ELSE 1 END AS city_rank,
+        CASE
+            WHEN lower(trim(s.name)) = lower(trim(w.aliases[1])) THEN 0
+            WHEN s.name ILIKE w.aliases[1] || '%' THEN 1
+            ELSE 2
+        END AS name_rank,
+        ST_Distance(
+            s.location,
+            ST_SetSRID(ST_MakePoint(w.ref_lng, w.ref_lat), 4326)::geography
+        ) AS distance_meters
+    FROM wanted w
+    JOIN scenic_spots s
+      ON EXISTS (
+          SELECT 1
+          FROM unnest(w.aliases) AS alias_item(alias_name)
+          WHERE s.name ILIKE '%' || alias_item.alias_name || '%'
+      )
+)
+SELECT DISTINCT ON (key)
+    key,
+    id AS spot_id,
+    name AS matched_name
+FROM candidates
+ORDER BY key, city_rank, name_rank, distance_meters, length(name), id;
+
+-- 周边设施
 INSERT INTO facilities
     (id, name, type, location, address, rating, price_level, opening_hours, phone)
 VALUES
@@ -139,18 +162,18 @@ ON CONFLICT (id) DO UPDATE SET
     opening_hours = EXCLUDED.opening_hours,
     phone = EXCLUDED.phone;
 
--- Graph nodes: scenic spots, facilities, and transfer points
+-- 图节点：景点节点通过 tmp_demo_spots 关联真实导入景点。
 INSERT INTO graph_nodes
     (id, name, location, node_type, scenic_spot_id, facility_id, congestion_level)
 VALUES
-    (1, '故宫博物院节点', ST_SetSRID(ST_MakePoint(116.397026, 39.918058), 4326)::geography, 'scenic', 1, NULL, 4),
-    (2, '天安门广场节点', ST_SetSRID(ST_MakePoint(116.397477, 39.908692), 4326)::geography, 'scenic', 2, NULL, 3),
-    (3, '景山公园节点', ST_SetSRID(ST_MakePoint(116.396621, 39.925048), 4326)::geography, 'scenic', 3, NULL, 2),
-    (4, '北海公园节点', ST_SetSRID(ST_MakePoint(116.389535, 39.925455), 4326)::geography, 'scenic', 4, NULL, 2),
-    (5, '国家博物馆节点', ST_SetSRID(ST_MakePoint(116.401015, 39.905103), 4326)::geography, 'scenic', 5, NULL, 3),
-    (6, '前门大街节点', ST_SetSRID(ST_MakePoint(116.397957, 39.899318), 4326)::geography, 'scenic', 6, NULL, 3),
-    (7, '王府井步行街节点', ST_SetSRID(ST_MakePoint(116.411013, 39.912657), 4326)::geography, 'scenic', 7, NULL, 3),
-    (8, '鼓楼节点', ST_SetSRID(ST_MakePoint(116.393776, 39.940269), 4326)::geography, 'scenic', 8, NULL, 2),
+    (1, '故宫博物院节点', ST_SetSRID(ST_MakePoint(116.397026, 39.918058), 4326)::geography, 'scenic', (SELECT spot_id FROM tmp_demo_spots WHERE key = 'gugong'), NULL, 4),
+    (2, '天安门广场节点', ST_SetSRID(ST_MakePoint(116.397477, 39.908692), 4326)::geography, 'scenic', (SELECT spot_id FROM tmp_demo_spots WHERE key = 'tiananmen'), NULL, 3),
+    (3, '景山公园节点', ST_SetSRID(ST_MakePoint(116.396621, 39.925048), 4326)::geography, 'scenic', (SELECT spot_id FROM tmp_demo_spots WHERE key = 'jingshan'), NULL, 2),
+    (4, '北海公园节点', ST_SetSRID(ST_MakePoint(116.389535, 39.925455), 4326)::geography, 'scenic', (SELECT spot_id FROM tmp_demo_spots WHERE key = 'beihai'), NULL, 2),
+    (5, '国家博物馆节点', ST_SetSRID(ST_MakePoint(116.401015, 39.905103), 4326)::geography, 'scenic', (SELECT spot_id FROM tmp_demo_spots WHERE key = 'guobo'), NULL, 3),
+    (6, '前门大街节点', ST_SetSRID(ST_MakePoint(116.397957, 39.899318), 4326)::geography, 'scenic', (SELECT spot_id FROM tmp_demo_spots WHERE key = 'qianmen'), NULL, 3),
+    (7, '王府井步行街节点', ST_SetSRID(ST_MakePoint(116.411013, 39.912657), 4326)::geography, 'scenic', (SELECT spot_id FROM tmp_demo_spots WHERE key = 'wangfujing'), NULL, 3),
+    (8, '鼓楼节点', ST_SetSRID(ST_MakePoint(116.393776, 39.940269), 4326)::geography, 'scenic', (SELECT spot_id FROM tmp_demo_spots WHERE key = 'gulou'), NULL, 2),
     (101, '天安门东地铁节点', ST_SetSRID(ST_MakePoint(116.401216, 39.908780), 4326)::geography, 'facility', NULL, 3, 2),
     (102, '前门地铁节点', ST_SetSRID(ST_MakePoint(116.397937, 39.900192), 4326)::geography, 'facility', NULL, 4, 2),
     (103, '北海北地铁节点', ST_SetSRID(ST_MakePoint(116.386829, 39.933247), 4326)::geography, 'facility', NULL, 8, 2),
@@ -166,7 +189,7 @@ ON CONFLICT (id) DO UPDATE SET
     facility_id = EXCLUDED.facility_id,
     congestion_level = EXCLUDED.congestion_level;
 
--- Graph edges for route planning demo
+-- 路线规划演示用图边
 INSERT INTO graph_edges
     (from_node, to_node, distance, travel_mode, travel_time, base_weight, congestion_level)
 VALUES
@@ -208,26 +231,34 @@ ON CONFLICT (from_node, to_node, travel_mode) DO UPDATE SET
     base_weight = EXCLUDED.base_weight,
     congestion_level = EXCLUDED.congestion_level;
 
--- Favorites, reviews, and diaries
+-- 收藏和评价：按景点 key 动态关联导入后的真实景点 id。
 INSERT INTO user_favorites (user_id, scenic_spot_id)
-VALUES
-    (1, 1),
-    (1, 3),
-    (1, 5),
-    (2, 5),
-    (2, 6),
-    (3, 3),
-    (3, 8)
+SELECT item.user_id, spot.spot_id
+FROM (VALUES
+    (1, 'gugong'),
+    (1, 'jingshan'),
+    (1, 'guobo'),
+    (2, 'guobo'),
+    (2, 'qianmen'),
+    (3, 'jingshan'),
+    (3, 'gulou')
+) AS item(user_id, spot_key)
+JOIN tmp_demo_spots spot ON spot.key = item.spot_key
+WHERE spot.spot_id IS NOT NULL
 ON CONFLICT (user_id, scenic_spot_id) DO NOTHING;
 
 INSERT INTO reviews
     (id, user_id, scenic_spot_id, rating, content, images, helpful_count, status)
-VALUES
-    (1, 1, 1, 5, '故宫适合安排半天以上，建议提前预约并从中轴线慢慢走。', ARRAY[]::TEXT[], 12, 1),
-    (2, 2, 5, 5, '国家博物馆很适合雨天或高温天气，展览信息密度很高。', ARRAY[]::TEXT[], 8, 1),
-    (3, 3, 3, 4, '景山视角很好，傍晚拍故宫非常出片。', ARRAY[]::TEXT[], 6, 1),
-    (4, 1, 6, 4, '前门大街餐饮选择多，适合放在路线结尾。', ARRAY[]::TEXT[], 5, 1),
-    (5, 2, 8, 4, '鼓楼和什刹海可以串联成轻松 citywalk。', ARRAY[]::TEXT[], 4, 1)
+SELECT item.id, item.user_id, spot.spot_id, item.rating, item.content, ARRAY[]::TEXT[], item.helpful_count, 1
+FROM (VALUES
+    (1, 1, 'gugong', 5, '故宫适合安排半天以上，建议提前预约并从中轴线慢慢走。', 12),
+    (2, 2, 'guobo', 5, '国家博物馆很适合雨天或高温天气，展览信息密度很高。', 8),
+    (3, 3, 'jingshan', 4, '景山视角很好，傍晚拍故宫非常出片。', 6),
+    (4, 1, 'qianmen', 4, '前门大街餐饮选择多，适合放在路线结尾。', 5),
+    (5, 2, 'gulou', 4, '鼓楼和什刹海可以串联成轻松 citywalk。', 4)
+) AS item(id, user_id, spot_key, rating, content, helpful_count)
+JOIN tmp_demo_spots spot ON spot.key = item.spot_key
+WHERE spot.spot_id IS NOT NULL
 ON CONFLICT (id) DO UPDATE SET
     user_id = EXCLUDED.user_id,
     scenic_spot_id = EXCLUDED.scenic_spot_id,
@@ -244,17 +275,35 @@ VALUES
     (1, 1, '中轴线一日游：从前门到景山',
      '一条适合初次来北京的经典历史路线。',
      '上午从前门出发，经过天安门广场进入故宫，下午登上景山看中轴线。整体步行强度中等，适合文化主题推荐演示。',
-     1, ARRAY[6,2,1,3], '2026-04-12', '2026-04-12', 5.20, ARRAY['https://example.com/images/diary-axis.jpg'],
+     1,
+     array_remove(ARRAY[
+        (SELECT spot_id FROM tmp_demo_spots WHERE key = 'qianmen'),
+        (SELECT spot_id FROM tmp_demo_spots WHERE key = 'tiananmen'),
+        (SELECT spot_id FROM tmp_demo_spots WHERE key = 'gugong'),
+        (SELECT spot_id FROM tmp_demo_spots WHERE key = 'jingshan')
+     ]::INTEGER[], NULL),
+     '2026-04-12', '2026-04-12', 5.20, ARRAY['/images/diary/gugong_0.jpg'],
      ARRAY['中轴线','历史','一日游'], 430, 38, 6, '前门、天安门、故宫、景山串联的一日游路线。', '北京中轴线一日游'),
     (2, 2, '博物馆和商业街的轻松路线',
      '国家博物馆加王府井，适合室内展览与晚间餐饮。',
      '白天参观国家博物馆，傍晚骑行到王府井吃饭购物。路线较短，适合低预算学生出行。',
-     1, ARRAY[5,7], '2026-04-18', '2026-04-18', 2.10, ARRAY['https://example.com/images/diary-museum.jpg'],
+     1,
+     array_remove(ARRAY[
+        (SELECT spot_id FROM tmp_demo_spots WHERE key = 'guobo'),
+        (SELECT spot_id FROM tmp_demo_spots WHERE key = 'wangfujing')
+     ]::INTEGER[], NULL),
+     '2026-04-18', '2026-04-18', 2.10, ARRAY['/images/diary/guojiabowuguan_0.jpeg'],
      ARRAY['博物馆','王府井','低预算'], 360, 31, 4, '国家博物馆与王府井组合，适合轻松城市游。', '展览与夜游半日路线'),
     (3, 3, '鼓楼到北海的 citywalk',
      '老城摄影与公园散步路线。',
      '从鼓楼出发，经什刹海到北海公园，最后可以去景山看日落。适合摄影偏好用户。',
-     1, ARRAY[8,4,3], '2026-04-26', '2026-04-26', 3.80, ARRAY['https://example.com/images/diary-citywalk.jpg'],
+     1,
+     array_remove(ARRAY[
+        (SELECT spot_id FROM tmp_demo_spots WHERE key = 'gulou'),
+        (SELECT spot_id FROM tmp_demo_spots WHERE key = 'beihai'),
+        (SELECT spot_id FROM tmp_demo_spots WHERE key = 'jingshan')
+     ]::INTEGER[], NULL),
+     '2026-04-26', '2026-04-26', 3.80, ARRAY['/images/diary/shichahai_0.jpg'],
      ARRAY['摄影','公园','citywalk'], 290, 24, 3, '鼓楼、什刹海、北海、景山构成轻量 citywalk。', '老城摄影漫步')
 ON CONFLICT (id) DO UPDATE SET
     user_id = EXCLUDED.user_id,
@@ -296,12 +345,12 @@ ON CONFLICT (id) DO UPDATE SET
     route_geometry = EXCLUDED.route_geometry,
     optimization_type = EXCLUDED.optimization_type;
 
--- Achievements and collectibles
+-- 成就和数字藏品
 INSERT INTO achievements
     (id, name, description, icon_url, level, type, requirement, reward)
 VALUES
-    (1, '中轴线探索者', '完成一条包含前门、天安门、故宫、景山的路线。', 'https://example.com/icons/axis.png', 1, 'exploration', '{"route_contains":[6,2,1,3]}', '{"points":100}'),
-    (2, '博物馆爱好者', '收藏或评价博物馆类景点。', 'https://example.com/icons/museum.png', 1, 'review', '{"category_id":2,"action":"review"}', '{"points":60}'),
+    (1, '中轴线探索者', '完成一条包含前门、天安门、故宫、景山的路线。', 'https://example.com/icons/axis.png', 1, 'exploration', '{"route_contains":["qianmen","tiananmen","gugong","jingshan"]}', '{"points":100}'),
+    (2, '博物馆爱好者', '收藏或评价博物馆类景点。', 'https://example.com/icons/museum.png', 1, 'review', '{"category":"博物馆","action":"review"}', '{"points":60}'),
     (3, '城市漫步达人', '完成一条 3 公里以上 citywalk 路线。', 'https://example.com/icons/walk.png', 2, 'diary', '{"min_distance_km":3}', '{"points":120}')
 ON CONFLICT (id) DO UPDATE SET
     name = EXCLUDED.name,
@@ -340,17 +389,71 @@ ON CONFLICT (id) DO UPDATE SET
     blockchain_hash = EXCLUDED.blockchain_hash,
     minted_at = EXCLUDED.minted_at;
 
--- Keep SERIAL/BIGSERIAL counters ahead of explicit demo ids.
+-- 补充个性化推荐标签。
+UPDATE scenic_spots
+SET tags = ARRAY['历史古迹', '博物馆', '世界遗产', '历史', '摄影', '亲子', '室内']
+WHERE name ILIKE '%故宫%' OR name ILIKE '%紫禁城%';
+
+UPDATE scenic_spots
+SET tags = ARRAY['城市地标', '历史', '摄影', '步行', '低预算', '城市漫步']
+WHERE name ILIKE '%天安门%';
+
+UPDATE scenic_spots
+SET tags = ARRAY['博物馆', '历史', '展览', '室内', '低预算', '亲子']
+WHERE name ILIKE '%国家博物馆%' OR name ILIKE '%中国国家博物馆%' OR name ILIKE '%国博%';
+
+UPDATE scenic_spots
+SET tags = ARRAY['公园', '自然', '观景', '摄影', '轻徒步', '历史']
+WHERE name ILIKE '%景山%';
+
+UPDATE scenic_spots
+SET tags = ARRAY['商业街区', '美食', '夜游', '购物', '城市漫步', '低预算']
+WHERE name ILIKE '%前门%';
+
+UPDATE scenic_spots
+SET tags = ARRAY['城市漫步', '胡同', '摄影', '休闲', '夜游', '美食']
+WHERE name ILIKE '%什刹海%' OR name ILIKE '%鼓楼%' OR name ILIKE '%南锣鼓巷%';
+
+UPDATE scenic_spots
+SET tags = ARRAY['公园', '自然', '湖景', '摄影', '亲子', '低预算']
+WHERE name ILIKE '%北海公园%' OR name ILIKE '%颐和园%' OR name ILIKE '%圆明园%';
+
+UPDATE scenic_spots
+SET tags = ARRAY['历史古迹', '世界遗产', '轻徒步', '摄影', '自然']
+WHERE name ILIKE '%长城%';
+
+UPDATE scenic_spots
+SET tags = ARRAY['商业街区', '购物', '美食', '夜游', '城市地标']
+WHERE name ILIKE '%王府井%' OR name ILIKE '%三里屯%' OR name ILIKE '%西单%';
+
+UPDATE scenic_spots
+SET tags = ARRAY['美食街区', '美食', '夜游', '城市漫步', '低预算']
+WHERE name ILIKE '%簋街%' OR name ILIKE '%小吃%' OR name ILIKE '%美食%';
+
+UPDATE scenic_spots
+SET tags = array_remove(ARRAY[
+    CASE WHEN COALESCE(array_to_string(tags, ' '), '') ILIKE '%博物馆%' OR COALESCE(description, '') ILIKE '%博物馆%' THEN '博物馆' END,
+    CASE WHEN COALESCE(array_to_string(tags, ' '), '') ILIKE '%公园%' OR COALESCE(description, '') ILIKE '%公园%' THEN '公园' END,
+    CASE WHEN COALESCE(array_to_string(tags, ' '), '') ILIKE '%风景%' OR COALESCE(description, '') ILIKE '%自然%' THEN '自然' END,
+    CASE WHEN COALESCE(array_to_string(tags, ' '), '') ILIKE '%古迹%' OR COALESCE(description, '') ILIKE '%历史%' THEN '历史古迹' END,
+    CASE WHEN COALESCE(array_to_string(tags, ' '), '') ILIKE '%广场%' OR COALESCE(description, '') ILIKE '%地标%' THEN '城市地标' END,
+    CASE WHEN COALESCE(array_to_string(tags, ' '), '') ILIKE '%商业%' OR COALESCE(array_to_string(tags, ' '), '') ILIKE '%步行街%' THEN '商业街区' END,
+    '摄影',
+    CASE WHEN COALESCE(ticket_price, 0) <= 30 THEN '低预算' END
+], NULL)
+WHERE tags IS NULL OR array_length(tags, 1) IS NULL OR tags = ARRAY['']::text[];
+
+-- 让 SERIAL/BIGSERIAL 序列值大于显式写入的演示 id。
 SELECT setval('users_id_seq', (SELECT MAX(id) FROM users));
 SELECT setval('categories_id_seq', (SELECT MAX(id) FROM categories));
-SELECT setval('scenic_spots_id_seq', (SELECT MAX(id) FROM scenic_spots));
+SELECT setval('scenic_spots_id_seq', (SELECT COALESCE(MAX(id), 1) FROM scenic_spots));
 SELECT setval('facilities_id_seq', (SELECT MAX(id) FROM facilities));
 SELECT setval('graph_nodes_id_seq', (SELECT MAX(id) FROM graph_nodes));
-SELECT setval('graph_edges_id_seq', (SELECT MAX(id) FROM graph_edges));
-SELECT setval('reviews_id_seq', (SELECT MAX(id) FROM reviews));
-SELECT setval('travel_diaries_id_seq', (SELECT MAX(id) FROM travel_diaries));
-SELECT setval('route_plans_id_seq', (SELECT MAX(id) FROM route_plans));
+SELECT setval('graph_edges_id_seq', (SELECT COALESCE(MAX(id), 1) FROM graph_edges));
+SELECT setval('reviews_id_seq', (SELECT COALESCE(MAX(id), 1) FROM reviews));
+SELECT setval('travel_diaries_id_seq', (SELECT COALESCE(MAX(id), 1) FROM travel_diaries));
+SELECT setval('route_plans_id_seq', (SELECT COALESCE(MAX(id), 1) FROM route_plans));
 SELECT setval('achievements_id_seq', (SELECT MAX(id) FROM achievements));
-SELECT setval('digital_collectibles_id_seq', (SELECT MAX(id) FROM digital_collectibles));
+SELECT setval('digital_collectibles_id_seq', (SELECT COALESCE(MAX(id), 1) FROM digital_collectibles));
 
 COMMIT;

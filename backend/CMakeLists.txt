@@ -36,8 +36,7 @@ else()
     message(STATUS "GTest not found; tests disabled")
 endif()
 
-# PostgreSQL libpq is used by the API server to read scenic spots, routes,
-# achievements, and to persist travel diaries.
+# API 服务通过 PostgreSQL libpq 读取景点、路线、成就，并持久化旅行日记。
 find_package(PostgreSQL REQUIRED)
 message(STATUS "PostgreSQL include: ${PostgreSQL_INCLUDE_DIRS}")
 message(STATUS "PostgreSQL library: ${PostgreSQL_LIBRARIES}")
@@ -65,15 +64,40 @@ set(GRAPH_SOURCES
     src/graph/graph.cpp
     src/graph/dijkstra.cpp
 )
+set(DB_SOURCES
+    src/db/postgres.cpp
+)
+set(SUPPORT_SOURCES
+    src/support/api_helpers.cpp
+)
 set(SERVICE_SOURCES
     src/services/recommendation_service.cpp
+    src/services/amap_route_service.cpp
+    src/services/budget_service.cpp
+    src/services/llm_service.cpp
+    src/services/auth_service.cpp
+    src/services/scenic_service.cpp
+    src/services/route_graph_service.cpp
+)
+set(API_SOURCES
+    src/api/auth_routes.cpp
+    src/api/dashboard_routes.cpp
+    src/api/profile_routes.cpp
+    src/api/scenic_routes.cpp
+    src/api/recommendation_routes.cpp
+    src/api/route_routes.cpp
+    src/api/diary_routes.cpp
+    src/api/aigc_routes.cpp
 )
 set(MAIN_SOURCES
     src/main.cpp
 )
 set(ALL_SOURCES
+    ${DB_SOURCES}
+    ${SUPPORT_SOURCES}
     ${GRAPH_SOURCES}
     ${SERVICE_SOURCES}
+    ${API_SOURCES}
     ${MAIN_SOURCES}
 )
 

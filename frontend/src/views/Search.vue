@@ -33,7 +33,6 @@
               <option v-for="item in categories" :key="item" :value="item">{{ item }}</option>
             </select>
           </div>
-
           <div>
             <label class="text-sm font-semibold text-slate-700">最高门票预算</label>
             <div class="mt-2 flex items-center gap-3">

@@ -1,151 +1,263 @@
-# 个性化旅游系统
+# TourPilot 个性化旅游系统
 
-这是一个课程设计级别的旅游网站项目，当前目标是提供一个可以基础演示的网站：前端负责页面与交互，C++ 后端提供 HTTP API，PostgreSQL/PostGIS 保存景点、路线、游记和成就数据。
+TourPilot 是一个旅游规划全栈项目。前端使用 Vue 3 + Vite + Tailwind CSS，后端使用 C++ Crow，数据库使用 PostgreSQL/PostGIS。项目支持景点搜索、个性化推荐、预算方案、路线规划、游记、成就和 AI 旅行助手。
 
-## 当前真实状态
+## 核心功能
 
-| 模块 | 状态 | 说明 |
-|---|---|---|
-| 前端页面 | 可用 | 包含首页、推荐与预算、路线规划、旅游日记、成就系统 |
-| 后端 API | 可用 | 使用 Crow 提供 `/api/v1` 接口 |
-| 数据库 | 可用 | 使用 PostgreSQL 15 + PostGIS，脚本在 `database/` |
-| 景点数据 | 已接数据库 | `/api/v1/scenic-spots` 从 `scenic_spots` 读取 |
-| 路线数据 | 已接数据库 | `/api/v1/routes` 从 `route_plans` 和 `graph_nodes` 读取 |
-| 旅游日记 | 已接数据库 | 支持查询、新增、编辑、删除 |
-| 成就系统 | 基础接数据库 | 从 `achievements` 和 `user_achievements` 读取 |
-| 预算推荐 | 轻量演示 | 后端内置三档预算方案，便于展示创新功能 |
-| AIGC | 占位演示 | 目前是模板摘要/润色，没有接真实大模型 |
+- 首页推荐、搜索景点、景点详情。
+- 预算推荐、个性化推荐。
+- 路线规划和 Leaflet 地图展示。
+- 游记广场、游记编辑、游记详情、点赞收藏评分评论。
+- 个人偏好读取与保存。
+- 登录、注册、退出、保持登录状态、登录后修改密码。
+- AI 旅行助手 `/agent`，通过后端调用真实大模型 API。
 
 ## 技术栈
 
-| 层 | 技术 |
-|---|---|
-| 前端 | Vue 3, Vite, Vue Router, Tailwind CSS, Leaflet, Axios |
-| 后端 | C++17, Crow, Standalone Asio, libpq |
-| 数据库 | PostgreSQL 15, PostGIS |
-| 构建 | CMake, MinGW Makefiles, npm |
+前端：
+
+- Vue 3
+- Vue Router
+- Vite
+- Tailwind CSS
+- Axios
+- Leaflet
+
+后端：
+
+- C++17
+- Crow
+- libpq/PostgreSQL
+- PostgreSQL + PostGIS
+- CMake
+
+外部服务：
+
+- DeepSeek 或兼容 Chat Completions 的大模型接口。
+- 高德 Web Service 路线接口。
+- OpenStreetMap 地图瓦片。
 
 ## 项目结构
 
 ```text
 personalized-tourism-system/
-  backend/              C++ 后端服务
-  database/             数据库建表、演示数据、验证脚本
-  frontend/             Vue 前端
-  docs/                 课程文档或补充说明
-  QUICKSTART.md         Windows 本地运行指南
+├─ frontend/
+│  ├─ src/
+│  │  ├─ main.js
+│  │  ├─ App.vue
+│  │  ├─ router/
+│  │  ├─ views/
+│  │  ├─ components/
+│  │  ├─ services/tourismApi.js
+│  │  ├─ data/
+│  │  ├─ stores/
+│  │  └─ utils/
+│  ├─ public/images/diary/
+│  ├─ scripts/
+│  └─ package.json
+├─ backend/
+│  ├─ include/
+│  │  ├─ api/
+│  │  ├─ db/
+│  │  ├─ services/
+│  │  └─ support/
+│  ├─ src/
+│  │  ├─ main.cpp
+│  │  ├─ api/
+│  │  ├─ db/
+│  │  ├─ services/
+│  │  ├─ support/
+│  │  └─ graph/
+│  └─ CMakeLists.txt
+├─ database/
+├─ docs/
+├─ QUICKSTART.md
+└─ AGENTS.md
 ```
 
-## 后端主要接口
+## 前端运行链路
 
-| 接口 | 方法 | 功能 |
-|---|---|---|
-| `/health` | GET | 检查后端和数据库连接 |
-| `/api/v1/dashboard` | GET | 首页统计 |
-| `/api/v1/scenic-spots` | GET | 景点列表，来自数据库 |
-| `/api/v1/scenic-spots/<id>` | GET | 景点详情 |
-| `/api/v1/search/suggestions` | GET | 搜索建议词 |
-| `/api/v1/budget-plans` | GET | 预算方案 |
-| `/api/v1/routes` | GET | 路线列表，来自数据库 |
-| `/api/v1/diaries` | GET/POST | 游记查询和新增 |
-| `/api/v1/diaries/<id>` | GET/PUT/DELETE | 游记详情、编辑、删除 |
-| `/api/v1/achievements` | GET | 成就列表 |
-| `/api/v1/aigc/diary-summary` | POST | 演示版游记摘要 |
+`frontend/src/main.js` 是前端入口：
 
-## 数据库连接
+1. 导入 `App.vue`。
+2. 注册 `router/index.js`。
+3. 导入 `index.css`，让 Tailwind 生效。
+4. 导入 `leaflet/dist/leaflet.css`，让地图控件和 marker 样式正常显示。
+5. `createApp(App).use(router).mount('#app')` 挂载应用。
 
-后端默认连接：
+`App.vue` 负责顶部导航、全局搜索和 `<router-view />`。首页、搜索页、详情页、路线页和 AI 助手都在同一个 Vue 单页应用里，通过 Vue Router 切换。
+
+## 后端结构
+
+后端已经拆成模块化结构。`backend/src/main.cpp` 只负责解析启动参数、创建 Crow app、注册路由模块并启动服务。
+
+主要模块：
 
 ```text
-host=127.0.0.1 port=5432 dbname=tourism_system user=postgres
+backend/src/api/
+├─ auth_routes.cpp            # 登录、注册、退出、当前用户、修改密码
+├─ dashboard_routes.cpp       # /health、dashboard、achievements
+├─ profile_routes.cpp         # profile、preferences
+├─ scenic_routes.cpp          # 景点列表、搜索、详情、建议词、评价
+├─ recommendation_routes.cpp  # 预算方案、个性化推荐
+├─ route_routes.cpp           # 路线节点、路线列表、路线规划
+├─ diary_routes.cpp           # 游记、点赞、收藏、评分、评论
+└─ aigc_routes.cpp            # AIGC 摘要、润色、旅游助手
+
+backend/src/services/
+├─ auth_service.cpp           # PBKDF2 密码哈希、Bearer token 校验
+├─ scenic_service.cpp         # 景点查询和景点 JSON
+├─ budget_service.cpp         # 预算方案
+├─ recommendation_service.cpp # 推荐计算
+├─ route_graph_service.cpp    # 本地路线图规划
+├─ amap_route_service.cpp     # 高德路线服务
+└─ llm_service.cpp            # 大模型 HTTP 调用
 ```
 
-如果你的 PostgreSQL 需要密码，可以在启动后端前设置环境变量：
+## 环境变量
 
-```bat
-set TOURISM_DB_CONN=host=127.0.0.1 port=5432 dbname=tourism_system user=postgres password=你的密码
+| 变量 | 用途 | 默认行为 |
+| --- | --- | --- |
+| `TOURISM_DB_CONN` | PostgreSQL 连接串 | 默认 `host=127.0.0.1 port=5432 dbname=tourism_system user=postgres` |
+| `TOURISM_LLM_API_KEY` | 大模型 API Key | 未配置时 AI 助手返回配置错误 |
+| `TOURISM_LLM_BASE_URL` | 大模型接口地址 | 默认 `https://api.deepseek.com` |
+| `TOURISM_LLM_MODEL` | 大模型名称 | 建议显式设置为平台支持的模型 |
+| `AMAP_WEB_SERVICE_KEY` / `AMAP_KEY` | 覆盖高德 Web Service Key | 未配置时使用后端内置免费高德 key |
+
+DeepSeek key 不允许写入仓库，只能放本地环境变量：
+
+```powershell
+$env:TOURISM_LLM_API_KEY="你的 DeepSeek API Key"
+$env:TOURISM_LLM_BASE_URL="https://api.deepseek.com"
+$env:TOURISM_LLM_MODEL="deepseek-chat"
 ```
 
-## 搜索能力
+高德 key 已经有内置默认值。如需临时覆盖：
 
-站内搜索不是简单前端过滤，而是在后端按相关度排序。当前排序信号包括：
+```powershell
+$env:AMAP_WEB_SERVICE_KEY="你的高德 Web Service Key"
+```
 
-- 名称精确匹配
-- 名称前缀匹配
-- 名称包含关键词
-- 标签匹配
-- 类型匹配
-- 描述匹配
-- 评分、收藏数、浏览数热度加权
+PowerShell 的 `$env:...` 只对当前窗口和它启动的子进程生效。需要在启动后端的同一个窗口里设置环境变量。
 
-支持参数：
+## 图片来源规则
+
+景点图片只使用三层来源：
+
+1. 后端接口返回的数据库图片，通常来自高德导入或人工维护。
+2. 前端本地拼音图片，目录为 `frontend/public/images/diary/`，映射在 `frontend/src/data/imageCatalog.js`。
+3. 前端 SVG 占位图，由 `frontend/src/utils/images.js` 生成。
+
+后端不再用外部随机图片做景点 fallback。
+
+## 登录与演示账号
+
+当前账号系统支持用户名或邮箱登录。前端会把后端返回的 token 保存到 `localStorage.token`，并在请求时通过 `Authorization: Bearer <token>` 发送给后端。
+
+演示账号：
 
 ```text
-GET /api/v1/scenic-spots?q=故宫&category=历史古迹&max_ticket=80&sort=relevance&limit=50
+用户名：demo_user
+邮箱：demo@example.com
+密码：demo123456
 ```
 
-`sort` 可选：
+需要登录的页面和操作：`/profile`、`/achievements`、`/diary/new`、`/diary/edit/:id`，以及游记点赞、收藏、评分、评论、创建、编辑、删除。首页、搜索、景点详情、路线规划、AI 助手和游记详情仍可匿名浏览。
 
-| 值 | 含义 |
-|---|---|
-| `relevance` | 相关度优先 |
-| `rating` | 评分优先 |
-| `price` | 低价优先 |
-| `hot` | 热度优先 |
+## 快速启动
 
-## 高德 POI 数据扩充
-
-如果需要大量景点数据，可以用高德开放平台 Web 服务接口拉取 POI，再导入本地 PostgreSQL。项目提供了脚本：
-
-```bat
-python scripts\import_amap_pois.py --key 你的高德Key --city 北京 --keywords 景点 --output database\amap_pois.sql
-psql -U postgres -d tourism_system -f database\amap_pois.sql
-```
-
-推荐做法是“定期拉取 API 数据入库，再用本地数据库搜索”，不要每次用户搜索都实时请求第三方 API。这样速度更快，也不会因为第三方接口限流影响网站体验。
-
-## 快速运行
-
-详细步骤见 [QUICKSTART.md](QUICKSTART.md)。最短流程如下：
-
-```bat
-set PATH=C:\Program Files\PostgreSQL\15\bin;%PATH%
-set PGCLIENTENCODING=UTF8
-chcp 65001
-
-psql -U postgres -d postgres -c "DROP DATABASE IF EXISTS tourism_system;"
-psql -U postgres -d postgres -c "CREATE DATABASE tourism_system WITH ENCODING 'UTF8';"
+```powershell
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\schema.sql
+psql -U postgres -d tourism_system -f database\imports\amap_pois.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seed_demo.sql
-psql -U postgres -d tourism_system -f database\verify_demo.sql
+
+$env:TOURISM_LLM_API_KEY="你的 DeepSeek API Key"
+$env:TOURISM_LLM_BASE_URL="https://api.deepseek.com"
+$env:TOURISM_LLM_MODEL="deepseek-chat"
+$env:PATH="C:\Program Files\PostgreSQL\15\bin;$env:PATH"
+
+cmake -S backend -B backend\build-codex-verify-mingw
+cmake --build backend\build-codex-verify-mingw
+backend\build-codex-verify-mingw\bin\tourism_server.exe --host 127.0.0.1 --port 8080
 ```
 
-编译并启动后端：
+另开一个窗口启动前端：
 
-```bat
-cd backend
-cmake -S . -B build-codex-mingw -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Debug -DASIO_INCLUDE_DIR=C:\tmp\asio\include -DPostgreSQL_ROOT="C:\Program Files\PostgreSQL\15"
-cmake --build build-codex-mingw
-set PATH=C:\Program Files\PostgreSQL\15\bin;%PATH%
-build-codex-mingw\bin\tourism_server.exe --host 127.0.0.1 --port 8080
-```
-
-启动前端：
-
-```bat
+```powershell
 cd frontend
 npm install
 npm run dev
 ```
 
-浏览器打开 Vite 输出的地址，通常是 `http://127.0.0.1:3000/`。前端会把 `/api` 请求代理到 `http://127.0.0.1:8080`。
+打开：
 
-## 适合答辩时说明的边界
+- 前端：http://127.0.0.1:3000
+- 健康检查：http://127.0.0.1:8080/health
+- AI 助手：http://127.0.0.1:3000/agent
 
-| 功能 | 可以怎么说 |
-|---|---|
-| 数据库 | 已使用 PostgreSQL/PostGIS 保存核心演示数据 |
-| 景点/路线/游记 | 已经通过后端 API 读取或写入数据库 |
-| 推荐算法 | 当前是规则和预算分档演示，后续可替换为 Top-K 或偏好权重算法 |
-| AIGC | 当前保留接口和页面入口，后续可接真实模型 API |
-| 高德数据 | 当前没有实时接高德，演示数据是手工整理的小型数据集 |
+## 验证命令
+
+```powershell
+cmake --build backend\build-codex-verify-mingw
+
+cd frontend
+npm.cmd run lint
+npm.cmd run build
+```
+
+后端冒烟：
+
+```powershell
+Invoke-WebRequest http://127.0.0.1:8080/health
+Invoke-WebRequest "http://127.0.0.1:8080/api/v1/scenic-spots?limit=2"
+Invoke-WebRequest "http://127.0.0.1:8080/api/v1/search/suggestions?q=故宫"
+Invoke-WebRequest http://127.0.0.1:8080/api/v1/routes
+Invoke-WebRequest http://127.0.0.1:8080/api/v1/diaries
+```
+
+登录冒烟：
+
+```powershell
+Invoke-WebRequest `
+  -Method POST `
+  -Uri http://127.0.0.1:8080/api/v1/auth/login `
+  -ContentType "application/json" `
+  -Body '{"identifier":"demo_user","password":"demo123456"}'
+```
+
+AI 助手冒烟：
+
+```powershell
+Invoke-WebRequest `
+  -Method POST `
+  -Uri http://127.0.0.1:8080/api/v1/aigc/travel-chat `
+  -ContentType "application/json" `
+  -Body '{"message":"帮我规划北京三日游","destination":"北京","days":3,"budget":1000,"style":"balanced"}'
+```
+
+路线文本规划冒烟：
+
+```powershell
+Invoke-WebRequest `
+  -Method POST `
+  -Uri http://127.0.0.1:8080/api/v1/routes/plan `
+  -ContentType "application/json" `
+  -Body '{"city":"北京","startText":"前门大街","endText":"故宫博物院","waypointTexts":["天安门广场"],"travelMode":"walk","optimization":"balanced"}'
+```
+
+## 常见问题
+
+- 后端启动后立刻回到 PowerShell：通常是缺 DLL。先执行 `$env:PATH="C:\Program Files\PostgreSQL\15\bin;$env:PATH"` 再启动。
+- 前端页面能打开但 API 失败：先访问 `/health`，确认后端正在 `127.0.0.1:8080` 运行。
+- 登录失败：确认 `database\seed_demo.sql` 已执行；旧数据库也可用 `demo_user / demo123456` 首次登录并自动升级密码哈希。
+- AI 助手失败：检查 `TOURISM_LLM_API_KEY` 是否在启动后端的同一个窗口设置。
+- 路线规划失败：高德 key 已有内置默认值；若仍失败，检查网络是否能访问 `https://restapi.amap.com`。
+
+## 更多文档
+
+- [快速运行手册](QUICKSTART.md)
+- [AI/Agent 接手说明](AGENTS.md)
+- [系统架构](docs/architecture.md)
+- [后端拆分记录](docs/backend-refactor.md)
+- [前端学习说明](docs/frontend-guide.md)
+- [运行中 API 文档](docs/api-runtime.md)
