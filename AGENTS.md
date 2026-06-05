@@ -6,12 +6,12 @@ This file is for AI agents and coding assistants that need to understand this re
 
 TourPilot is a personalized tourism planning system.
 
-- Frontend: Vue 3, Vite, Vue Router, Tailwind CSS, Axios, Leaflet.
+- Frontend: Vue 3, Vite, Vue Router, Tailwind CSS, Axios, Leaflet, AMap JS API for scenic-area internal navigation.
 - Backend: C++17, Crow, PostgreSQL/libpq, CMake.
 - Database: PostgreSQL with PostGIS.
-- External APIs: DeepSeek-compatible chat API and AMap Web Service.
+- External APIs: DeepSeek-compatible chat API, AMap Web Service, AMap JS API, and OpenStreetMap/Overpass for internal scenic-area map imports.
 
-DeepSeek keys must stay in environment variables. The backend includes a free default AMap Web Service key for route planning; `AMAP_WEB_SERVICE_KEY` or `AMAP_KEY` can still override it.
+DeepSeek keys must stay in environment variables. The backend includes a free default AMap Web Service key for route planning; `AMAP_WEB_SERVICE_KEY` or `AMAP_KEY` can still override it. The scenic detail frontend AMap JS API loader also has a built-in free JS API key; `VITE_AMAP_JS_KEY` and optional `VITE_AMAP_SECURITY_JS_CODE` can override it.
 
 ## Main Entry Points
 
@@ -24,6 +24,8 @@ Frontend:
 - `frontend/src/stores/auth.js`: login state, token persistence, current user.
 - `frontend/src/views/TravelAgent.vue`: real API-backed AI travel assistant page.
 - `frontend/src/views/RoutePlan.vue`: Leaflet map and route planning page.
+- `frontend/src/services/amapLoader.js`: AMap JS API loader for scenic internal navigation.
+- `frontend/src/utils/coordinates.js`: WGS84/GCJ-02 conversion helpers for AMap display and backend route requests.
 - `frontend/src/utils/images.js`: image selection priority and placeholders.
 - `frontend/src/data/imageCatalog.js`: local pinyin image catalog.
 
@@ -41,15 +43,18 @@ Database:
 
 - `database/schema.sql`
 - `database/imports/amap_pois.sql`
+- `database/internal_navigation_schema.sql`
+- `database/imports/internal_navigation.sql`
 - `database/seed_demo.sql`
 - `database/verify_demo.sql`
+- `scripts/import_internal_map_data.py`: generates real-map internal navigation SQL from OSM/Overpass roads/buildings and AMap nearby facilities. It stores all geometry as WGS84; AMap POIs are queried in GCJ-02 and converted back to WGS84 before SQL output.
 
 ## Backend Module Map
 
 - `dashboard_routes`: `/health`, `/`, `/api/v1/dashboard`, `/api/v1/achievements`.
 - `auth_routes`: login, register, logout, current user, change password.
 - `profile_routes`: `/api/v1/profile`, `/api/v1/profile/preferences`.
-- `scenic_routes`: scenic spot list/search/detail/categories/suggestions/reviews.
+- `scenic_routes`: scenic spot list/search/detail/categories/suggestions/reviews, plus internal facilities/map/route APIs.
 - `recommendation_routes`: budget plans and personalized recommendations.
 - `route_routes`: route nodes, route list, route planning.
 - `diary_routes`: diaries, likes, bookmarks, ratings, comments.
@@ -104,6 +109,24 @@ cmake --build backend\build-codex-verify-mingw
 backend\build-codex-verify-mingw\bin\tourism_server.exe --host 127.0.0.1 --port 8080
 ```
 
+Database import:
+
+```powershell
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\schema.sql
+psql -U postgres -d tourism_system -f database\imports\amap_pois.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\internal_navigation_schema.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\imports\internal_navigation.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seed_demo.sql
+```
+
+Regenerate internal scenic-area navigation data:
+
+```powershell
+py scripts\import_internal_map_data.py --amap-pages 1 --max-edges-per-spot 2000 --connector-max-distance 60 --output database\imports\internal_navigation.sql
+```
+
+Internal scenic-area routing is strict: routes must include real OSM road/path edges, generated facility connectors are allowed only within the configured connector threshold, and unreachable facilities should return an error instead of a straight-line route. Database/API geometry stays WGS84; the scenic detail page displays it on AMap JS API after WGS84 -> GCJ-02 conversion, and map-picked starts are converted back from GCJ-02 -> WGS84 before calling the backend.
+
 Frontend:
 
 ```powershell
@@ -129,9 +152,11 @@ $env:TOURISM_LLM_API_KEY="你的 DeepSeek API Key"
 $env:TOURISM_LLM_BASE_URL="https://api.deepseek.com"
 $env:TOURISM_LLM_MODEL="deepseek-chat"
 $env:AMAP_WEB_SERVICE_KEY="你的高德 Web Service Key，可选"
+$env:VITE_AMAP_JS_KEY="你的高德 JS API Key，可选"
+$env:VITE_AMAP_SECURITY_JS_CODE="你的高德 JS API 安全密钥，可选"
 ```
 
-AMap route planning has a built-in free default key, so `AMAP_WEB_SERVICE_KEY` is optional. DeepSeek has no built-in key and must use environment variables.
+AMap Web Service route planning has a built-in free default key, so `AMAP_WEB_SERVICE_KEY` is optional. The frontend AMap JS API loader also has a built-in free JS API key; set `VITE_AMAP_JS_KEY` only when overriding it, and set `VITE_AMAP_SECURITY_JS_CODE` only if the AMap console security configuration requires it. DeepSeek has no built-in key and must use environment variables.
 
 ## Smoke Tests
 

@@ -14,6 +14,7 @@
             v-model="form.identifier"
             autocomplete="username"
             class="mt-2 h-11 w-full rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-teal-700"
+            maxlength="100"
             placeholder="demo_user 或 demo@example.com"
           >
         </div>
@@ -52,6 +53,7 @@
 import { computed, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { login } from '@/stores/auth'
+import { safeRedirectPath, validateLoginForm } from '@/utils/auth'
 
 const route = useRoute()
 const router = useRouter()
@@ -62,19 +64,21 @@ const form = reactive({
   password: ''
 })
 
-const redirectPath = computed(() => typeof route.query.redirect === 'string' ? route.query.redirect : '/profile')
+const redirectPath = computed(() => safeRedirectPath(route.query.redirect))
 const redirectQuery = computed(() => redirectPath.value ? { redirect: redirectPath.value } : {})
 
 async function submit() {
+  if (submitting.value) return
   error.value = ''
-  if (!form.identifier.trim() || !form.password) {
-    error.value = '请输入账号和密码'
+  const validationMessage = validateLoginForm(form)
+  if (validationMessage) {
+    error.value = validationMessage
     return
   }
   submitting.value = true
   try {
     await login({ identifier: form.identifier.trim(), password: form.password })
-    router.push(redirectPath.value || '/profile')
+    router.push(redirectPath.value)
   } catch (err) {
     error.value = err.response?.data?.message || '登录失败，请检查账号和密码'
   } finally {

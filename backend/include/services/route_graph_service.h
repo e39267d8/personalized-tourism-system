@@ -5,6 +5,7 @@
 
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace tourism::services {
@@ -14,6 +15,9 @@ struct RouteNode {
     std::string name;
     std::string type;
     std::string scenic_name;
+    int scenic_spot_id = 0;
+    int facility_id = 0;
+    std::string facility_type;
     double longitude = 0.0;
     double latitude = 0.0;
     int congestion = 2;
@@ -24,10 +28,12 @@ struct RouteEdge {
     int from = 0;
     int to = 0;
     std::string mode;
+    std::string source;
     double distance = 0.0;
     int duration = 0;
     double base_weight = 1.0;
     int congestion = 2;
+    std::vector<std::pair<double, double>> coordinates;
 };
 
 struct RouteGraphData {
@@ -49,7 +55,7 @@ struct RouteSearchResult {
 std::string normalize_transport(const std::string& value);
 std::string normalize_optimization(const std::string& value);
 
-RouteGraphData load_route_graph(tourism::db::PgConnection& db);
+RouteGraphData load_route_graph(tourism::db::PgConnection& db, int scenic_spot_id = 0);
 RouteSearchResult plan_route_with_waypoints(const RouteGraphData& graph,
                                             const std::vector<int>& points,
                                             const std::string& transport,

@@ -106,6 +106,11 @@ RouteSearchResult dijkstra_route(const RouteGraphData& graph,
     return result;
 }
 
+std::string display_node_name(const RouteNode& node) {
+    if (node.type == "scenic") return first_nonempty({node.scenic_name, node.name});
+    return first_nonempty({node.name, node.scenic_name});
+}
+
 crow::json::wvalue route_coordinates_json(const std::string& packed_coordinates) {
     crow::json::wvalue::list coordinates;
     for (const auto& point : split_pipe(packed_coordinates)) {
@@ -119,6 +124,57 @@ crow::json::wvalue route_coordinates_json(const std::string& packed_coordinates)
         leaflet_point.push_back(latitude);
         leaflet_point.push_back(longitude);
         coordinates.push_back(crow::json::wvalue(std::move(leaflet_point)));
+    }
+    return crow::json::wvalue(std::move(coordinates));
+}
+
+std::vector<std::pair<double, double>> parse_edge_coordinates(const std::string& packed_coordinates) {
+    std::vector<std::pair<double, double>> coordinates;
+    for (const auto& point : split_pipe(packed_coordinates)) {
+        auto comma = point.find(',');
+        if (comma == std::string::npos) continue;
+        double longitude = to_double(point.substr(0, comma));
+        double latitude = to_double(point.substr(comma + 1));
+        if (longitude != 0.0 || latitude != 0.0) coordinates.push_back({latitude, longitude});
+    }
+    return coordinates;
+}
+
+void append_route_point(crow::json::wvalue::list& coordinates, double latitude, double longitude) {
+    if (latitude == 0.0 && longitude == 0.0) return;
+    crow::json::wvalue::list point;
+    point.push_back(latitude);
+    point.push_back(longitude);
+    coordinates.push_back(crow::json::wvalue(std::move(point)));
+}
+
+void append_edge_shape(crow::json::wvalue::list& coordinates,
+                       const RouteEdge& edge,
+                       const RouteNode& from,
+                       const RouteNode& to) {
+    if (edge.coordinates.empty()) {
+        if (coordinates.empty()) append_route_point(coordinates, from.latitude, from.longitude);
+        append_route_point(coordinates, to.latitude, to.longitude);
+        return;
+    }
+
+    size_t start = coordinates.empty() ? 0 : 1;
+    for (size_t index = start; index < edge.coordinates.size(); ++index) {
+        append_route_point(coordinates, edge.coordinates[index].first, edge.coordinates[index].second);
+    }
+}
+
+crow::json::wvalue edge_coordinates_json(const RouteEdge& edge,
+                                         const RouteNode& from,
+                                         const RouteNode& to) {
+    crow::json::wvalue::list coordinates;
+    if (!edge.coordinates.empty()) {
+        for (const auto& coordinate : edge.coordinates) {
+            append_route_point(coordinates, coordinate.first, coordinate.second);
+        }
+    } else {
+        append_route_point(coordinates, from.latitude, from.longitude);
+        append_route_point(coordinates, to.latitude, to.longitude);
     }
     return crow::json::wvalue(std::move(coordinates));
 }
@@ -141,20 +197,29 @@ std::string normalize_optimization(const std::string& value) {
     return "balanced";
 }
 
-RouteGraphData load_route_graph(tourism::db::PgConnection& db) {
+RouteGraphData load_route_graph(tourism::db::PgConnection& db, int scenic_spot_id) {
     RouteGraphData graph;
 
-    auto nodes = exec_sql(db, R"SQL(
+    auto nodes = tourism::db::exec_params(db, R"SQL(
         SELECT gn.id::text, gn.name, gn.node_type,
                COALESCE(ss.name, '') AS scenic_name,
+               COALESCE(gn.scenic_spot_id, f.scenic_spot_id, 0)::text AS scenic_spot_id,
+               COALESCE(gn.facility_id, 0)::text AS facility_id,
+               COALESCE(f.type, '') AS facility_type,
                gn.congestion_level::text,
                ST_X(gn.location::geometry)::text AS longitude,
                ST_Y(gn.location::geometry)::text AS latitude
         FROM graph_nodes gn
         LEFT JOIN scenic_spots ss ON ss.id = gn.scenic_spot_id
+        LEFT JOIN facilities f ON f.id = gn.facility_id
         WHERE gn.location IS NOT NULL
+          AND (
+              $1::int <= 0
+              OR gn.scenic_spot_id = $1::int
+              OR f.scenic_spot_id = $1::int
+          )
         ORDER BY gn.node_type, gn.id
-    )SQL");
+    )SQL", {std::to_string(scenic_spot_id)});
 
     for (int row = 0; row < nodes.rows(); ++row) {
         RouteNode node;
@@ -162,19 +227,41 @@ RouteGraphData load_route_graph(tourism::db::PgConnection& db) {
         node.name = nodes.value(row, "name");
         node.type = nodes.value(row, "node_type");
         node.scenic_name = nodes.value(row, "scenic_name");
+        node.scenic_spot_id = to_int(nodes.value(row, "scenic_spot_id"));
+        node.facility_id = to_int(nodes.value(row, "facility_id"));
+        node.facility_type = nodes.value(row, "facility_type");
         node.congestion = to_int(nodes.value(row, "congestion_level"), 2);
         node.longitude = to_double(nodes.value(row, "longitude"));
         node.latitude = to_double(nodes.value(row, "latitude"));
         graph.nodes[node.id] = node;
     }
 
-    auto edges = exec_sql(db, R"SQL(
-        SELECT id::text, from_node::text, to_node::text, travel_mode,
+    auto edges = tourism::db::exec_params(db, R"SQL(
+        SELECT ge.id::text, ge.from_node::text, ge.to_node::text, ge.travel_mode,
+               COALESCE(ge.source, '') AS source,
                distance::text, COALESCE(travel_time, CEIL(distance / 1.2))::text AS travel_time,
-               base_weight::text, congestion_level::text
-        FROM graph_edges
-        ORDER BY id
-    )SQL");
+               base_weight::text, ge.congestion_level::text,
+               COALESCE((
+                   SELECT string_agg(
+                       ST_X(point.geom)::text || ',' || ST_Y(point.geom)::text,
+                       '|' ORDER BY point.path
+                   )
+                   FROM ST_DumpPoints(ge.geometry::geometry) AS point
+               ), '') AS coordinates
+        FROM graph_edges ge
+        JOIN graph_nodes from_node ON from_node.id = ge.from_node
+        JOIN graph_nodes to_node ON to_node.id = ge.to_node
+        LEFT JOIN facilities from_facility ON from_facility.id = from_node.facility_id
+        LEFT JOIN facilities to_facility ON to_facility.id = to_node.facility_id
+        WHERE (
+              $1::int <= 0
+              OR from_node.scenic_spot_id = $1::int
+              OR to_node.scenic_spot_id = $1::int
+              OR from_facility.scenic_spot_id = $1::int
+              OR to_facility.scenic_spot_id = $1::int
+          )
+        ORDER BY ge.id
+    )SQL", {std::to_string(scenic_spot_id)});
 
     for (int row = 0; row < edges.rows(); ++row) {
         RouteEdge edge;
@@ -182,10 +269,12 @@ RouteGraphData load_route_graph(tourism::db::PgConnection& db) {
         edge.from = to_int(edges.value(row, "from_node"));
         edge.to = to_int(edges.value(row, "to_node"));
         edge.mode = edges.value(row, "travel_mode");
+        edge.source = edges.value(row, "source");
         edge.distance = to_double(edges.value(row, "distance"));
         edge.duration = to_int(edges.value(row, "travel_time"));
         edge.base_weight = to_double(edges.value(row, "base_weight"), 1.0);
         edge.congestion = to_int(edges.value(row, "congestion_level"), 2);
+        edge.coordinates = parse_edge_coordinates(edges.value(row, "coordinates"));
         if (graph.nodes.count(edge.from) && graph.nodes.count(edge.to)) {
             graph.edges[edge.from].push_back(edge);
         }
@@ -234,9 +323,12 @@ RouteSearchResult plan_route_with_waypoints(const RouteGraphData& graph,
 crow::json::wvalue route_node_json(const RouteNode& node) {
     crow::json::wvalue item;
     item["id"] = node.id;
-    item["name"] = first_nonempty({node.scenic_name, node.name});
+    item["name"] = display_node_name(node);
     item["nodeName"] = node.name;
     item["type"] = node.type;
+    item["scenicSpotId"] = node.scenic_spot_id;
+    item["facilityId"] = node.facility_id;
+    item["facilityType"] = node.facility_type;
     item["congestion"] = node.congestion;
     item["longitude"] = node.longitude;
     item["latitude"] = node.latitude;
@@ -248,34 +340,55 @@ crow::json::wvalue computed_route_json(const RouteGraphData& graph,
                                        const std::string& optimization,
                                        const std::string& requested_transport) {
     crow::json::wvalue::list stops;
-    crow::json::wvalue::list coordinates;
     std::string first_stop;
     std::string last_stop;
     for (int node_id : route.nodes) {
         const auto& node = graph.nodes.at(node_id);
-        std::string stop_name = first_nonempty({node.scenic_name, node.name});
+        std::string stop_name = display_node_name(node);
         if (first_stop.empty()) first_stop = stop_name;
         last_stop = stop_name;
         stops.push_back(stop_name);
-        crow::json::wvalue::list point;
-        point.push_back(node.latitude);
-        point.push_back(node.longitude);
-        coordinates.push_back(crow::json::wvalue(std::move(point)));
     }
 
     crow::json::wvalue::list segments;
+    crow::json::wvalue::list path_edges;
+    crow::json::wvalue::list coordinates;
     for (const auto& edge : route.edges) {
         const auto& from = graph.nodes.at(edge.from);
         const auto& to = graph.nodes.at(edge.to);
         crow::json::wvalue segment;
-        segment["from"] = first_nonempty({from.scenic_name, from.name});
-        segment["to"] = first_nonempty({to.scenic_name, to.name});
+        segment["from"] = display_node_name(from);
+        segment["to"] = display_node_name(to);
         segment["transport"] = transport_label(edge.mode);
         segment["transportMode"] = edge.mode;
+        segment["source"] = edge.source;
         segment["distance"] = edge.distance;
         segment["duration"] = edge.duration;
         segment["congestion"] = edge.congestion;
         segments.push_back(std::move(segment));
+
+        crow::json::wvalue path_edge;
+        path_edge["id"] = edge.id;
+        path_edge["fromNodeId"] = edge.from;
+        path_edge["toNodeId"] = edge.to;
+        path_edge["from"] = display_node_name(from);
+        path_edge["to"] = display_node_name(to);
+        path_edge["travelMode"] = edge.mode;
+        path_edge["source"] = edge.source;
+        path_edge["distance"] = edge.distance;
+        path_edge["duration"] = edge.duration;
+        path_edge["congestion"] = edge.congestion;
+        path_edge["coordinates"] = edge_coordinates_json(edge, from, to);
+        path_edges.push_back(std::move(path_edge));
+
+        append_edge_shape(coordinates, edge, from, to);
+    }
+
+    if (coordinates.empty()) {
+        for (int node_id : route.nodes) {
+            const auto& node = graph.nodes.at(node_id);
+            append_route_point(coordinates, node.latitude, node.longitude);
+        }
     }
 
     std::ostringstream distance;
@@ -287,6 +400,7 @@ crow::json::wvalue computed_route_json(const RouteGraphData& graph,
     item["title"] = !first_stop.empty() && !last_stop.empty() ? first_stop + " 到 " + last_stop : "实时规划路线";
     item["stops"] = std::move(stops);
     item["segments"] = std::move(segments);
+    item["pathEdges"] = std::move(path_edges);
     item["coordinates"] = std::move(coordinates);
     item["distance"] = distance.str();
     item["time"] = duration_label(std::to_string(route.total_duration / 60));

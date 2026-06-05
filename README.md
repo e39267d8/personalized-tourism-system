@@ -6,7 +6,7 @@ TourPilot 是一个旅游规划全栈项目。前端使用 Vue 3 + Vite + Tailwi
 
 - 首页推荐、搜索景点、景点详情。
 - 预算推荐、个性化推荐。
-- 路线规划和 Leaflet 地图展示。
+- 路线规划和 Leaflet 地图展示，景区内部导航使用高德 JS API 展示。
 - 游记广场、游记编辑、游记详情、点赞收藏评分评论。
 - 个人偏好读取与保存。
 - 登录、注册、退出、保持登录状态、登录后修改密码。
@@ -35,7 +35,7 @@ TourPilot 是一个旅游规划全栈项目。前端使用 Vue 3 + Vite + Tailwi
 
 - DeepSeek 或兼容 Chat Completions 的大模型接口。
 - 高德 Web Service 路线接口。
-- OpenStreetMap 地图瓦片。
+- OpenStreetMap/Overpass 内部路网数据，高德 JS API 前端地图。
 
 ## 项目结构
 
@@ -123,6 +123,8 @@ backend/src/services/
 | `TOURISM_LLM_BASE_URL` | 大模型接口地址 | 默认 `https://api.deepseek.com` |
 | `TOURISM_LLM_MODEL` | 大模型名称 | 建议显式设置为平台支持的模型 |
 | `AMAP_WEB_SERVICE_KEY` / `AMAP_KEY` | 覆盖高德 Web Service Key | 未配置时使用后端内置免费高德 key |
+| `VITE_AMAP_JS_KEY` | 覆盖前端高德 JS API Key | 未配置时使用项目内置免费 JS API key |
+| `VITE_AMAP_SECURITY_JS_CODE` | 前端高德 JS API 安全密钥 | 可选；仅在高德控制台安全配置要求时设置 |
 
 DeepSeek key 不允许写入仓库，只能放本地环境变量：
 
@@ -136,6 +138,13 @@ $env:TOURISM_LLM_MODEL="deepseek-chat"
 
 ```powershell
 $env:AMAP_WEB_SERVICE_KEY="你的高德 Web Service Key"
+```
+
+前端景区内部地图使用高德 JS API，默认使用项目内置免费 JS API key；如需临时覆盖，或高德控制台要求安全密钥，可在启动前端的窗口设置：
+
+```powershell
+$env:VITE_AMAP_JS_KEY="你的高德 JS API Key"
+$env:VITE_AMAP_SECURITY_JS_CODE="你的高德 JS API 安全密钥，可选"
 ```
 
 PowerShell 的 `$env:...` 只对当前窗口和它启动的子进程生效。需要在启动后端的同一个窗口里设置环境变量。
@@ -169,6 +178,8 @@ PowerShell 的 `$env:...` 只对当前窗口和它启动的子进程生效。需
 ```powershell
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\schema.sql
 psql -U postgres -d tourism_system -f database\imports\amap_pois.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\internal_navigation_schema.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\imports\internal_navigation.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seed_demo.sql
 
 $env:TOURISM_LLM_API_KEY="你的 DeepSeek API Key"
@@ -252,6 +263,31 @@ Invoke-WebRequest `
 - 登录失败：确认 `database\seed_demo.sql` 已执行；旧数据库也可用 `demo_user / demo123456` 首次登录并自动升级密码哈希。
 - AI 助手失败：检查 `TOURISM_LLM_API_KEY` 是否在启动后端的同一个窗口设置。
 - 路线规划失败：高德 key 已有内置默认值；若仍失败，检查网络是否能访问 `https://restapi.amap.com`。
+
+## 景区内部设施导航数据
+
+景点详情页的“景区设施导航”依赖三类数据：
+
+- `database\internal_navigation_schema.sql`：为 `facilities`、`graph_nodes`、`graph_edges` 补充内部导航字段和索引。
+- `database\imports\internal_navigation.sql`：已经生成好的内部导航演示数据。
+- `scripts\import_internal_map_data.py`：联网抓取真实地图数据并重新生成 `internal_navigation.sql`。
+
+当前生成结果来自 OpenStreetMap/Overpass 的内部道路、建筑、入口等要素，以及高德 Web Service 的周边设施 POI。数据库统一存储 WGS84 / `SRID=4326`：OSM 数据原生使用 WGS84，高德 POI 会先用 GCJ-02 查询，再转换为 WGS84 入库，并在 `source_tags` 中保留原始高德坐标。导入脚本会把设施接入最近的真实 OSM 步行道路，但默认只允许 60m 内的短接入段；超过阈值的设施仍可查询，但内部路线会提示不可达，不会生成直线示意路线。当前 SQL 已成功生成故宫、北海、奥林匹克森林公园三处大景区数据。天坛和颐和园本次 Overpass 请求失败，脚本会跳过失败景区并保留已成功数据。
+
+如果只需要导入已生成的数据：
+
+```powershell
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\internal_navigation_schema.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\imports\internal_navigation.sql
+```
+
+如果需要重新联网抓取并生成 SQL：
+
+```powershell
+py scripts\import_internal_map_data.py --amap-pages 1 --max-edges-per-spot 2000 --connector-max-distance 60 --output database\imports\internal_navigation.sql
+```
+
+高德 Web Service key 会按 `--amap-key`、`AMAP_WEB_SERVICE_KEY`、`AMAP_KEY`、脚本内置免费 key 的顺序选择。Overpass/高德请求需要网络可访问。前端景点详情页使用高德 JS API 展示内部导航地图：后端 API 和数据库仍统一返回 WGS84，前端展示前转换为 GCJ-02，地图点选起点时再转换回 WGS84 发给后端规划路线。前端默认使用项目内置免费 JS API key；如需覆盖可设置 `VITE_AMAP_JS_KEY`，如高德控制台启用了安全密钥校验再设置 `VITE_AMAP_SECURITY_JS_CODE`。
 
 ## 更多文档
 

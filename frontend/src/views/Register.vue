@@ -10,15 +10,15 @@
       <form class="mt-6 space-y-4" @submit.prevent="submit">
         <div>
           <label class="text-sm font-semibold text-slate-700">用户名</label>
-          <input v-model="form.username" autocomplete="username" class="mt-2 h-11 w-full rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-teal-700">
+          <input v-model="form.username" autocomplete="username" class="mt-2 h-11 w-full rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-teal-700" maxlength="50">
         </div>
         <div>
           <label class="text-sm font-semibold text-slate-700">邮箱</label>
-          <input v-model="form.email" autocomplete="email" class="mt-2 h-11 w-full rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-teal-700" type="email">
+          <input v-model="form.email" autocomplete="email" class="mt-2 h-11 w-full rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-teal-700" maxlength="100" type="email">
         </div>
         <div>
           <label class="text-sm font-semibold text-slate-700">昵称</label>
-          <input v-model="form.nickname" class="mt-2 h-11 w-full rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-teal-700">
+          <input v-model="form.nickname" class="mt-2 h-11 w-full rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-teal-700" maxlength="50">
         </div>
         <div>
           <label class="text-sm font-semibold text-slate-700">密码</label>
@@ -50,6 +50,7 @@
 import { computed, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { register } from '@/stores/auth'
+import { safeRedirectPath, validateRegisterForm } from '@/utils/auth'
 
 const route = useRoute()
 const router = useRouter()
@@ -62,13 +63,15 @@ const form = reactive({
   password: ''
 })
 
-const redirectPath = computed(() => typeof route.query.redirect === 'string' ? route.query.redirect : '/profile')
+const redirectPath = computed(() => safeRedirectPath(route.query.redirect))
 const redirectQuery = computed(() => redirectPath.value ? { redirect: redirectPath.value } : {})
 
 async function submit() {
+  if (submitting.value) return
   error.value = ''
-  if (!form.username.trim() || !form.email.trim() || !form.password) {
-    error.value = '请填写用户名、邮箱和密码'
+  const validationMessage = validateRegisterForm(form)
+  if (validationMessage) {
+    error.value = validationMessage
     return
   }
   submitting.value = true
@@ -79,7 +82,7 @@ async function submit() {
       nickname: form.nickname.trim(),
       password: form.password
     })
-    router.push(redirectPath.value || '/profile')
+    router.push(redirectPath.value)
   } catch (err) {
     error.value = err.response?.data?.message || '注册失败，请稍后重试'
   } finally {

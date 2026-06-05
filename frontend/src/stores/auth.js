@@ -3,11 +3,26 @@ import { tourismApi } from '@/services/tourismApi'
 import { diaryStore } from '@/stores/diaryStore'
 
 export const authStore = reactive({
-  token: localStorage.getItem('token') || '',
+  token: readStoredToken(),
   user: null,
   initialized: false,
   loading: false
 })
+
+function readStoredToken() {
+  if (typeof localStorage === 'undefined') return ''
+  return localStorage.getItem('token') || ''
+}
+
+function writeStoredToken(token) {
+  if (typeof localStorage === 'undefined') return
+  localStorage.setItem('token', token)
+}
+
+function removeStoredToken() {
+  if (typeof localStorage === 'undefined') return
+  localStorage.removeItem('token')
+}
 
 function applyUser(user) {
   authStore.user = user || null
@@ -17,13 +32,14 @@ function applyUser(user) {
 
 export function setAuthSession(payload) {
   authStore.token = payload?.token || ''
-  if (authStore.token) localStorage.setItem('token', authStore.token)
+  if (authStore.token) writeStoredToken(authStore.token)
+  else removeStoredToken()
   applyUser(payload?.user || null)
 }
 
 export function clearAuthSession() {
   authStore.token = ''
-  localStorage.removeItem('token')
+  removeStoredToken()
   applyUser(null)
 }
 

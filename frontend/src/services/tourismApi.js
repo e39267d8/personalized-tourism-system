@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { isAuthApiPath, safeRedirectPath } from '@/utils/auth'
 
 const client = axios.create({
   baseURL: '/api/v1',
@@ -10,7 +11,7 @@ const client = axios.create({
 
 client.interceptors.request.use(
   config => {
-    const token = localStorage.getItem('token')
+    const token = typeof localStorage === 'undefined' ? '' : localStorage.getItem('token')
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
     }
@@ -23,14 +24,13 @@ client.interceptors.response.use(
   response => response,
   error => {
     if (error.response?.status === 401) {
-      localStorage.removeItem('token')
+      if (typeof localStorage !== 'undefined') localStorage.removeItem('token')
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('tourism-auth:unauthorized'))
         const url = error.config?.url || ''
-        const isAuthCheck = url.includes('/auth/login') || url.includes('/auth/register') || url.includes('/auth/me')
         const isLoginPage = window.location.pathname === '/login' || window.location.pathname === '/register'
-        if (!isAuthCheck && !isLoginPage) {
-          const redirect = encodeURIComponent(window.location.pathname + window.location.search)
+        if (!isAuthApiPath(url) && !isLoginPage) {
+          const redirect = encodeURIComponent(safeRedirectPath(window.location.pathname + window.location.search, '/'))
           window.location.href = `/login?redirect=${redirect}`
         }
       }
@@ -54,6 +54,9 @@ export const tourismApi = {
   searchSuggestions: (params) => client.get('/search/suggestions', { params }).then(unwrap),
   scenicSpot: (id) => client.get(`/scenic-spots/${id}`).then(unwrap),
   scenicSpotReviews: (id) => client.get(`/scenic-spots/${id}/reviews`).then(unwrap),
+  scenicFacilities: (id, params) => client.get(`/scenic-spots/${id}/facilities`, { params }).then(unwrap),
+  scenicInternalMap: (id) => client.get(`/scenic-spots/${id}/internal-map`).then(unwrap),
+  planScenicInternalRoute: (id, payload) => client.post(`/scenic-spots/${id}/internal-routes/plan`, payload).then(unwrap),
   budgetPlans: (params) => client.get('/budget-plans', { params }).then(unwrap),
   routeNodes: () => client.get('/route-nodes').then(unwrap),
   routes: () => client.get('/routes').then(unwrap),

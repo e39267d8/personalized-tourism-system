@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { authStore, isAuthenticated, restoreAuth } from '@/stores/auth'
+import { safeRedirectPath } from '@/utils/auth'
 
 const routes = [
   {
@@ -94,7 +95,7 @@ router.beforeEach(async (to) => {
   }
 
   if ((to.path === '/login' || to.path === '/register') && isAuthenticated()) {
-    const redirect = typeof to.query.redirect === 'string' ? to.query.redirect : '/profile'
+    const redirect = safeRedirectPath(to.query.redirect)
     return redirect
   }
 
