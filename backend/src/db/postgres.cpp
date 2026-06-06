@@ -1,4 +1,5 @@
 #include "db/postgres.h"
+#include "db/connection_pool.h"
 
 #include <cstdlib>
 #include <stdexcept>
@@ -12,17 +13,13 @@ std::string db_conninfo() {
     return "host=127.0.0.1 port=5432 dbname=tourism_system user=postgres";
 }
 
-PgConnection::PgConnection() : conn_(PQconnectdb(db_conninfo().c_str())) {
-    if (!conn_ || PQstatus(conn_) != CONNECTION_OK) {
-        std::string message = conn_ ? PQerrorMessage(conn_) : "cannot allocate PostgreSQL connection";
-        if (conn_) PQfinish(conn_);
-        throw std::runtime_error(message);
-    }
-    PQsetClientEncoding(conn_, "UTF8");
-}
+PgConnection::PgConnection() : conn_(ConnectionPool::instance().acquire()) {}
 
 PgConnection::~PgConnection() {
-    if (conn_) PQfinish(conn_);
+    if (conn_) {
+        ConnectionPool::instance().release(conn_);
+        conn_ = nullptr;
+    }
 }
 
 PGconn* PgConnection::get() {

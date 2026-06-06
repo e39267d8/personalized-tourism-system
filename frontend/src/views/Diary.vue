@@ -1,16 +1,9 @@
 <template>
   <div>
     <!-- Header: Title + Search & Sort -->
-    <div class="flex items-center justify-between mb-6">
+    <div class="flex items-center justify-between mb-4">
       <h1 class="text-2xl font-bold text-slate-900">日记广场</h1>
       <div class="flex items-center gap-3">
-        <input
-          v-model="query"
-          type="text"
-          placeholder="搜索日记..."
-          class="w-40 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-500"
-          @input="onSearch"
-        />
         <select
           v-model="sort"
           class="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/40"
@@ -20,6 +13,32 @@
           <option value="latest">最新发布</option>
           <option value="rating">评分最高</option>
         </select>
+      </div>
+    </div>
+
+    <!-- Search mode tabs + search bar -->
+    <div class="mb-5">
+      <div class="flex items-center gap-3 flex-wrap">
+        <div class="flex rounded-lg bg-slate-100 p-1 text-sm">
+          <button
+            v-for="mode in searchModes"
+            :key="mode.key"
+            @click="searchMode = mode.key; onSearchChange()"
+            :class="['px-3 py-1.5 rounded-md font-medium transition', searchMode === mode.key ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700']"
+          >{{ mode.label }}</button>
+        </div>
+        <input
+          v-model="query"
+          type="text"
+          :placeholder="searchPlaceholder"
+          class="w-48 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/40 focus:border-teal-500"
+          @input="onSearchInput"
+        />
+        <div v-if="loading" class="flex items-center gap-1.5 text-sm text-slate-400">
+          <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+          检索中...
+        </div>
+        <span v-if="searchAlgo && searchTotal > 0" class="text-xs text-teal-600 bg-teal-50 px-2 py-1 rounded-full">{{ searchAlgo }} · {{ searchTotal }} 篇</span>
       </div>
     </div>
 
@@ -178,6 +197,25 @@ const query = ref('')
 const sort = ref(localStorage.getItem('diary_sort') || 'popular')
 const currentPage = ref(1)
 const pinJustPublished = ref(!!diaryStore.justPublished)
+const searchMode = ref('fulltext')
+const loading = ref(false)
+const searchAlgo = ref('')
+const searchTotal = ref(0)
+let searchDebounce = null
+
+const searchModes = [
+  { key: 'fulltext', label: '全文检索' },
+  { key: 'title', label: '标题精准' },
+  { key: 'spot', label: '按目的地' },
+  { key: 'local', label: '本地过滤' }
+]
+
+const searchPlaceholder = computed(() => {
+  if (searchMode.value === 'title') return '输入完整日记标题...'
+  if (searchMode.value === 'spot') return '输入景区名称或 ID...'
+  if (searchMode.value === 'local') return '搜索标题/标签/摘要...'
+  return '输入关键词搜索...'
+})
 
 // Travel literary quotes pool - refreshes each visit
 const quotes = [
@@ -266,8 +304,8 @@ const sortedDiaries = computed(() => {
     }
   }
 
-  // Filter by search
-  if (query.value.trim()) {
+  // Local mode: client-side filter (legacy behavior)
+  if (searchMode.value === 'local' && query.value.trim()) {
     const q = query.value.toLowerCase()
     list = list.filter(d =>
       d.title.toLowerCase().includes(q) ||
@@ -276,7 +314,7 @@ const sortedDiaries = computed(() => {
     )
   }
 
-  // Sort
+  // Sort (for non-backend-search modes or as fallback)
   if (sort.value === 'rating') {
     list.sort((a, b) => (b.ratingScore || 0) - (a.ratingScore || 0))
   } else if (sort.value === 'popular') {
@@ -308,17 +346,90 @@ function nextPage() {
   if (currentPage.value < totalPages.value) currentPage.value++
 }
 
-function onSearch() {
+function onSearchInput() {
   currentPage.value = 1
   if (query.value.trim()) {
     pinJustPublished.value = false
   }
+  clearTimeout(searchDebounce)
+  searchDebounce = setTimeout(doSearch, 400)
+}
+
+function onSearchChange() {
+  query.value = ''
+  currentPage.value = 1
+  searchAlgo.value = ''
+  searchTotal.value = 0
+  if (searchMode.value !== 'fulltext' && searchMode.value !== 'title' && searchMode.value !== 'spot') {
+    diaries.value = [] // use demo fallback below
+  }
+  clearTimeout(searchDebounce)
 }
 
 function onSortChange() {
   localStorage.setItem('diary_sort', sort.value)
   currentPage.value = 1
   pinJustPublished.value = false
+  if (query.value.trim()) {
+    doSearch()
+  }
+}
+
+async function doSearch() {
+  const q = query.value.trim()
+
+  // Local mode: no backend call needed
+  if (searchMode.value === 'local') {
+    searchAlgo.value = ''
+    searchTotal.value = 0
+    return
+  }
+
+  if (!q && searchMode.value !== 'spot') {
+    // Empty query: fall back to all diaries
+    searchAlgo.value = ''
+    searchTotal.value = 0
+    loadAllDiaries()
+    return
+  }
+
+  loading.value = true
+  try {
+    let data
+    if (searchMode.value === 'fulltext') {
+      data = await tourismApi.searchDiaries({ q, mode: 'any', limit: 50 })
+      searchAlgo.value = data.algorithm || 'inverted-index'
+      searchTotal.value = data.total || (data.items ? data.items.length : 0)
+      diaries.value = data.items || data || []
+    } else if (searchMode.value === 'title') {
+      data = await tourismApi.searchDiaryByTitle({ title: q })
+      searchAlgo.value = data.algorithm || 'hash-index'
+      searchTotal.value = data.total || (data.items ? data.items.length : 0)
+      diaries.value = data.items || data || []
+    } else if (searchMode.value === 'spot') {
+      const spotId = parseInt(q, 10)
+      if (isNaN(spotId) || spotId <= 0) {
+        diaries.value = []
+        searchAlgo.value = ''
+        searchTotal.value = 0
+        return
+      }
+      data = await tourismApi.searchDiaryBySpot({ scenic_spot_id: spotId, sort: sort.value, limit: 50 })
+      searchAlgo.value = 'spot-index'
+      searchTotal.value = data.total || (data.items ? data.items.length : 0)
+      diaries.value = data.items || data || []
+    }
+
+    if (!diaries.value.length) {
+      diaries.value = demoDiaries
+    }
+  } catch {
+    searchAlgo.value = ''
+    searchTotal.value = 0
+    diaries.value = demoDiaries
+  } finally {
+    loading.value = false
+  }
 }
 
 function handleImageError(event, diary) {
@@ -329,7 +440,7 @@ function diaryCardImage(diary) {
   return diaryCoverImage(diary)
 }
 
-async function loadDiaries() {
+async function loadAllDiaries() {
   try {
     const data = await tourismApi.diaries({ sort: sort.value })
     diaries.value = data.items || data || []
@@ -337,6 +448,10 @@ async function loadDiaries() {
   } catch {
     diaries.value = demoDiaries
   }
+}
+
+async function loadDiaries() {
+  await loadAllDiaries()
 }
 
 onMounted(loadDiaries)

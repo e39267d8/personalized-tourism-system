@@ -274,4 +274,84 @@ TravelChatResponse chat_with_travel_agent(const TravelChatRequest& request) {
     return {extract_reply(response_body), "deepseek", model};
 }
 
+std::string summarize_diary_text(const std::string& title, const std::string& content) {
+    try {
+        TravelChatRequest req;
+        req.style = "balanced";
+        req.message = "请用一句话（不超过80字）概括以下旅游日记内容：\n标题：" + title + "\n内容：" + content.substr(0, std::min<size_t>(content.size(), 800));
+        auto resp = chat_with_travel_agent(req);
+        std::string summary = resp.reply;
+        if (summary.size() > 100) summary = summary.substr(0, 100) + "...";
+        return summary;
+    } catch (const std::exception&) {
+        // Fallback when LLM unavailable
+        return content.empty() ? "这是一篇待完善的旅行记录。"
+               : "摘要：" + content.substr(0, std::min<size_t>(content.size(), 90));
+    }
+}
+
+std::string polish_diary_text(const std::string& content) {
+    try {
+        TravelChatRequest req;
+        req.style = "balanced";
+        req.message = "请润色以下旅行日记文本，保持原意、使语言更流畅有感染力、控制在相似长度。只输出润色后的文本，不要加任何解释：\n" + content;
+        auto resp = chat_with_travel_agent(req);
+        return resp.reply.empty() ? content : resp.reply;
+    } catch (const std::exception&) {
+        return content + "\n\n[系统建议] 补充路线顺序、预算感受和最推荐的停留点，会让游记更适合分享。";
+    }
+}
+
+ImagePromptResponse generate_image_prompt(const std::string& title, const std::string& content) {
+    ImagePromptResponse result;
+    try {
+        TravelChatRequest req;
+        req.style = "photo";
+        req.message = "根据以下旅游日记为 Stable Diffusion 生成一个英文图片描述 prompt。"
+                      "同时给出中文配图建议和适合的视觉风格、色调。"
+                      "回复格式：\n英文prompt: ...\n中文建议: ...\n风格: ...\n色调: ...\n\n"
+                      "日记标题：" + title + "\n日记内容：" + content.substr(0, std::min<size_t>(content.size(), 500));
+        auto resp = chat_with_travel_agent(req);
+
+        std::string reply = resp.reply;
+        // Parse the structured response
+        auto extract = [&](const std::string& key) -> std::string {
+            size_t pos = reply.find(key);
+            if (pos == std::string::npos) return "";
+            pos += key.size();
+            size_t end = reply.find('\n', pos);
+            if (end == std::string::npos) end = reply.size();
+            std::string val = reply.substr(pos, end - pos);
+            // Trim
+            size_t s = val.find_first_not_of(" \t\r\n");
+            if (s == std::string::npos) return val;
+            size_t e = val.find_last_not_of(" \t\r\n");
+            return val.substr(s, e - s + 1);
+        };
+
+        result.prompt_en = extract("英文prompt:");
+        if (result.prompt_en.empty()) result.prompt_en = extract("英文prompt：");
+        result.prompt_cn = extract("中文建议:");
+        if (result.prompt_cn.empty()) result.prompt_cn = extract("中文建议：");
+        result.style = extract("风格:");
+        if (result.style.empty()) result.style = extract("风格：");
+        result.color_palette = extract("色调:");
+        if (result.color_palette.empty()) result.color_palette = extract("色调：");
+
+        // Fallback if parsing failed
+        if (result.prompt_en.empty()) {
+            result.prompt_en = "Beautiful travel scene, " + title + ", natural lighting, 4k, photorealistic";
+            result.prompt_cn = "旅行风景图：" + title;
+            result.style = "写实摄影";
+            result.color_palette = "自然色调";
+        }
+    } catch (const std::exception&) {
+        result.prompt_en = "Beautiful travel scene, " + title + ", natural lighting, 4k, photorealistic";
+        result.prompt_cn = "旅行风景图：" + title;
+        result.style = "写实摄影";
+        result.color_palette = "自然色调";
+    }
+    return result;
+}
+
 } // namespace tourism::services

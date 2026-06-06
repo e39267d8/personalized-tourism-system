@@ -7,7 +7,11 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 # 编译选项
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra")
+if(MSVC)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W4 /utf-8 /FS")
+else()
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra")
+endif()
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -g -O0 -DDEBUG")
 set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -DNDEBUG")
 
@@ -63,9 +67,11 @@ include_directories(
 set(GRAPH_SOURCES
     src/graph/graph.cpp
     src/graph/dijkstra.cpp
+    src/graph/congestion.cpp
 )
 set(DB_SOURCES
     src/db/postgres.cpp
+    src/db/connection_pool.cpp
 )
 set(SUPPORT_SOURCES
     src/support/api_helpers.cpp
@@ -78,6 +84,10 @@ set(SERVICE_SOURCES
     src/services/auth_service.cpp
     src/services/scenic_service.cpp
     src/services/route_graph_service.cpp
+    src/services/food_service.cpp
+    src/services/huffman_compressor.cpp
+    src/services/inverted_index.cpp
+    src/services/index_manager.cpp
 )
 set(API_SOURCES
     src/api/auth_routes.cpp
@@ -88,6 +98,7 @@ set(API_SOURCES
     src/api/route_routes.cpp
     src/api/diary_routes.cpp
     src/api/aigc_routes.cpp
+    src/api/food_routes.cpp
 )
 set(MAIN_SOURCES
     src/main.cpp
@@ -131,6 +142,25 @@ endif()
 # ============================================
 # 单元测试
 # ============================================
+# Standalone algorithm test (no GTest dependency, self-contained runner)
+add_executable(test_algorithms
+    tests/test_algorithms.cpp
+    src/graph/graph.cpp
+    src/graph/dijkstra.cpp
+    src/graph/congestion.cpp
+    src/services/huffman_compressor.cpp
+    src/services/inverted_index.cpp
+)
+target_include_directories(test_algorithms PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/include/graph
+    ${ASIO_INCLUDE_DIR}
+)
+target_compile_definitions(test_algorithms PRIVATE ASIO_STANDALONE _WIN32_WINNT=0x0601)
+if(MSVC)
+    set_target_properties(test_algorithms PROPERTIES MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
+endif()
+
 if(GTest_FOUND)
     enable_testing()
 

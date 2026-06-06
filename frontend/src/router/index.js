@@ -75,6 +75,16 @@ const routes = [
     meta: { requiresAuth: true }
   },
   {
+    path: '/food',
+    name: 'FoodRecommend',
+    component: () => import('@/views/FoodRecommend.vue')
+  },
+  {
+    path: '/tools/huffman',
+    name: 'HuffmanDemo',
+    component: () => import('@/views/HuffmanDemo.vue')
+  },
+  {
     path: '/profile',
     name: 'Profile',
     component: () => import('@/views/Profile.vue'),

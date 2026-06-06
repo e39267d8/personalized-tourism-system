@@ -188,7 +188,24 @@
               <button @click="editor.chain().focus().redo().run()" class="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition" title="重做">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 10H11a5 5 0 00-5 5v2M21 10l-4-4M21 10l-4 4"/></svg>
               </button>
+              <span class="w-px h-5 bg-slate-200 mx-1" />
+              <button @click="aiPolish" :disabled="aiBusy" class="w-7 h-7 rounded-lg flex items-center justify-center text-amber-500 hover:text-amber-600 hover:bg-amber-50 transition" title="AI 润色">
+                <span class="text-xs font-bold">{{ aiBusy ? '...' : 'AI' }}</span>
+              </button>
+              <button @click="aiSummarize" :disabled="aiBusy" class="w-7 h-7 rounded-lg flex items-center justify-center text-purple-500 hover:text-purple-600 hover:bg-purple-50 transition" title="AI 摘要">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+              </button>
+              <button @click="aiImagePrompt" :disabled="aiBusy" class="w-7 h-7 rounded-lg flex items-center justify-center text-teal-500 hover:text-teal-600 hover:bg-teal-50 transition" title="AI 配图建议">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+              </button>
             </div>
+          </div>
+
+          <!-- AI feedback indicator -->
+          <div v-if="aiMessage" class="mb-2 px-3 py-1.5 rounded-md text-xs flex items-center gap-1.5" :class="aiMessage.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-blue-50 text-blue-700'">
+            <svg v-if="aiMessage.type === 'success'" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+            <svg v-else class="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+            {{ aiMessage.text }}
           </div>
 
           <!-- Writing area -->
@@ -307,6 +324,8 @@ const showEmojiPicker = ref(false)
 const currentPreviewIdx = ref(0)
 const editorEl = ref(null)
 const editorHtml = ref('')
+const aiBusy = ref(false)
+const aiMessage = ref(null) // { type: 'loading'|'success', text: string }
 
 // Mood options
 const moodOptions = [
@@ -388,6 +407,60 @@ function setEditorContent(html = '') {
 
 function focusEditor() {
   editorEl.value?.focus()
+}
+
+// AI tools
+async function aiPolish() {
+  const text = editorEl.value?.textContent || ''
+  if (!text.trim()) { aiMessage.value = { type: 'success', text: '请先输入内容' }; return }
+  aiBusy.value = true
+  aiMessage.value = { type: 'loading', text: 'AI 正在润色...' }
+  try {
+    const data = await tourismApi.polishDiary({ content: text })
+    const polished = data.polished || text
+    setEditorContent(polished)
+    aiMessage.value = { type: 'success', text: 'AI 润色完成' }
+    setTimeout(() => { aiMessage.value = null }, 3000)
+  } catch {
+    aiMessage.value = { type: 'success', text: 'AI 暂不可用，已保留原文' }
+    setTimeout(() => { aiMessage.value = null }, 3000)
+  } finally { aiBusy.value = false }
+}
+
+async function aiSummarize() {
+  const text = editorEl.value?.textContent || ''
+  if (!text.trim()) { aiMessage.value = { type: 'success', text: '请先输入内容' }; return }
+  aiBusy.value = true
+  aiMessage.value = { type: 'loading', text: 'AI 正在生成摘要...' }
+  try {
+    const data = await tourismApi.summarizeDiary({ title: form.value.title, content: text })
+    const summary = data.summary || '这是一篇旅行记录'
+    const current = editorEl.value?.innerHTML || ''
+    setEditorContent('<p><em>' + summary + '</em></p><p></p>' + current)
+    aiMessage.value = { type: 'success', text: 'AI 摘要已生成' }
+    setTimeout(() => { aiMessage.value = null }, 3000)
+  } catch {
+    aiMessage.value = { type: 'success', text: 'AI 暂不可用' }
+    setTimeout(() => { aiMessage.value = null }, 3000)
+  } finally { aiBusy.value = false }
+}
+
+async function aiImagePrompt() {
+  if (!form.value.title.trim()) { aiMessage.value = { type: 'success', text: '请先输入标题' }; return }
+  const text = editorEl.value?.textContent || ''
+  aiBusy.value = true
+  aiMessage.value = { type: 'loading', text: 'AI 正在生成配图建议...' }
+  try {
+    const data = await tourismApi.imagePrompt({ title: form.value.title, content: text })
+    const promptCn = data.promptCn || '旅行风景'
+    const style = data.style || '写实摄影'
+    const palette = data.colorPalette || '自然色调'
+    aiMessage.value = { type: 'success', text: '配图建议: ' + promptCn + ' | ' + style + ' | ' + palette }
+    setTimeout(() => { aiMessage.value = null }, 8000)
+  } catch {
+    aiMessage.value = { type: 'success', text: 'AI 暂不可用' }
+    setTimeout(() => { aiMessage.value = null }, 3000)
+  } finally { aiBusy.value = false }
 }
 
 function execEditorCommand(command, value = null) {

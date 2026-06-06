@@ -38,11 +38,11 @@ std::vector<tourism::services::TravelChatMessage> travel_chat_messages_from_json
 void register_aigc_routes(TourismApp& app) {
     CROW_ROUTE(app, "/api/v1/aigc/diary-summary").methods("POST"_method)([](const crow::request& req) {
         auto body = crow::json::load(req.body);
+        std::string title = json_string(body, "title", "");
         std::string content = json_string(body, "content", "");
+        std::string summary = tourism::services::summarize_diary_text(title, content);
         crow::json::wvalue data;
-        data["summary"] = content.empty()
-            ? "这是一篇待完善的旅行记录。"
-            : "自动摘要：" + content.substr(0, std::min<size_t>(content.size(), 90));
+        data["summary"] = summary;
         return ok(std::move(data));
     });
 
@@ -84,8 +84,24 @@ void register_aigc_routes(TourismApp& app) {
     CROW_ROUTE(app, "/api/v1/aigc/polish").methods("POST"_method)([](const crow::request& req) {
         auto body = crow::json::load(req.body);
         std::string content = json_string(body, "content", "");
+        std::string polished = tourism::services::polish_diary_text(content);
         crow::json::wvalue data;
-        data["polished"] = content + "\n\n系统建议：补充路线顺序、预算感受和最推荐的停留点，会让游记更适合分享。";
+        data["polished"] = polished;
+        return ok(std::move(data));
+    });
+
+    CROW_ROUTE(app, "/api/v1/aigc/image-prompt").methods("POST"_method)([](const crow::request& req) {
+        auto body = crow::json::load(req.body);
+        std::string title = json_string(body, "title", "");
+        std::string content = json_string(body, "content", "");
+
+        auto result = tourism::services::generate_image_prompt(title, content);
+
+        crow::json::wvalue data;
+        data["promptEn"] = result.prompt_en;
+        data["promptCn"] = result.prompt_cn;
+        data["style"] = result.style;
+        data["colorPalette"] = result.color_palette;
         return ok(std::move(data));
     });
 }

@@ -81,5 +81,28 @@ export const tourismApi = {
   saveProfilePreferences: (payload) => client.put('/profile/preferences', payload).then(unwrap),
   deleteProfilePreferences: () => client.delete('/profile/preferences').then(unwrap),
   summarizeDiary: (payload) => client.post('/aigc/diary-summary', payload).then(unwrap),
-  travelAgentChat: (payload) => client.post('/aigc/travel-chat', payload).then(unwrap)
+  polishDiary: (payload) => client.post('/aigc/polish', payload).then(unwrap),
+  imagePrompt: (payload) => client.post('/aigc/image-prompt', payload).then(unwrap),
+  travelAgentChat: (payload) => client.post('/aigc/travel-chat', payload).then(unwrap),
+
+  // 美食推荐
+  foodRecommend: (params) => client.get('/foods', { params }).then(unwrap),
+  foodCuisines: (params) => client.get('/foods/cuisines', { params }).then(unwrap),
+
+  // 日记检索（倒排索引）
+  searchDiaries: (params) => client.get('/diaries/search/fulltext', { params }).then(unwrap),
+  searchDiaryByTitle: (params) => client.get('/diaries/search/title', { params }).then(unwrap),
+  searchDiaryBySpot: (params) => client.get('/diaries/search/spot', { params }).then(unwrap),
+  rebuildDiaryIndex: () => client.post('/diaries/index/rebuild').then(unwrap),
+
+  // 哈夫曼压缩
+  huffmanCompress: (payload) => client.post('/huffman/compress', payload).then(unwrap),
+  huffmanDecompress: (payload) => client.post('/huffman/decompress', payload).then(unwrap),
+
+  // TSP 多点环游
+  tourRoute: (payload) => client.post('/routes/tour', payload).then(unwrap),
+
+  // 拥挤度感知路由
+  congestionRoute: (payload) => client.post('/routes/plan/congestion', payload).then(unwrap),
+  congestionInfo: (params) => client.get('/routes/congestion', { params }).then(unwrap)
 }

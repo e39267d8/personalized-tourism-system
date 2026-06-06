@@ -436,4 +436,453 @@ crow::json::wvalue route_json(const tourism::db::PgResult& rows, int row) {
     return item;
 }
 
+TspDistanceMatrix build_tsp_matrix(const RouteGraphData& graph,
+                                   const std::vector<int>& points,
+                                   const std::string& transport,
+                                   const std::string& optimization,
+                                   int crowd_tolerance) {
+    TspDistanceMatrix matrix;
+    matrix.size = static_cast<int>(points.size());
+    if (matrix.size == 0) return matrix;
+
+    matrix.distance.assign(matrix.size, std::vector<double>(matrix.size, std::numeric_limits<double>::infinity()));
+    matrix.duration.assign(matrix.size, std::vector<int>(matrix.size, std::numeric_limits<int>::max()));
+    matrix.weight.assign(matrix.size, std::vector<double>(matrix.size, std::numeric_limits<double>::infinity()));
+
+    for (int i = 0; i < matrix.size; ++i) {
+        matrix.distance[i][i] = 0.0;
+        matrix.duration[i][i] = 0;
+        matrix.weight[i][i] = 0.0;
+    }
+
+    for (int i = 0; i < matrix.size; ++i) {
+        for (int j = 0; j < matrix.size; ++j) {
+            if (i == j) continue;
+            auto result = dijkstra_route(graph, points[i], points[j], transport, optimization, crowd_tolerance);
+            if (!result.success) {
+                // Try without transport restriction
+                result = dijkstra_route(graph, points[i], points[j], "", optimization, crowd_tolerance);
+            }
+            if (result.success) {
+                matrix.distance[i][j] = result.total_distance;
+                matrix.duration[i][j] = result.total_duration;
+                matrix.weight[i][j] = result.total_weight > 0 ? result.total_weight : result.total_distance / 90.0 + result.total_duration / 45.0;
+            }
+        }
+    }
+    return matrix;
+}
+
+namespace {
+
+constexpr double kInf = std::numeric_limits<double>::infinity();
+constexpr int kMaxEnumeration = 8;
+constexpr int kMaxBacktracking = 12;
+constexpr int kMaxBranchAndBound = 20;
+
+double tsp_evaluate(const TspDistanceMatrix& matrix, const std::vector<int>& order) {
+    double total = 0.0;
+    for (size_t i = 0; i + 1 < order.size(); ++i) {
+        double w = matrix.weight[order[i]][order[i + 1]];
+        if (w >= kInf) return kInf;
+        total += w;
+    }
+    return total;
+}
+
+void tsp_stats(const TspDistanceMatrix& matrix, const std::vector<int>& order,
+               TspResult& result) {
+    result.total_distance = 0.0;
+    result.total_duration = 0;
+    result.total_weight = 0.0;
+    for (size_t i = 0; i + 1 < order.size(); ++i) {
+        result.total_distance += matrix.distance[order[i]][order[i + 1]];
+        result.total_duration += matrix.duration[order[i]][order[i + 1]];
+        result.total_weight += matrix.weight[order[i]][order[i + 1]];
+    }
+}
+
+bool tsp_matrix_reachable(const TspDistanceMatrix& matrix) {
+    for (int i = 0; i < matrix.size; ++i) {
+        for (int j = 0; j < matrix.size; ++j) {
+            if (i != j && matrix.weight[i][j] >= kInf) return false;
+        }
+    }
+    return true;
+}
+
+} // namespace
+
+TspResult tsp_enumeration(const TspDistanceMatrix& matrix) {
+    TspResult result;
+    result.algorithm_used = "枚举";
+    if (matrix.size < 2) {
+        result.error = "至少需要2个点";
+        return result;
+    }
+    if (!tsp_matrix_reachable(matrix)) {
+        result.error = "部分点之间不可达";
+        return result;
+    }
+
+    std::vector<int> perm(matrix.size);
+    for (int i = 0; i < matrix.size; ++i) perm[i] = i;
+    // Fix start at 0, only permute indices 1..n-1
+    std::vector<int> best_order = perm;
+    double best_weight = kInf;
+
+    std::vector<int> tail(matrix.size - 1);
+    for (int i = 1; i < matrix.size; ++i) tail[i - 1] = i;
+
+    do {
+        std::vector<int> order(matrix.size);
+        order[0] = 0;
+        for (int i = 0; i < matrix.size - 1; ++i) order[i + 1] = tail[i];
+        // Close the loop: add return to start
+        double weight = tsp_evaluate(matrix, order);
+        if (matrix.weight[order.back()][order[0]] < kInf) {
+            weight += matrix.weight[order.back()][order[0]];
+        }
+        if (weight < best_weight) {
+            best_weight = weight;
+            best_order = std::move(order);
+        }
+    } while (std::next_permutation(tail.begin(), tail.end()));
+
+    result.success = true;
+    result.best_order = std::move(best_order);
+    tsp_stats(matrix, result.best_order, result);
+    // Add return leg
+    result.total_distance += matrix.distance[result.best_order.back()][result.best_order[0]];
+    result.total_duration += matrix.duration[result.best_order.back()][result.best_order[0]];
+    result.total_weight += matrix.weight[result.best_order.back()][result.best_order[0]];
+    return result;
+}
+
+namespace {
+
+void tsp_backtrack_dfs(const TspDistanceMatrix& matrix, std::vector<int>& current,
+                       std::vector<bool>& visited, double current_weight,
+                       int depth, double& best_weight, std::vector<int>& best_order,
+                       const std::vector<double>& min_out_edge) {
+    if (depth == matrix.size) {
+        double total = current_weight + matrix.weight[current.back()][current[0]];
+        if (total < best_weight) {
+            best_weight = total;
+            best_order = current;
+        }
+        return;
+    }
+    for (int i = 1; i < matrix.size; ++i) {
+        if (visited[i]) continue;
+        double edge_w = matrix.weight[current.back()][i];
+        if (edge_w >= kInf) continue;
+        double new_weight = current_weight + edge_w;
+        // Lower bound: min out edges for remaining unvisited + back to start
+        double bound = new_weight;
+        for (int j = 1; j < matrix.size; ++j) {
+            if (j != i && !visited[j]) bound += min_out_edge[j];
+        }
+        bound += min_out_edge[0];
+        if (bound >= best_weight) continue;
+
+        visited[i] = true;
+        current.push_back(i);
+        tsp_backtrack_dfs(matrix, current, visited, new_weight, depth + 1, best_weight, best_order, min_out_edge);
+        current.pop_back();
+        visited[i] = false;
+    }
+}
+
+} // namespace
+
+TspResult tsp_backtracking(const TspDistanceMatrix& matrix) {
+    TspResult result;
+    result.algorithm_used = "回溯";
+    if (matrix.size < 2) {
+        result.error = "至少需要2个点";
+        return result;
+    }
+    if (!tsp_matrix_reachable(matrix)) {
+        result.error = "部分点之间不可达";
+        return result;
+    }
+
+    // Compute min out edge for each node as lower bound
+    std::vector<double> min_out_edge(matrix.size, kInf);
+    for (int i = 0; i < matrix.size; ++i) {
+        for (int j = 0; j < matrix.size; ++j) {
+            if (i != j && matrix.weight[i][j] < min_out_edge[i]) {
+                min_out_edge[i] = matrix.weight[i][j];
+            }
+        }
+    }
+
+    std::vector<int> current = {0};
+    std::vector<bool> visited(matrix.size, false);
+    visited[0] = true;
+    double best_weight = kInf;
+    std::vector<int> best_order;
+
+    tsp_backtrack_dfs(matrix, current, visited, 0.0, 1, best_weight, best_order, min_out_edge);
+
+    if (best_order.empty()) {
+        result.error = "未找到可行环游路线";
+        return result;
+    }
+
+    result.success = true;
+    result.best_order = std::move(best_order);
+    tsp_stats(matrix, result.best_order, result);
+    result.total_distance += matrix.distance[result.best_order.back()][result.best_order[0]];
+    result.total_duration += matrix.duration[result.best_order.back()][result.best_order[0]];
+    result.total_weight += matrix.weight[result.best_order.back()][result.best_order[0]];
+    return result;
+}
+
+TspResult tsp_branch_and_bound(const TspDistanceMatrix& matrix) {
+    TspResult result;
+    result.algorithm_used = "分支限界";
+    if (matrix.size < 2) {
+        result.error = "至少需要2个点";
+        return result;
+    }
+    if (!tsp_matrix_reachable(matrix)) {
+        result.error = "部分点之间不可达";
+        return result;
+    }
+
+    // Compute reduced cost matrix lower bound
+    std::vector<std::vector<double>> reduced = matrix.weight;
+    double initial_bound = 0.0;
+    for (int i = 0; i < matrix.size; ++i) {
+        double row_min = kInf;
+        for (int j = 0; j < matrix.size; ++j) {
+            if (i != j && reduced[i][j] < row_min) row_min = reduced[i][j];
+        }
+        if (row_min < kInf) {
+            initial_bound += row_min;
+            for (int j = 0; j < matrix.size; ++j) {
+                if (i != j) reduced[i][j] -= row_min;
+            }
+        }
+    }
+    for (int j = 0; j < matrix.size; ++j) {
+        double col_min = kInf;
+        for (int i = 0; i < matrix.size; ++i) {
+            if (i != j && reduced[i][j] < col_min) col_min = reduced[i][j];
+        }
+        if (col_min < kInf) {
+            initial_bound += col_min;
+            for (int i = 0; i < matrix.size; ++i) {
+                if (i != j) reduced[i][j] -= col_min;
+            }
+        }
+    }
+
+    // Use priority queue for branch and bound
+    struct BnbNode {
+        std::vector<int> path;
+        std::vector<bool> visited;
+        double bound;
+        int depth;
+        bool operator<(const BnbNode& other) const {
+            return bound > other.bound;
+        }
+    };
+
+    std::priority_queue<BnbNode> pq;
+    BnbNode root;
+    root.path = {0};
+    root.visited.assign(matrix.size, false);
+    root.visited[0] = true;
+    root.bound = initial_bound;
+    root.depth = 1;
+    pq.push(root);
+
+    double best_weight = kInf;
+    std::vector<int> best_order;
+
+    std::vector<double> min_out_rest(matrix.size, 0.0);
+    for (int i = 0; i < matrix.size; ++i) {
+        min_out_rest[i] = kInf;
+        for (int j = 0; j < matrix.size; ++j) {
+            if (i != j && matrix.weight[i][j] < min_out_rest[i]) {
+                min_out_rest[i] = matrix.weight[i][j];
+            }
+        }
+    }
+
+    while (!pq.empty()) {
+        BnbNode node = pq.top();
+        pq.pop();
+
+        if (node.bound >= best_weight) continue;
+
+        if (node.depth == matrix.size) {
+            double total = tsp_evaluate(matrix, node.path);
+            if (matrix.weight[node.path.back()][0] < kInf) {
+                total += matrix.weight[node.path.back()][0];
+            }
+            if (total < best_weight) {
+                best_weight = total;
+                best_order = node.path;
+            }
+            continue;
+        }
+
+        for (int i = 1; i < matrix.size; ++i) {
+            if (node.visited[i]) continue;
+            double edge_w = matrix.weight[node.path.back()][i];
+            if (edge_w >= kInf) continue;
+
+            double current_w = tsp_evaluate(matrix, node.path) + edge_w;
+            double rest_bound = 0.0;
+            for (int j = 1; j < matrix.size; ++j) {
+                if (j != i && !node.visited[j]) rest_bound += min_out_rest[j];
+            }
+            rest_bound += min_out_rest[0];
+            double new_bound = current_w + rest_bound;
+            if (new_bound >= best_weight) continue;
+
+            BnbNode child;
+            child.path = node.path;
+            child.path.push_back(i);
+            child.visited = node.visited;
+            child.visited[i] = true;
+            child.bound = new_bound;
+            child.depth = node.depth + 1;
+            pq.push(child);
+        }
+    }
+
+    if (best_order.empty()) {
+        result.error = "未找到可行环游路线";
+        return result;
+    }
+
+    result.success = true;
+    result.best_order = std::move(best_order);
+    tsp_stats(matrix, result.best_order, result);
+    result.total_distance += matrix.distance[result.best_order.back()][result.best_order[0]];
+    result.total_duration += matrix.duration[result.best_order.back()][result.best_order[0]];
+    result.total_weight += matrix.weight[result.best_order.back()][result.best_order[0]];
+    return result;
+}
+
+TspResult tsp_nearest_neighbor(const TspDistanceMatrix& matrix) {
+    TspResult result;
+    result.algorithm_used = "近邻优化(2-opt)";
+    if (matrix.size < 2) {
+        result.error = "至少需要2个点";
+        return result;
+    }
+    if (!tsp_matrix_reachable(matrix)) {
+        result.error = "部分点之间不可达";
+        return result;
+    }
+
+    std::vector<int> order(matrix.size);
+    std::vector<bool> visited(matrix.size, false);
+    order[0] = 0;
+    visited[0] = true;
+
+    for (int k = 1; k < matrix.size; ++k) {
+        int last = order[k - 1];
+        int best_next = -1;
+        double best_w = kInf;
+        for (int j = 0; j < matrix.size; ++j) {
+            if (!visited[j] && matrix.weight[last][j] < best_w) {
+                best_w = matrix.weight[last][j];
+                best_next = j;
+            }
+        }
+        if (best_next < 0) break;
+        order[k] = best_next;
+        visited[best_next] = true;
+    }
+
+    // 2-opt local improvement
+    bool improved = true;
+    while (improved) {
+        improved = false;
+        for (int i = 1; i < matrix.size - 1; ++i) {
+            for (int j = i + 1; j < matrix.size; ++j) {
+                double old_w = matrix.weight[order[i - 1]][order[i]] + matrix.weight[order[j - 1]][order[j]];
+                double new_w = matrix.weight[order[i - 1]][order[j - 1]] + matrix.weight[order[i]][order[j]];
+                if (new_w < old_w) {
+                    std::reverse(order.begin() + i, order.begin() + j);
+                    improved = true;
+                }
+            }
+        }
+    }
+
+    result.success = true;
+    result.best_order = std::move(order);
+    tsp_stats(matrix, result.best_order, result);
+    result.total_distance += matrix.distance[result.best_order.back()][result.best_order[0]];
+    result.total_duration += matrix.duration[result.best_order.back()][result.best_order[0]];
+    result.total_weight += matrix.weight[result.best_order.back()][result.best_order[0]];
+    return result;
+}
+
+TspResult solve_tsp(const TspDistanceMatrix& matrix) {
+    if (matrix.size <= kMaxEnumeration) {
+        return tsp_enumeration(matrix);
+    } else if (matrix.size <= kMaxBacktracking) {
+        return tsp_backtracking(matrix);
+    } else if (matrix.size <= kMaxBranchAndBound) {
+        return tsp_branch_and_bound(matrix);
+    } else {
+        return tsp_nearest_neighbor(matrix);
+    }
+}
+
+RouteSearchResult compose_tsp_route(const RouteGraphData& graph,
+                                    const TspResult& tsp_result,
+                                    const std::vector<int>& original_points,
+                                    const std::string& transport,
+                                    const std::string& optimization,
+                                    int crowd_tolerance) {
+    RouteSearchResult combined;
+    if (!tsp_result.success) {
+        combined.error = tsp_result.error;
+        return combined;
+    }
+
+    // Build ordered point list from tsp result, then add return to start
+    std::vector<int> ordered;
+    for (int idx : tsp_result.best_order) {
+        ordered.push_back(original_points[idx]);
+    }
+    ordered.push_back(original_points[tsp_result.best_order[0]]); // return to start
+
+    return plan_route_with_waypoints(graph, ordered, transport, optimization, crowd_tolerance);
+}
+
+crow::json::wvalue tour_route_json(const RouteGraphData& graph,
+                                   const RouteSearchResult& route,
+                                   const std::vector<int>& visit_order,
+                                   const std::string& optimization,
+                                   const std::string& requested_transport,
+                                   const std::string& algorithm_used) {
+    crow::json::wvalue base = computed_route_json(graph, route, optimization, requested_transport);
+
+    crow::json::wvalue::list order_names;
+    for (int idx : visit_order) {
+        if (route.nodes.empty()) break;
+        auto node_it = graph.nodes.find(idx);
+        if (node_it != graph.nodes.end()) {
+            order_names.push_back(display_node_name(node_it->second));
+        }
+    }
+
+    base["tourType"] = "环游";
+    base["algorithm"] = algorithm_used;
+    base["visitOrder"] = std::move(order_names);
+    base["pointCount"] = static_cast<int>(visit_order.size());
+    return base;
+}
+
 } // namespace tourism::services

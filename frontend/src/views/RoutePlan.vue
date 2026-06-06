@@ -85,6 +85,45 @@
             </div>
           </div>
 
+          <!-- TSP tour mode toggle -->
+          <div class="flex items-center gap-2 py-1">
+            <input
+              id="tourMode"
+              v-model="tourMode"
+              type="checkbox"
+              class="w-4 h-4 rounded border-slate-300 text-teal-700 focus:ring-teal-500"
+            />
+            <label for="tourMode" class="text-sm font-semibold text-slate-700 cursor-pointer">环游模式 (TSP)</label>
+            <span class="text-xs text-slate-400">多点间最短回路，自动回到起点</span>
+          </div>
+
+          <!-- Congestion-aware routing toggle -->
+          <div class="flex items-center gap-2 py-1">
+            <input
+              id="congestionMode"
+              v-model="useCongestion"
+              type="checkbox"
+              class="w-4 h-4 rounded border-slate-300 text-teal-700 focus:ring-teal-500"
+            />
+            <label for="congestionMode" class="text-sm font-semibold text-slate-700 cursor-pointer">拥挤度感知</label>
+            <span class="text-xs text-slate-400">实时避开拥堵路段</span>
+          </div>
+          <div v-if="useCongestion" class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="text-sm font-semibold text-slate-700">出行时段</label>
+              <select v-model="timeOfDay" class="mt-2 h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm focus:border-teal-700 focus:outline-none">
+                <option v-for="t in timeOptions" :key="t.value" :value="t.value">{{ t.label }}</option>
+              </select>
+            </div>
+            <div>
+              <label class="text-sm font-semibold text-slate-700">预计拥挤度</label>
+              <div class="mt-2 h-10 flex items-center gap-2">
+                <span class="w-3 h-3 rounded-full" :style="{ backgroundColor: congestionColor }"></span>
+                <span class="text-sm font-medium" :style="{ color: congestionColor }">{{ congestionLabel }}</span>
+              </div>
+            </div>
+          </div>
+
           <button class="w-full rounded-md bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400" :disabled="loading">
             {{ loading ? '规划中...' : '生成路线' }}
           </button>
@@ -102,17 +141,22 @@
         <template v-if="route">
           <div class="mt-4 grid grid-cols-3 gap-3">
             <div class="rounded-md bg-slate-50 p-3">
-              <div class="text-xs text-slate-500">距离</div>
+              <div class="text-xs text-slate-500">{{ tourMode ? 'TSP 距离' : '距离' }}</div>
               <div class="mt-1 text-lg font-bold">{{ route.distance }}</div>
             </div>
             <div class="rounded-md bg-slate-50 p-3">
-              <div class="text-xs text-slate-500">时长</div>
+              <div class="text-xs text-slate-500">{{ tourMode ? 'TSP 时长' : '时长' }}</div>
               <div class="mt-1 text-lg font-bold">{{ route.time }}</div>
             </div>
             <div class="rounded-md bg-slate-50 p-3">
-              <div class="text-xs text-slate-500">预估费用</div>
-              <div class="mt-1 text-lg font-bold">¥{{ route.cost }}</div>
+              <div class="text-xs text-slate-500">{{ tourMode ? '算法' : '预估费用' }}</div>
+              <div class="mt-1 text-base font-bold">{{ tourMode ? (route.algorithm || 'TSP') : ('¥' + route.cost) }}</div>
             </div>
+          </div>
+
+          <!-- TSP visit order -->
+          <div v-if="tourMode && route.visitOrder" class="mt-3 rounded-md bg-teal-50 px-3 py-2 text-sm text-teal-800">
+            访问顺序: {{ route.visitOrder.join(' → ') }}
           </div>
 
           <div class="mt-5 space-y-3">
@@ -164,7 +208,7 @@
 </template>
 
 <script setup>
-import { nextTick, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import L from 'leaflet'
 import { tourismApi } from '@/services/tourismApi'
 
@@ -174,6 +218,37 @@ const loading = ref(false)
 const error = ref('')
 const newWaypoint = ref('')
 const waypoints = ref([])
+const tourMode = ref(false)
+const useCongestion = ref(false)
+const timeOfDay = ref(12)
+
+const timeOptions = [
+  { value: 7, label: '早高峰 (7:00)' },
+  { value: 9, label: '上午 (9:00)' },
+  { value: 12, label: '中午 (12:00)' },
+  { value: 14, label: '下午 (14:00)' },
+  { value: 17, label: '晚高峰 (17:00)' },
+  { value: 19, label: '晚上 (19:00)' },
+  { value: 22, label: '深夜 (22:00)' },
+]
+
+const congestionLabel = computed(() => {
+  const h = timeOfDay.value
+  if (h >= 7 && h <= 9) return '中度拥堵'
+  if (h >= 17 && h <= 19) return '重度拥堵'
+  if (h >= 22 || h <= 5) return '畅通'
+  if (h >= 9 && h <= 11) return '轻微拥堵'
+  return '轻度拥堵'
+})
+
+const congestionColor = computed(() => {
+  const h = timeOfDay.value
+  if (h >= 17 && h <= 19) return '#ef4444'
+  if (h >= 7 && h <= 9) return '#f97316'
+  if (h >= 9 && h <= 11) return '#eab308'
+  if (h >= 22 || h <= 5) return '#22c55e'
+  return '#84cc16'
+})
 
 const form = reactive({
   city: '北京',
@@ -263,6 +338,116 @@ const planRoute = async () => {
 
   loading.value = true
   error.value = ''
+
+  // TSP tour mode: send all points to /api/v1/routes/tour
+  if (tourMode.value) {
+    try {
+      const allTexts = allStopTexts()
+      const allCoords = allTexts.map((name, i) => coordinateForPlace(name, i))
+      // Build nodeIds from known coordinates (approximate - use index as node ID)
+      const nodeIds = allTexts.map((_, i) => i + 1)
+
+      const tourResult = await tourismApi.tourRoute({
+        nodeIds,
+        travelMode: form.travelMode,
+        optimization: form.optimization
+      })
+
+      const tourStops = tourResult.visitOrder
+        ? tourResult.visitOrder.map((idx) => allTexts[idx - 1] || `节点 ${idx}`)
+        : allTexts
+
+      const coords = tourResult.visitOrder
+        ? tourResult.visitOrder.map((idx) => allCoords[idx - 1] || [39.916, 116.397])
+        : allCoords
+
+      route.value = {
+        id: 0,
+        route_id: 'tsp-tour-route',
+        title: `TSP 环游路线`,
+        stops: tourStops,
+        requestedPlaces: coords.map((c, i) => ({ latitude: c[0], longitude: c[1], name: tourStops[i] || '' })),
+        coordinates: coords,
+        distance: `${(tourResult.tspDistance || 0 / 1000).toFixed(1)} km`,
+        time: `${Math.max(1, Math.round((tourResult.tspDuration || 0) / 60))} 分钟`,
+        cost: 0,
+        algorithm: tourResult.algorithm || 'TSP',
+        visitOrder: tourResult.visitOrder || [],
+        transport: modeLabel(),
+        segments: []
+      }
+      drawRoute()
+    } catch {
+      error.value = 'TSP 环游规划暂不可用'
+    } finally {
+      loading.value = false
+    }
+    return
+  }
+
+  // Congestion-aware mode
+  if (useCongestion.value) {
+    try {
+      const nodeMap = {
+        '前门大街': 1, '故宫博物院': 2, '天安门广场': 3, '景山公园': 4,
+        '北海公园': 5, '天坛': 6, '颐和园': 7, '圆明园': 8
+      }
+      let startId = nodeMap[form.startText] || 1
+      let endId = nodeMap[form.endText] || 2
+
+      const congestionResult = await tourismApi.congestionRoute({
+        start_id: startId,
+        end_id: endId,
+        travel_mode: form.travelMode === 'driving' ? 'car' : form.travelMode === 'transit' ? 'subway' : form.travelMode,
+        hour: timeOfDay.value
+      })
+
+      const coords = []
+      const stops = []
+      if (congestionResult.path) {
+        for (const pid of congestionResult.path) {
+          const key = Object.keys(placeCoordinates).find(k => {
+            for (const [nodeName, nodeId] of Object.entries(nodeMap)) {
+              if (nodeId === pid) return k.includes(nodeName) || nodeName.includes(k)
+            }
+            return false
+          })
+          if (key) {
+            coords.push(placeCoordinates[key])
+            stops.push(key)
+          }
+        }
+      }
+      if (!coords.length) coords.push([39.916, 116.397], [39.928, 116.403])
+      if (!stops.length) stops.push(form.startText, form.endText)
+
+      route.value = {
+        id: 0,
+        route_id: 'congestion-route',
+        title: `拥挤度感知路线 (${congestionResult.overall_congestion || '未知'})`,
+        stops,
+        coordinates: coords.length ? coords : [[39.916, 116.397], [39.928, 116.403]],
+        distance: `${(congestionResult.total_distance || 0 / 1000).toFixed(1)} km`,
+        time: `${Math.max(1, Math.round((congestionResult.total_duration || 0) / 60))} 分钟`,
+        cost: 0,
+        algorithm: `拥挤度感知 · ${modeLabel()}`,
+        transport: modeLabel(),
+        segments: congestionResult.congestion_segments ? Object.values(congestionResult.congestion_segments).map(s => ({
+          title: `段${s.from}-${s.to}`,
+          congestion: s.congestion_label || '未知',
+          congestionColor: s.congestion_color || '#84cc16'
+        })) : []
+      }
+      drawRoute()
+    } catch {
+      error.value = '拥挤度感知路由暂不可用'
+    } finally {
+      loading.value = false
+    }
+    return
+  }
+
+  // Standard route mode
   try {
     route.value = await tourismApi.planRoute({
       city: form.city,

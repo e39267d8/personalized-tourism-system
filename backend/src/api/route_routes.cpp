@@ -1,6 +1,7 @@
 #include "api/route_routes.h"
 
 #include "db/postgres.h"
+#include "graph/congestion.h"
 #include "services/amap_route_service.h"
 #include "services/route_graph_service.h"
 #include "support/api_helpers.h"
@@ -13,6 +14,8 @@ namespace {
 using tourism::db::PgConnection;
 using tourism::db::exec_sql;
 using tourism::services::RouteNode;
+using tourism::services::build_tsp_matrix;
+using tourism::services::compose_tsp_route;
 using tourism::services::computed_route_json;
 using tourism::services::load_route_graph;
 using tourism::services::normalize_optimization;
@@ -20,6 +23,8 @@ using tourism::services::normalize_transport;
 using tourism::services::plan_route_with_waypoints;
 using tourism::services::route_json;
 using tourism::services::route_node_json;
+using tourism::services::solve_tsp;
+using tourism::services::tour_route_json;
 using tourism::support::json_error;
 using tourism::support::json_int;
 using tourism::support::json_int_array;
@@ -27,6 +32,7 @@ using tourism::support::json_string;
 using tourism::support::json_string_array;
 using tourism::support::ok;
 using tourism::support::trim_text;
+using tourism::support::query_int;
 
 } // namespace
 
@@ -150,6 +156,152 @@ void register_route_routes(TourismApp& app) {
             if (!route.success) return json_error(404, route.error.empty() ? "无法规划路线" : route.error);
 
             crow::json::wvalue data = computed_route_json(graph, route, optimization, transport);
+            return crow::response(ok(std::move(data)));
+        } catch (const std::exception& error) {
+            return json_error(500, error.what());
+        }
+    });
+
+    CROW_ROUTE(app, "/api/v1/routes/tour").methods("POST"_method)([](const crow::request& req) -> crow::response {
+        try {
+            auto body = crow::json::load(req.body);
+            if (!body) return json_error(400, "Invalid JSON");
+
+            std::vector<int> waypoints = json_int_array(body, "nodeIds");
+            std::string raw_transport = json_string(body, "travelMode", "walk");
+            std::string transport = normalize_transport(raw_transport);
+            std::string optimization = normalize_optimization(json_string(body, "optimization", "balanced"));
+            int crowd_tolerance = std::max(1, std::min(4, json_int(body, "crowdTolerance", 3)));
+
+            if (waypoints.size() < 2) {
+                return json_error(400, "环游至少需要2个点位");
+            }
+            if (waypoints.size() > 30) {
+                return json_error(400, "环游最多支持30个点位");
+            }
+
+            PgConnection db;
+            auto graph = load_route_graph(db);
+
+            // Verify all points exist in graph
+            for (int node_id : waypoints) {
+                if (!graph.nodes.count(node_id)) {
+                    return json_error(400, "点位 " + std::to_string(node_id) + " 不在路网中");
+                }
+            }
+
+            // Build TSP distance matrix
+            auto matrix = build_tsp_matrix(graph, waypoints, transport, optimization, crowd_tolerance);
+
+            // Solve TSP
+            auto tsp_result = solve_tsp(matrix);
+            if (!tsp_result.success) {
+                return json_error(422, tsp_result.error.empty() ? "无法找到环游路线" : tsp_result.error);
+            }
+
+            // Compose full route from TSP result
+            auto route = compose_tsp_route(graph, tsp_result, waypoints, transport, optimization, crowd_tolerance);
+            if (!route.success) {
+                return json_error(422, route.error.empty() ? "无法规划路线" : route.error);
+            }
+
+            std::vector<int> visit_order;
+            for (int idx : tsp_result.best_order) visit_order.push_back(waypoints[idx]);
+
+            crow::json::wvalue data = tour_route_json(graph, route, visit_order, optimization, transport, tsp_result.algorithm_used);
+            data["tspDistance"] = static_cast<int>(tsp_result.total_distance);
+            data["tspDuration"] = tsp_result.total_duration;
+            return crow::response(ok(std::move(data)));
+        } catch (const std::exception& error) {
+            return json_error(500, error.what());
+        }
+    });
+
+    // Congestion-aware route planning
+    CROW_ROUTE(app, "/api/v1/routes/plan/congestion").methods("POST"_method)([](const crow::request& req) -> crow::response {
+        try {
+            auto body = crow::json::load(req.body);
+            if (!body) return json_error(400, "Invalid JSON");
+
+            int start_id = json_int(body, "start_id", -1);
+            int end_id = json_int(body, "end_id", -1);
+            std::string transport = trim_text(json_string(body, "travel_mode", "walk"));
+            int hour = std::max(0, std::min(23, json_int(body, "hour", 12)));
+
+            if (start_id < 0 || end_id < 0) return json_error(400, "start_id and end_id are required");
+
+            PgConnection db;
+            auto graph = load_route_graph(db, 0);
+
+            // Compute time-of-day crowd_tolerance: lower = more tolerance for crowds
+            // During peak hours, tolerance is low (crowds matter more)
+            int crowd_tolerance = 3;
+            if (hour >= 7 && hour <= 9) crowd_tolerance = 1;   // morning peak: very sensitive
+            else if (hour >= 17 && hour <= 19) crowd_tolerance = 0; // evening peak: most sensitive
+            else if (hour >= 9 && hour <= 11) crowd_tolerance = 2;
+            else if (hour >= 22 || hour <= 5) crowd_tolerance = 4; // off-peak: not sensitive
+
+            std::vector<int> points = {start_id, end_id};
+            auto result = plan_route_with_waypoints(graph, points, transport, "balanced", crowd_tolerance);
+
+            if (!result.success) return json_error(422, result.error);
+
+            crow::json::wvalue data = computed_route_json(graph, result, "congestion", transport);
+            data["hour"] = hour;
+            data["crowd_tolerance"] = crowd_tolerance;
+            static const char* labels[] = {"极度敏感", "敏感", "中等", "宽松", "非常宽松"};
+            data["crowd_label"] = labels[std::max(0, std::min(4, crowd_tolerance))];
+
+            // Add per-segment congestion info
+            crow::json::wvalue segments;
+            int seg_idx = 0;
+            for (const auto& edge : result.edges) {
+                segments[seg_idx]["from"] = edge.from;
+                segments[seg_idx]["to"] = edge.to;
+                segments[seg_idx]["congestion"] = edge.congestion;
+                segments[seg_idx]["congestion_label"] = tourism::graph::congestion_label(static_cast<double>(edge.congestion));
+                segments[seg_idx]["congestion_color"] = tourism::graph::congestion_color(static_cast<double>(edge.congestion));
+                seg_idx++;
+            }
+            data["congestion_segments"] = std::move(segments);
+
+            return crow::response(ok(std::move(data)));
+        } catch (const std::exception& error) {
+            return json_error(500, error.what());
+        }
+    });
+
+    // Get simulated congestion data for display
+    CROW_ROUTE(app, "/api/v1/routes/congestion").methods("GET"_method)([](const crow::request& req) -> crow::response {
+        try {
+            int hour = query_int(req, "hour", 12, 0, 23);
+            std::string transport = req.url_params.get("mode") ? std::string(req.url_params.get("mode")) : "walk";
+
+            PgConnection db;
+            auto graph = load_route_graph(db, 0);
+
+            crow::json::wvalue data;
+            crow::json::wvalue info;
+            int idx = 0;
+
+            for (const auto& [node_id, edges] : graph.edges) {
+                for (const auto& e : edges) {
+                    if (!transport.empty() && e.mode != transport) continue;
+                    info[idx]["edge_id"] = e.id;
+                    info[idx]["from"] = e.from;
+                    info[idx]["to"] = e.to;
+                    info[idx]["level"] = e.congestion;
+                    info[idx]["label"] = tourism::graph::congestion_label(static_cast<double>(e.congestion));
+                    info[idx]["color"] = tourism::graph::congestion_color(static_cast<double>(e.congestion));
+                    idx++;
+                    if (idx >= 100) break;
+                }
+                if (idx >= 100) break;
+            }
+            data["hour"] = hour;
+            data["transport"] = transport;
+            data["congestion"] = std::move(info);
+
             return crow::response(ok(std::move(data)));
         } catch (const std::exception& error) {
             return json_error(500, error.what());

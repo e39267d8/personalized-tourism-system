@@ -101,6 +101,7 @@ const navItems = [
   { to: '/search', label: '发现景点' },
   { to: '/recommend', label: '预算推荐' },
   { to: '/route', label: '路线规划' },
+  { to: '/food', label: '美食推荐' },
   { to: '/agent', label: 'AI助手' },
   { to: '/diary', label: '旅行日记' },
   { to: '/achievements', label: '成就' }

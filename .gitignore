@@ -78,3 +78,5 @@ logs/
 # ============================================
 desktop.ini
 ehthumbs.db
+.deps/
+.deps/

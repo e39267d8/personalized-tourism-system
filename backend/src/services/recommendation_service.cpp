@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <queue>
 #include <set>
 #include <sstream>
 
@@ -172,8 +173,18 @@ std::vector<RecommendationScore> rank_personalized_recommendations(
     const std::vector<ScenicCandidate>& candidates,
     const RecommendationProfile& profile,
     int limit) {
-    std::vector<RecommendationScore> results;
-    results.reserve(candidates.size());
+    if (limit <= 0) limit = 6;
+
+    // Use min-heap for partial sorting (O(n log k) instead of O(n log n))
+    // Heap top is the smallest score - the "cutoff" for the current top-k
+    struct HeapEntry {
+        RecommendationScore value;
+        bool operator<(const HeapEntry& other) const {
+            if (value.score != other.value.score) return value.score > other.value.score;
+            return value.scenic_spot_id < other.value.scenic_spot_id;
+        }
+    };
+    std::priority_queue<HeapEntry> min_heap;
 
     RecommendationProfile normalized = profile;
     if (normalized.budget_level.empty()) normalized.budget_level = "medium";
@@ -181,18 +192,26 @@ std::vector<RecommendationScore> rank_personalized_recommendations(
     if (normalized.intensity.empty()) normalized.intensity = "medium";
 
     for (const auto& candidate : candidates) {
-        results.push_back(score_candidate(candidate, normalized));
+        RecommendationScore scored = score_candidate(candidate, normalized);
+        if (static_cast<int>(min_heap.size()) < limit) {
+            min_heap.push({std::move(scored)});
+        } else if (!min_heap.empty()) {
+            const auto& cutoff = min_heap.top();
+            if (scored.score > cutoff.value.score ||
+                (scored.score == cutoff.value.score && scored.scenic_spot_id < cutoff.value.scenic_spot_id)) {
+                min_heap.pop();
+                min_heap.push({std::move(scored)});
+            }
+        }
     }
 
-    std::sort(results.begin(), results.end(), [](const RecommendationScore& left, const RecommendationScore& right) {
-        if (left.score != right.score) return left.score > right.score;
-        return left.scenic_spot_id < right.scenic_spot_id;
-    });
-
-    if (limit <= 0) limit = 6;
-    if (static_cast<int>(results.size()) > limit) {
-        results.resize(static_cast<size_t>(limit));
+    std::vector<RecommendationScore> results;
+    results.reserve(min_heap.size());
+    while (!min_heap.empty()) {
+        results.push_back(std::move(min_heap.top().value));
+        min_heap.pop();
     }
+    std::reverse(results.begin(), results.end());
     return results;
 }
 

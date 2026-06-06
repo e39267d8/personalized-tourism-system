@@ -69,4 +69,52 @@ crow::json::wvalue computed_route_json(const RouteGraphData& graph,
                                        const std::string& requested_transport);
 crow::json::wvalue route_json(const tourism::db::PgResult& rows, int row);
 
+struct TspDistanceMatrix {
+    std::vector<std::vector<double>> distance;
+    std::vector<std::vector<int>> duration;
+    std::vector<std::vector<double>> weight;
+    int size = 0;
+};
+
+struct TspResult {
+    bool success = false;
+    std::string error;
+    std::vector<int> best_order;
+    double total_distance = 0.0;
+    int total_duration = 0;
+    double total_weight = 0.0;
+    std::string algorithm_used;
+};
+
+// Compute all-pairs shortest paths among a set of nodes
+TspDistanceMatrix build_tsp_matrix(const RouteGraphData& graph,
+                                   const std::vector<int>& points,
+                                   const std::string& transport,
+                                   const std::string& optimization,
+                                   int crowd_tolerance);
+
+// TSP algorithms
+TspResult tsp_enumeration(const TspDistanceMatrix& matrix);
+TspResult tsp_backtracking(const TspDistanceMatrix& matrix);
+TspResult tsp_branch_and_bound(const TspDistanceMatrix& matrix);
+TspResult tsp_nearest_neighbor(const TspDistanceMatrix& matrix);
+
+// Auto-select best algorithm and solve
+TspResult solve_tsp(const TspDistanceMatrix& matrix);
+
+// Build a full route from a TSP result + graph
+RouteSearchResult compose_tsp_route(const RouteGraphData& graph,
+                                    const TspResult& tsp_result,
+                                    const std::vector<int>& original_points,
+                                    const std::string& transport,
+                                    const std::string& optimization,
+                                    int crowd_tolerance);
+
+crow::json::wvalue tour_route_json(const RouteGraphData& graph,
+                                   const RouteSearchResult& route,
+                                   const std::vector<int>& visit_order,
+                                   const std::string& optimization,
+                                   const std::string& requested_transport,
+                                   const std::string& algorithm_used);
+
 } // namespace tourism::services

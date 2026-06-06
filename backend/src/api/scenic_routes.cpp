@@ -131,7 +131,7 @@ double squared_distance(double lat1, double lng1, double lat2, double lng2) {
 double haversine_meters(double lat1, double lng1, double lat2, double lng2) {
     constexpr double earth_radius = 6371000.0;
     constexpr double pi = 3.14159265358979323846;
-    auto to_radians = [](double value) { return value * pi / 180.0; };
+    auto to_radians = [pi](double value) { return value * pi / 180.0; };
     double dlat = to_radians(lat2 - lat1);
     double dlng = to_radians(lng2 - lng1);
     double rlat1 = to_radians(lat1);
