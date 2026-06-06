@@ -12,84 +12,84 @@ BEGIN;
 -- =====================================================
 -- 故宫 / 天安门周边 (景山、前门)  IDs 53-70
 -- =====================================================
-INSERT INTO facilities (id, name, type, location, address, rating, price_level, opening_hours, phone)
+INSERT INTO facilities (id, name, type, location, address, rating, price_level, opening_hours, phone, scenic_spot_id)
 VALUES
     -- 故宫片区
-    (53, '故宫冰窖餐厅', 'restaurant', ST_SetSRID(ST_MakePoint(116.3950, 39.9190), 4326)::geography, '故宫西路慈宁宫旁', 4.30, 3, '10:30-15:30', '010-85001320'),
-    (54, '故宫角楼咖啡（神武门店）', 'cafe', ST_SetSRID(ST_MakePoint(116.3990, 39.9245), 4326)::geography, '景山前街4号故宫神武门西侧', 4.10, 2, '08:30-17:00', NULL),
-    (55, '前门全聚德烤鸭店', 'restaurant', ST_SetSRID(ST_MakePoint(116.3965, 39.8975), 4326)::geography, '前门大街32号', 4.50, 4, '11:00-21:00', '010-63018833'),
-    (56, '前门都一处烧麦馆', 'restaurant', ST_SetSRID(ST_MakePoint(116.3968, 39.8980), 4326)::geography, '前门大街38号', 4.20, 2, '10:00-21:00', '010-63021555'),
-    (57, '前门东来顺饭庄', 'restaurant', ST_SetSRID(ST_MakePoint(116.3970, 39.8990), 4326)::geography, '前门大街93号', 4.40, 3, '11:00-22:00', '010-63016699'),
-    (58, '大栅栏爆肚冯', 'restaurant', ST_SetSRID(ST_MakePoint(116.3960, 39.8970), 4326)::geography, '大栅栏廊房二条56号', 4.00, 1, '10:30-20:30', NULL),
+    (53, '故宫冰窖餐厅', 'restaurant', ST_SetSRID(ST_MakePoint(116.3950, 39.9190), 4326)::geography, '故宫西路慈宁宫旁', 4.30, 3, '10:30-15:30', '010-85001320', (SELECT id FROM scenic_spots WHERE name LIKE '%故宫%' LIMIT 1)),
+    (54, '故宫角楼咖啡（神武门店）', 'cafe', ST_SetSRID(ST_MakePoint(116.3990, 39.9245), 4326)::geography, '景山前街4号故宫神武门西侧', 4.10, 2, '08:30-17:00', NULL, (SELECT id FROM scenic_spots WHERE name LIKE '%故宫%' LIMIT 1)),
+    (55, '前门全聚德烤鸭店', 'restaurant', ST_SetSRID(ST_MakePoint(116.3965, 39.8975), 4326)::geography, '前门大街32号', 4.50, 4, '11:00-21:00', '010-63018833', (SELECT id FROM scenic_spots WHERE name LIKE '%前门%' LIMIT 1)),
+    (56, '前门都一处烧麦馆', 'restaurant', ST_SetSRID(ST_MakePoint(116.3968, 39.8980), 4326)::geography, '前门大街38号', 4.20, 2, '10:00-21:00', '010-63021555', (SELECT id FROM scenic_spots WHERE name LIKE '%前门%' LIMIT 1)),
+    (57, '前门东来顺饭庄', 'restaurant', ST_SetSRID(ST_MakePoint(116.3970, 39.8990), 4326)::geography, '前门大街93号', 4.40, 3, '11:00-22:00', '010-63016699', (SELECT id FROM scenic_spots WHERE name LIKE '%前门%' LIMIT 1)),
+    (58, '大栅栏爆肚冯', 'restaurant', ST_SetSRID(ST_MakePoint(116.3960, 39.8970), 4326)::geography, '大栅栏廊房二条56号', 4.00, 1, '10:30-20:30', NULL, (SELECT id FROM scenic_spots WHERE name LIKE '%前门%' LIMIT 1)),
 
     -- 天安门 / 国家大剧院片区
-    (59, '国家大剧院咖啡厅', 'cafe', ST_SetSRID(ST_MakePoint(116.3930, 39.9045), 4326)::geography, '西长安街2号国家大剧院B1', 4.30, 2, '09:00-21:00', '010-66550000'),
-    (60, '前门M餐厅', 'restaurant', ST_SetSRID(ST_MakePoint(116.3990, 39.9020), 4326)::geography, '前门23号院', 4.50, 4, '11:30-22:00', '010-65261166'),
+    (59, '国家大剧院咖啡厅', 'cafe', ST_SetSRID(ST_MakePoint(116.3930, 39.9045), 4326)::geography, '西长安街2号国家大剧院B1', 4.30, 2, '09:00-21:00', '010-66550000', (SELECT id FROM scenic_spots WHERE name LIKE '%天安门%' AND name NOT LIKE '%东%' AND name NOT LIKE '%西%' LIMIT 1)),
+    (60, '前门M餐厅', 'restaurant', ST_SetSRID(ST_MakePoint(116.3990, 39.9020), 4326)::geography, '前门23号院', 4.50, 4, '11:30-22:00', '010-65261166', (SELECT id FROM scenic_spots WHERE name LIKE '%前门%' LIMIT 1)),
 
     -- 景山周边
-    (61, '景山后街护国寺小吃', 'restaurant', ST_SetSRID(ST_MakePoint(116.3960, 39.9280), 4326)::geography, '景山后街16号', 4.20, 1, '06:00-21:00', NULL),
-    (62, '景山公园牡丹亭茶社', 'cafe', ST_SetSRID(ST_MakePoint(116.3965, 39.9250), 4326)::geography, '景山公园万春亭南侧', 4.10, 1, '08:00-17:00', NULL),
+    (61, '景山后街护国寺小吃', 'restaurant', ST_SetSRID(ST_MakePoint(116.3960, 39.9280), 4326)::geography, '景山后街16号', 4.20, 1, '06:00-21:00', NULL, (SELECT id FROM scenic_spots WHERE name LIKE '%景山%' LIMIT 1)),
+    (62, '景山公园牡丹亭茶社', 'cafe', ST_SetSRID(ST_MakePoint(116.3965, 39.9250), 4326)::geography, '景山公园万春亭南侧', 4.10, 1, '08:00-17:00', NULL, (SELECT id FROM scenic_spots WHERE name LIKE '%景山%' LIMIT 1)),
 
     -- 中山公园
-    (63, '中山公园来今雨轩', 'restaurant', ST_SetSRID(ST_MakePoint(116.3940, 39.9110), 4326)::geography, '中山公园内', 4.30, 2, '09:00-20:00', '010-66056676'),
+    (63, '中山公园来今雨轩', 'restaurant', ST_SetSRID(ST_MakePoint(116.3940, 39.9110), 4326)::geography, '中山公园内', 4.30, 2, '09:00-20:00', '010-66056676', (SELECT id FROM scenic_spots WHERE name LIKE '%中山%' LIMIT 1)),
 
     -- 北海公园周边
-    (64, '北海公园仿膳饭庄', 'restaurant', ST_SetSRID(ST_MakePoint(116.3910, 39.9260), 4326)::geography, '北海公园琼华岛漪澜堂', 4.60, 4, '11:00-14:00,17:00-21:00', '010-64011879'),
-    (65, '什刹海烤肉季', 'restaurant', ST_SetSRID(ST_MakePoint(116.3890, 39.9340), 4326)::geography, '前海东沿14号', 4.40, 3, '11:00-22:00', '010-64042554'),
-    (66, '什刹海庆云楼', 'restaurant', ST_SetSRID(ST_MakePoint(116.3885, 39.9335), 4326)::geography, '前海东沿22号', 4.10, 3, '11:00-22:00', '010-64019581'),
-    (67, '什刹海孔乙己酒家', 'restaurant', ST_SetSRID(ST_MakePoint(116.3880, 39.9330), 4326)::geography, '德胜门内大街东明胡同甲2号', 4.00, 2, '11:00-21:00', NULL),
-    (68, '什刹海茶家傅', 'cafe', ST_SetSRID(ST_MakePoint(116.3870, 39.9320), 4326)::geography, '后海北沿甲15号', 4.20, 2, '10:00-22:00', NULL),
+    (64, '北海公园仿膳饭庄', 'restaurant', ST_SetSRID(ST_MakePoint(116.3910, 39.9260), 4326)::geography, '北海公园琼华岛漪澜堂', 4.60, 4, '11:00-14:00,17:00-21:00', '010-64011879', (SELECT id FROM scenic_spots WHERE name LIKE '%北海%' LIMIT 1)),
+    (65, '什刹海烤肉季', 'restaurant', ST_SetSRID(ST_MakePoint(116.3890, 39.9340), 4326)::geography, '前海东沿14号', 4.40, 3, '11:00-22:00', '010-64042554', (SELECT id FROM scenic_spots WHERE name LIKE '%什刹海%' LIMIT 1)),
+    (66, '什刹海庆云楼', 'restaurant', ST_SetSRID(ST_MakePoint(116.3885, 39.9335), 4326)::geography, '前海东沿22号', 4.10, 3, '11:00-22:00', '010-64019581', (SELECT id FROM scenic_spots WHERE name LIKE '%什刹海%' LIMIT 1)),
+    (67, '什刹海孔乙己酒家', 'restaurant', ST_SetSRID(ST_MakePoint(116.3880, 39.9330), 4326)::geography, '德胜门内大街东明胡同甲2号', 4.00, 2, '11:00-21:00', NULL, (SELECT id FROM scenic_spots WHERE name LIKE '%什刹海%' LIMIT 1)),
+    (68, '什刹海茶家傅', 'cafe', ST_SetSRID(ST_MakePoint(116.3870, 39.9320), 4326)::geography, '后海北沿甲15号', 4.20, 2, '10:00-22:00', NULL, (SELECT id FROM scenic_spots WHERE name LIKE '%什刹海%' LIMIT 1)),
 
     -- 南锣鼓巷片区
-    (69, '南锣鼓巷文宇奶酪店', 'restaurant', ST_SetSRID(ST_MakePoint(116.4020, 39.9375), 4326)::geography, '南锣鼓巷39号', 4.50, 1, '09:00-21:00', NULL),
-    (70, '南锣鼓巷鬼味烤翅', 'restaurant', ST_SetSRID(ST_MakePoint(116.4025, 39.9380), 4326)::geography, '南锣鼓巷黑芝麻胡同20号', 4.30, 2, '11:00-22:00', NULL)
-ON CONFLICT (id) DO NOTHING;
+    (69, '南锣鼓巷文宇奶酪店', 'restaurant', ST_SetSRID(ST_MakePoint(116.4020, 39.9375), 4326)::geography, '南锣鼓巷39号', 4.50, 1, '09:00-21:00', NULL, (SELECT id FROM scenic_spots WHERE name LIKE '%南锣%' LIMIT 1)),
+    (70, '南锣鼓巷鬼味烤翅', 'restaurant', ST_SetSRID(ST_MakePoint(116.4025, 39.9380), 4326)::geography, '南锣鼓巷黑芝麻胡同20号', 4.30, 2, '11:00-22:00', NULL, (SELECT id FROM scenic_spots WHERE name LIKE '%南锣%' LIMIT 1))
+ON CONFLICT (id) DO UPDATE SET scenic_spot_id = EXCLUDED.scenic_spot_id;
 
 -- =====================================================
 -- 南锣鼓巷 / 簋街 / 雍和宫  IDs 71-85
 -- =====================================================
-INSERT INTO facilities (id, name, type, location, address, rating, price_level, opening_hours, phone)
+INSERT INTO facilities (id, name, type, location, address, rating, price_level, opening_hours, phone, scenic_spot_id)
 VALUES
-    (71, '簋街胡大饭馆', 'restaurant', ST_SetSRID(ST_MakePoint(116.4250, 39.9380), 4326)::geography, '东直门内大街233号', 4.70, 3, '10:30-次日04:00', '010-64003511'),
-    (72, '簋街花家怡园', 'restaurant', ST_SetSRID(ST_MakePoint(116.4255, 39.9385), 4326)::geography, '东直门内大街235号', 4.40, 3, '11:00-22:00', '010-64051908'),
-    (73, '雍和宫金鼎轩', 'restaurant', ST_SetSRID(ST_MakePoint(116.4180, 39.9460), 4326)::geography, '和平里西街77号', 4.10, 2, '24小时', '010-64296888'),
-    (74, '北新桥卤煮老店', 'restaurant', ST_SetSRID(ST_MakePoint(116.4200, 39.9400), 4326)::geography, '东四北大街141号', 4.30, 1, '10:00-22:00', NULL),
-    (75, '鼓楼姚记炒肝', 'restaurant', ST_SetSRID(ST_MakePoint(116.3970, 39.9400), 4326)::geography, '鼓楼东大街311号', 4.20, 1, '06:00-22:00', '010-84018989'),
-    (76, '鼓楼东大街糖房咖啡', 'cafe', ST_SetSRID(ST_MakePoint(116.3980, 39.9410), 4326)::geography, '鼓楼东大街69号', 4.30, 2, '09:00-22:00', NULL),
-    (77, '鼓楼鸦儿李记涮肉', 'restaurant', ST_SetSRID(ST_MakePoint(116.3960, 39.9415), 4326)::geography, '鸦儿胡同甲2号', 4.50, 3, '11:00-22:00', NULL),
+    (71, '簋街胡大饭馆', 'restaurant', ST_SetSRID(ST_MakePoint(116.4250, 39.9380), 4326)::geography, '东直门内大街233号', 4.70, 3, '10:30-次日04:00', '010-64003511', (SELECT id FROM scenic_spots WHERE name LIKE '%南锣%' LIMIT 1)),
+    (72, '簋街花家怡园', 'restaurant', ST_SetSRID(ST_MakePoint(116.4255, 39.9385), 4326)::geography, '东直门内大街235号', 4.40, 3, '11:00-22:00', '010-64051908', (SELECT id FROM scenic_spots WHERE name LIKE '%南锣%' LIMIT 1)),
+    (73, '雍和宫金鼎轩', 'restaurant', ST_SetSRID(ST_MakePoint(116.4180, 39.9460), 4326)::geography, '和平里西街77号', 4.10, 2, '24小时', '010-64296888', (SELECT id FROM scenic_spots WHERE name LIKE '%南锣%' LIMIT 1)),
+    (74, '北新桥卤煮老店', 'restaurant', ST_SetSRID(ST_MakePoint(116.4200, 39.9400), 4326)::geography, '东四北大街141号', 4.30, 1, '10:00-22:00', NULL, (SELECT id FROM scenic_spots WHERE name LIKE '%南锣%' LIMIT 1)),
+    (75, '鼓楼姚记炒肝', 'restaurant', ST_SetSRID(ST_MakePoint(116.3970, 39.9400), 4326)::geography, '鼓楼东大街311号', 4.20, 1, '06:00-22:00', '010-84018989', (SELECT id FROM scenic_spots WHERE name LIKE '%鼓楼%' LIMIT 1)),
+    (76, '鼓楼东大街糖房咖啡', 'cafe', ST_SetSRID(ST_MakePoint(116.3980, 39.9410), 4326)::geography, '鼓楼东大街69号', 4.30, 2, '09:00-22:00', NULL, (SELECT id FROM scenic_spots WHERE name LIKE '%鼓楼%' LIMIT 1)),
+    (77, '鼓楼鸦儿李记涮肉', 'restaurant', ST_SetSRID(ST_MakePoint(116.3960, 39.9415), 4326)::geography, '鸦儿胡同甲2号', 4.50, 3, '11:00-22:00', NULL, (SELECT id FROM scenic_spots WHERE name LIKE '%鼓楼%' LIMIT 1)),
 
     -- 烟袋斜街
-    (78, '烟袋斜街烤肉宛', 'restaurant', ST_SetSRID(ST_MakePoint(116.3950, 39.9390), 4326)::geography, '烟袋斜街甲11号', 4.20, 2, '11:00-21:00', NULL),
-    (79, '后海酒吧街云南菜', 'restaurant', ST_SetSRID(ST_MakePoint(116.3875, 39.9350), 4326)::geography, '后海南沿甲6号', 3.90, 2, '11:00-23:00', NULL),
-    (80, '后海静一餐厅', 'restaurant', ST_SetSRID(ST_MakePoint(116.3870, 39.9345), 4326)::geography, '后海北沿39号', 4.00, 3, '11:00-21:00', NULL)
-ON CONFLICT (id) DO NOTHING;
+    (78, '烟袋斜街烤肉宛', 'restaurant', ST_SetSRID(ST_MakePoint(116.3950, 39.9390), 4326)::geography, '烟袋斜街甲11号', 4.20, 2, '11:00-21:00', NULL, (SELECT id FROM scenic_spots WHERE name LIKE '%鼓楼%' LIMIT 1)),
+    (79, '后海酒吧街云南菜', 'restaurant', ST_SetSRID(ST_MakePoint(116.3875, 39.9350), 4326)::geography, '后海南沿甲6号', 3.90, 2, '11:00-23:00', NULL, (SELECT id FROM scenic_spots WHERE name LIKE '%什刹海%' LIMIT 1)),
+    (80, '后海静一餐厅', 'restaurant', ST_SetSRID(ST_MakePoint(116.3870, 39.9345), 4326)::geography, '后海北沿39号', 4.00, 3, '11:00-21:00', NULL, (SELECT id FROM scenic_spots WHERE name LIKE '%什刹海%' LIMIT 1))
+ON CONFLICT (id) DO UPDATE SET scenic_spot_id = EXCLUDED.scenic_spot_id;
 
 -- =====================================================
 -- 天坛 / 前门区域  IDs 81-95
 -- =====================================================
-INSERT INTO facilities (id, name, type, location, address, rating, price_level, opening_hours, phone)
+INSERT INTO facilities (id, name, type, location, address, rating, price_level, opening_hours, phone, scenic_spot_id)
 VALUES
-    (81, '天坛公园回音壁咖啡', 'cafe', ST_SetSRID(ST_MakePoint(116.4100, 39.8820), 4326)::geography, '天坛公园皇穹宇西侧', 4.00, 1, '08:00-17:00', NULL),
-    (82, '天坛北门炒肝赵', 'restaurant', ST_SetSRID(ST_MakePoint(116.4110, 39.8850), 4326)::geography, '天坛北门对面', 4.10, 1, '06:00-14:00', NULL),
-    (83, '红桥市场美食广场', 'restaurant', ST_SetSRID(ST_MakePoint(116.4130, 39.8830), 4326)::geography, '天坛东路红桥市场5层', 3.90, 2, '10:00-21:00', NULL),
-    (84, '前门鲜鱼口美食街', 'restaurant', ST_SetSRID(ST_MakePoint(116.3980, 39.8985), 4326)::geography, '鲜鱼口街', 4.30, 2, '09:00-21:00', NULL),
-    (85, '大栅栏陈记卤煮小肠', 'restaurant', ST_SetSRID(ST_MakePoint(116.3955, 39.8975), 4326)::geography, '取灯胡同3号', 4.30, 1, '09:00-20:30', NULL),
-    (86, '杨梅竹斜街Soloist Coffee', 'cafe', ST_SetSRID(ST_MakePoint(116.3940, 39.8960), 4326)::geography, '杨梅竹斜街39号', 4.60, 3, '09:00-21:00', NULL),
-    (87, '大栅栏门框胡同卤煮', 'restaurant', ST_SetSRID(ST_MakePoint(116.3950, 39.8970), 4326)::geography, '门框胡同19号', 4.20, 1, '09:00-21:00', NULL),
-    (88, '老北京炸酱面大王（前门店）', 'restaurant', ST_SetSRID(ST_MakePoint(116.3975, 39.8990), 4326)::geography, '前门大街3号', 3.90, 1, '10:00-21:00', NULL),
-    (89, '国家博物馆文创咖啡', 'cafe', ST_SetSRID(ST_MakePoint(116.4005, 39.9050), 4326)::geography, '国家博物馆二层文创区', 4.20, 2, '09:00-16:30', NULL),
+    (81, '天坛公园回音壁咖啡', 'cafe', ST_SetSRID(ST_MakePoint(116.4100, 39.8820), 4326)::geography, '天坛公园皇穹宇西侧', 4.00, 1, '08:00-17:00', NULL, (SELECT id FROM scenic_spots WHERE name LIKE '%天坛%' LIMIT 1)),
+    (82, '天坛北门炒肝赵', 'restaurant', ST_SetSRID(ST_MakePoint(116.4110, 39.8850), 4326)::geography, '天坛北门对面', 4.10, 1, '06:00-14:00', NULL, (SELECT id FROM scenic_spots WHERE name LIKE '%天坛%' LIMIT 1)),
+    (83, '红桥市场美食广场', 'restaurant', ST_SetSRID(ST_MakePoint(116.4130, 39.8830), 4326)::geography, '天坛东路红桥市场5层', 3.90, 2, '10:00-21:00', NULL, (SELECT id FROM scenic_spots WHERE name LIKE '%天坛%' LIMIT 1)),
+    (84, '前门鲜鱼口美食街', 'restaurant', ST_SetSRID(ST_MakePoint(116.3980, 39.8985), 4326)::geography, '鲜鱼口街', 4.30, 2, '09:00-21:00', NULL, (SELECT id FROM scenic_spots WHERE name LIKE '%前门%' LIMIT 1)),
+    (85, '大栅栏陈记卤煮小肠', 'restaurant', ST_SetSRID(ST_MakePoint(116.3955, 39.8975), 4326)::geography, '取灯胡同3号', 4.30, 1, '09:00-20:30', NULL, (SELECT id FROM scenic_spots WHERE name LIKE '%前门%' LIMIT 1)),
+    (86, '杨梅竹斜街Soloist Coffee', 'cafe', ST_SetSRID(ST_MakePoint(116.3940, 39.8960), 4326)::geography, '杨梅竹斜街39号', 4.60, 3, '09:00-21:00', NULL, (SELECT id FROM scenic_spots WHERE name LIKE '%前门%' LIMIT 1)),
+    (87, '大栅栏门框胡同卤煮', 'restaurant', ST_SetSRID(ST_MakePoint(116.3950, 39.8970), 4326)::geography, '门框胡同19号', 4.20, 1, '09:00-21:00', NULL, (SELECT id FROM scenic_spots WHERE name LIKE '%前门%' LIMIT 1)),
+    (88, '老北京炸酱面大王（前门店）', 'restaurant', ST_SetSRID(ST_MakePoint(116.3975, 39.8990), 4326)::geography, '前门大街3号', 3.90, 1, '10:00-21:00', NULL, (SELECT id FROM scenic_spots WHERE name LIKE '%前门%' LIMIT 1)),
+    (89, '国家博物馆文创咖啡', 'cafe', ST_SetSRID(ST_MakePoint(116.4005, 39.9050), 4326)::geography, '国家博物馆二层文创区', 4.20, 2, '09:00-16:30', NULL, (SELECT id FROM scenic_spots WHERE name LIKE '%国家博物馆%' LIMIT 1)),
 
     -- 王府井片区
-    (90, '王府井东来顺（总店）', 'restaurant', ST_SetSRID(ST_MakePoint(116.4130, 39.9155), 4326)::geography, '王府井大街198号', 4.50, 3, '11:00-22:00', '010-65250035'),
-    (91, '王府井狗不理包子', 'restaurant', ST_SetSRID(ST_MakePoint(116.4120, 39.9150), 4326)::geography, '王府井大街215号', 3.80, 2, '10:00-21:00', NULL),
-    (92, '王府井APM鼎泰丰', 'restaurant', ST_SetSRID(ST_MakePoint(116.4140, 39.9150), 4326)::geography, '王府井大街138号APM5层', 4.40, 4, '11:00-21:30', '010-65255088'),
-    (93, '王府井APM星巴克', 'cafe', ST_SetSRID(ST_MakePoint(116.4140, 39.9145), 4326)::geography, '王府井大街138号APM B1', 4.00, 2, '07:00-22:00', NULL),
-    (94, '灯市口四季民福烤鸭店', 'restaurant', ST_SetSRID(ST_MakePoint(116.4160, 39.9180), 4326)::geography, '灯市口西街32号东华饭店1层', 4.60, 3, '10:30-22:00', '010-65272288'),
-    (95, '灯市口川办餐厅', 'restaurant', ST_SetSRID(ST_MakePoint(116.4155, 39.9175), 4326)::geography, '灯市口大街26号', 4.20, 2, '11:00-21:00', '010-65229988'),
+    (90, '王府井东来顺（总店）', 'restaurant', ST_SetSRID(ST_MakePoint(116.4130, 39.9155), 4326)::geography, '王府井大街198号', 4.50, 3, '11:00-22:00', '010-65250035', (SELECT id FROM scenic_spots WHERE name LIKE '%王府井%' LIMIT 1)),
+    (91, '王府井狗不理包子', 'restaurant', ST_SetSRID(ST_MakePoint(116.4120, 39.9150), 4326)::geography, '王府井大街215号', 3.80, 2, '10:00-21:00', NULL, (SELECT id FROM scenic_spots WHERE name LIKE '%王府井%' LIMIT 1)),
+    (92, '王府井APM鼎泰丰', 'restaurant', ST_SetSRID(ST_MakePoint(116.4140, 39.9150), 4326)::geography, '王府井大街138号APM5层', 4.40, 4, '11:00-21:30', '010-65255088', (SELECT id FROM scenic_spots WHERE name LIKE '%王府井%' LIMIT 1)),
+    (93, '王府井APM星巴克', 'cafe', ST_SetSRID(ST_MakePoint(116.4140, 39.9145), 4326)::geography, '王府井大街138号APM B1', 4.00, 2, '07:00-22:00', NULL, (SELECT id FROM scenic_spots WHERE name LIKE '%王府井%' LIMIT 1)),
+    (94, '灯市口四季民福烤鸭店', 'restaurant', ST_SetSRID(ST_MakePoint(116.4160, 39.9180), 4326)::geography, '灯市口西街32号东华饭店1层', 4.60, 3, '10:30-22:00', '010-65272288', (SELECT id FROM scenic_spots WHERE name LIKE '%王府井%' LIMIT 1)),
+    (95, '灯市口川办餐厅', 'restaurant', ST_SetSRID(ST_MakePoint(116.4155, 39.9175), 4326)::geography, '灯市口大街26号', 4.20, 2, '11:00-21:00', '010-65229988', (SELECT id FROM scenic_spots WHERE name LIKE '%王府井%' LIMIT 1)),
 
     -- 故宫东华门
-    (96, '故宫东华门烤鸭快线', 'fast_food', ST_SetSRID(ST_MakePoint(116.4010, 39.9160), 4326)::geography, '东华门大街52号', 3.70, 2, '10:00-20:00', NULL),
-    (97, '故宫午门西侧快餐', 'fast_food', ST_SetSRID(ST_MakePoint(116.3960, 39.9135), 4326)::geography, '故宫午门西朝房', 3.50, 2, '08:30-16:00', NULL)
+    (96, '故宫东华门烤鸭快线', 'fast_food', ST_SetSRID(ST_MakePoint(116.4010, 39.9160), 4326)::geography, '东华门大街52号', 3.70, 2, '10:00-20:00', NULL, (SELECT id FROM scenic_spots WHERE name LIKE '%故宫%' LIMIT 1)),
+    (97, '故宫午门西侧快餐', 'fast_food', ST_SetSRID(ST_MakePoint(116.3960, 39.9135), 4326)::geography, '故宫午门西朝房', 3.50, 2, '08:30-16:00', NULL, (SELECT id FROM scenic_spots WHERE name LIKE '%故宫%' LIMIT 1))
 ON CONFLICT (id) DO NOTHING;
 
 -- =====================================================
@@ -166,9 +166,7 @@ VALUES
     (150, '糖房咖啡节点', ST_SetSRID(ST_MakePoint(116.3980, 39.9410), 4326)::geography, 'facility', 76, 14),
     (151, '李记涮肉节点', ST_SetSRID(ST_MakePoint(116.3960, 39.9415), 4326)::geography, 'facility', 77, 14),
     (152, '烤肉宛节点', ST_SetSRID(ST_MakePoint(116.3950, 39.9390), 4326)::geography, 'facility', 78, 14)
-ON CONFLICT (id) DO NOTHING;
-
--- Update sequences
+ON CONFLICT (id) DO UPDATE SET scenic_spot_id = EXCLUDED.scenic_spot_id;
 SELECT setval('facilities_id_seq', (SELECT MAX(id) FROM facilities));
 SELECT setval('graph_nodes_id_seq', (SELECT MAX(id) FROM graph_nodes));
 

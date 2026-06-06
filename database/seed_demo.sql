@@ -138,20 +138,20 @@ ORDER BY key, city_rank, name_rank, distance_meters, length(name), id;
 
 -- 周边设施
 INSERT INTO facilities
-    (id, name, type, location, address, rating, price_level, opening_hours, phone)
+    (id, name, type, location, address, rating, price_level, opening_hours, phone, scenic_spot_id)
 VALUES
-    (1, '故宫游客服务中心', 'service', ST_SetSRID(ST_MakePoint(116.397400, 39.916900), 4326)::geography, '故宫午门附近', 4.60, 1, '08:30-17:00', '010-85000001'),
-    (2, '角楼咖啡', 'restaurant', ST_SetSRID(ST_MakePoint(116.399064, 39.924178), 4326)::geography, '故宫神武门附近', 4.50, 2, '09:00-18:00', '010-85000002'),
-    (3, '天安门东地铁站', 'subway', ST_SetSRID(ST_MakePoint(116.401216, 39.908780), 4326)::geography, '地铁1号线天安门东站', 4.20, 1, '05:00-23:30', NULL),
-    (4, '前门地铁站', 'subway', ST_SetSRID(ST_MakePoint(116.397937, 39.900192), 4326)::geography, '地铁2号线前门站', 4.20, 1, '05:00-23:30', NULL),
-    (5, '四季民福前门店', 'restaurant', ST_SetSRID(ST_MakePoint(116.397371, 39.899049), 4326)::geography, '前门商业区', 4.70, 3, '10:30-22:00', '010-85000005'),
-    (6, '北京饭店', 'hotel', ST_SetSRID(ST_MakePoint(116.405031, 39.909705), 4326)::geography, '东长安街33号', 4.60, 4, '全天', '010-85000006'),
-    (7, '景山公园东门停车场', 'parking', ST_SetSRID(ST_MakePoint(116.398786, 39.925053), 4326)::geography, '景山东街', 4.00, 2, '07:00-21:00', NULL),
-    (8, '北海北地铁站', 'subway', ST_SetSRID(ST_MakePoint(116.386829, 39.933247), 4326)::geography, '地铁6号线北海北站', 4.20, 1, '05:00-23:30', NULL),
-    (9, '王府井小吃街', 'restaurant', ST_SetSRID(ST_MakePoint(116.410946, 39.914742), 4326)::geography, '王府井商业区', 4.10, 2, '10:00-22:00', NULL),
-    (10, '东华门公共卫生间', 'toilet', ST_SetSRID(ST_MakePoint(116.404061, 39.918965), 4326)::geography, '东华门附近', 4.00, 1, '07:00-22:00', NULL),
-    (11, '什刹海游客中心', 'service', ST_SetSRID(ST_MakePoint(116.390855, 39.937661), 4326)::geography, '什刹海景区', 4.30, 1, '09:00-18:00', '010-85000011'),
-    (12, '鼓楼西侧停车场', 'parking', ST_SetSRID(ST_MakePoint(116.391540, 39.939830), 4326)::geography, '鼓楼西大街', 3.90, 2, '08:00-22:00', NULL)
+    (1, '故宫游客服务中心', 'service', ST_SetSRID(ST_MakePoint(116.397400, 39.916900), 4326)::geography, '故宫午门附近', 4.60, 1, '08:30-17:00', '010-85000001', (SELECT spot_id FROM tmp_demo_spots WHERE key = 'gugong')),
+    (2, '角楼咖啡', 'restaurant', ST_SetSRID(ST_MakePoint(116.399064, 39.924178), 4326)::geography, '故宫神武门附近', 4.50, 2, '09:00-18:00', '010-85000002', (SELECT spot_id FROM tmp_demo_spots WHERE key = 'gugong')),
+    (3, '天安门东地铁站', 'subway', ST_SetSRID(ST_MakePoint(116.401216, 39.908780), 4326)::geography, '地铁1号线天安门东站', 4.20, 1, '05:00-23:30', NULL, (SELECT spot_id FROM tmp_demo_spots WHERE key = 'tiananmen')),
+    (4, '前门地铁站', 'subway', ST_SetSRID(ST_MakePoint(116.397937, 39.900192), 4326)::geography, '地铁2号线前门站', 4.20, 1, '05:00-23:30', NULL, (SELECT spot_id FROM tmp_demo_spots WHERE key = 'qianmen')),
+    (5, '四季民福前门店', 'restaurant', ST_SetSRID(ST_MakePoint(116.397371, 39.899049), 4326)::geography, '前门商业区', 4.70, 3, '10:30-22:00', '010-85000005', (SELECT spot_id FROM tmp_demo_spots WHERE key = 'qianmen')),
+    (6, '北京饭店', 'hotel', ST_SetSRID(ST_MakePoint(116.405031, 39.909705), 4326)::geography, '东长安街33号', 4.60, 4, '全天', '010-85000006', (SELECT spot_id FROM tmp_demo_spots WHERE key = 'wangfujing')),
+    (7, '景山公园东门停车场', 'parking', ST_SetSRID(ST_MakePoint(116.398786, 39.925053), 4326)::geography, '景山东街', 4.00, 2, '07:00-21:00', NULL, (SELECT spot_id FROM tmp_demo_spots WHERE key = 'jingshan')),
+    (8, '北海北地铁站', 'subway', ST_SetSRID(ST_MakePoint(116.386829, 39.933247), 4326)::geography, '地铁6号线北海北站', 4.20, 1, '05:00-23:30', NULL, (SELECT spot_id FROM tmp_demo_spots WHERE key = 'beihai')),
+    (9, '王府井小吃街', 'restaurant', ST_SetSRID(ST_MakePoint(116.410946, 39.914742), 4326)::geography, '王府井商业区', 4.10, 2, '10:00-22:00', NULL, (SELECT spot_id FROM tmp_demo_spots WHERE key = 'wangfujing')),
+    (10, '东华门公共卫生间', 'toilet', ST_SetSRID(ST_MakePoint(116.404061, 39.918965), 4326)::geography, '东华门附近', 4.00, 1, '07:00-22:00', NULL, (SELECT spot_id FROM tmp_demo_spots WHERE key = 'gugong')),
+    (11, '什刹海游客中心', 'service', ST_SetSRID(ST_MakePoint(116.390855, 39.937661), 4326)::geography, '什刹海景区', 4.30, 1, '09:00-18:00', '010-85000011', (SELECT spot_id FROM tmp_demo_spots WHERE key = 'gulou')),
+    (12, '鼓楼西侧停车场', 'parking', ST_SetSRID(ST_MakePoint(116.391540, 39.939830), 4326)::geography, '鼓楼西大街', 3.90, 2, '08:00-22:00', NULL, (SELECT spot_id FROM tmp_demo_spots WHERE key = 'gulou'))
 ON CONFLICT (id) DO UPDATE SET
     name = EXCLUDED.name,
     type = EXCLUDED.type,
@@ -160,7 +160,8 @@ ON CONFLICT (id) DO UPDATE SET
     rating = EXCLUDED.rating,
     price_level = EXCLUDED.price_level,
     opening_hours = EXCLUDED.opening_hours,
-    phone = EXCLUDED.phone;
+    phone = EXCLUDED.phone,
+    scenic_spot_id = EXCLUDED.scenic_spot_id;
 
 -- 图节点：景点节点通过 tmp_demo_spots 关联真实导入景点。
 INSERT INTO graph_nodes
