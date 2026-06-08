@@ -225,6 +225,8 @@
       </div>
     </section>
 
+    <IndoorNavigationPanel :scenic-spot-id="props.id" />
+
     <section class="grid gap-6 lg:grid-cols-[0.75fr_1.25fr]">
       <div class="rounded-md border border-slate-200 bg-white p-5">
         <h2 class="text-lg font-semibold">位置信息</h2>
@@ -261,6 +263,7 @@
 
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import IndoorNavigationPanel from '@/components/IndoorNavigationPanel.vue'
 import { scenicSpots as fallbackSpots } from '@/data/demoData'
 import { getAmapConfigStatus, loadAmap } from '@/services/amapLoader'
 import { tourismApi } from '@/services/tourismApi'

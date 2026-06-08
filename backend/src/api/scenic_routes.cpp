@@ -6,9 +6,15 @@
 #include "support/api_helpers.h"
 
 #include <algorithm>
+#include <chrono>
+#include <cctype>
 #include <cmath>
+#include <functional>
 #include <limits>
 #include <map>
+#include <queue>
+#include <string>
+#include <utility>
 #include <vector>
 
 namespace tourism::api {
@@ -296,6 +302,330 @@ int node_id_for_facility(tourism::db::PgConnection& db, int scenic_spot_id, int 
     return rows.rows() ? to_int(rows.value(0, "id")) : 0;
 }
 
+struct IndoorFeature {
+    int id = 0;
+    std::string name;
+    std::string type;
+    std::string floor_code;
+    std::string floor_name;
+    std::string provider;
+    std::string source;
+    std::string source_ref;
+    double x = 0.0;
+    double y = 0.0;
+};
+
+struct IndoorEdge {
+    int id = 0;
+    int from = 0;
+    int to = 0;
+    double distance = 0.0;
+    int travel_time = 0;
+    std::string type;
+    std::string provider;
+};
+
+struct IndoorRouteResult {
+    bool success = false;
+    std::string error;
+    std::vector<int> feature_path;
+    std::vector<IndoorEdge> edge_path;
+    double distance = 0.0;
+    int duration = 0;
+};
+
+std::string indoor_feature_type_label(const std::string& type) {
+    if (type == "entrance") return "Entrance";
+    if (type == "hallway") return "Hallway";
+    if (type == "service") return "Service";
+    if (type == "toilet") return "Restroom";
+    if (type == "exhibition") return "Exhibition";
+    if (type == "elevator") return "Elevator";
+    if (type == "stairs") return "Stairs";
+    if (type == "shop") return "Shop";
+    if (type == "cafe") return "Cafe";
+    return type.empty() ? "Feature" : type;
+}
+
+std::string indoor_edge_type_label(const std::string& type) {
+    if (type == "corridor") return "Corridor";
+    if (type == "elevator") return "Elevator";
+    if (type == "stairs") return "Stairs";
+    return type.empty() ? "Path" : type;
+}
+
+std::string normalize_indoor_strategy(std::string strategy) {
+    strategy = trim_text(strategy);
+    std::transform(strategy.begin(), strategy.end(), strategy.begin(), [](unsigned char ch) {
+        return static_cast<char>(std::tolower(ch));
+    });
+    return strategy == "distance" ? "distance" : "time";
+}
+
+crow::json::wvalue indoor_building_json(const tourism::db::PgResult& rows, int row) {
+    crow::json::wvalue item;
+    item["id"] = to_int(rows.value(row, "id"));
+    item["scenicSpotId"] = to_int(rows.value(row, "scenic_spot_id"));
+    item["name"] = rows.value(row, "name");
+    item["provider"] = rows.value(row, "provider");
+    item["source"] = rows.value(row, "source");
+    item["sourceRef"] = rows.value(row, "source_ref");
+    item["amapCpid"] = rows.value(row, "amap_cpid");
+    item["hasIndoorMap"] = to_int(rows.value(row, "has_indoor_map")) > 0;
+    item["description"] = rows.value(row, "description");
+    item["defaultFloorCode"] = rows.value(row, "default_floor_code");
+    item["floorCount"] = to_int(rows.value(row, "floor_count"));
+    item["featureCount"] = to_int(rows.value(row, "feature_count"));
+    return item;
+}
+
+crow::json::wvalue indoor_floor_json(const tourism::db::PgResult& rows, int row) {
+    crow::json::wvalue item;
+    item["id"] = to_int(rows.value(row, "id"));
+    item["buildingId"] = to_int(rows.value(row, "building_id"));
+    item["floorCode"] = rows.value(row, "floor_code");
+    item["floorName"] = rows.value(row, "floor_name");
+    item["floorIndex"] = to_int(rows.value(row, "floor_index"));
+    item["provider"] = rows.value(row, "provider");
+    item["source"] = rows.value(row, "source");
+    item["sourceRef"] = rows.value(row, "source_ref");
+    return item;
+}
+
+IndoorFeature indoor_feature_from_rows(const tourism::db::PgResult& rows, int row) {
+    IndoorFeature feature;
+    feature.id = to_int(rows.value(row, "id"));
+    feature.name = rows.value(row, "name");
+    feature.type = rows.value(row, "type");
+    feature.floor_code = rows.value(row, "floor_code");
+    feature.floor_name = rows.value(row, "floor_name");
+    feature.provider = rows.value(row, "provider");
+    feature.source = rows.value(row, "source");
+    feature.source_ref = rows.value(row, "source_ref");
+    feature.x = to_double(rows.value(row, "x"));
+    feature.y = to_double(rows.value(row, "y"));
+    return feature;
+}
+
+crow::json::wvalue indoor_feature_json(const IndoorFeature& feature) {
+    crow::json::wvalue item;
+    item["id"] = feature.id;
+    item["name"] = feature.name;
+    item["type"] = feature.type;
+    item["typeLabel"] = indoor_feature_type_label(feature.type);
+    item["floorCode"] = feature.floor_code;
+    item["floorName"] = feature.floor_name;
+    item["x"] = feature.x;
+    item["y"] = feature.y;
+    item["provider"] = feature.provider;
+    item["source"] = feature.source;
+    item["sourceRef"] = feature.source_ref;
+    return item;
+}
+
+std::vector<IndoorFeature> load_indoor_features(PgConnection& db, int building_id) {
+    auto rows = exec_params(db, R"SQL(
+        SELECT
+            feat.id::text,
+            feat.name,
+            feat.type,
+            COALESCE(feat.x, 0)::text AS x,
+            COALESCE(feat.y, 0)::text AS y,
+            feat.provider,
+            feat.source,
+            feat.source_ref,
+            fl.floor_code,
+            fl.floor_name
+        FROM indoor_features feat
+        JOIN indoor_floors fl ON fl.id = feat.floor_id
+        WHERE feat.building_id = $1
+        ORDER BY fl.floor_index, feat.sort_order, feat.id
+    )SQL", {std::to_string(building_id)});
+
+    std::vector<IndoorFeature> features;
+    features.reserve(static_cast<size_t>(rows.rows()));
+    for (int row = 0; row < rows.rows(); ++row) features.push_back(indoor_feature_from_rows(rows, row));
+    return features;
+}
+
+std::vector<IndoorEdge> load_indoor_edges(PgConnection& db, int building_id) {
+    auto rows = exec_params(db, R"SQL(
+        SELECT
+            id::text,
+            from_feature_id::text,
+            to_feature_id::text,
+            distance::text,
+            travel_time::text,
+            edge_type,
+            provider
+        FROM indoor_edges
+        WHERE building_id = $1
+        ORDER BY id
+    )SQL", {std::to_string(building_id)});
+
+    std::vector<IndoorEdge> edges;
+    edges.reserve(static_cast<size_t>(rows.rows()));
+    for (int row = 0; row < rows.rows(); ++row) {
+        IndoorEdge edge;
+        edge.id = to_int(rows.value(row, "id"));
+        edge.from = to_int(rows.value(row, "from_feature_id"));
+        edge.to = to_int(rows.value(row, "to_feature_id"));
+        edge.distance = to_double(rows.value(row, "distance"));
+        edge.travel_time = to_int(rows.value(row, "travel_time"));
+        edge.type = rows.value(row, "edge_type");
+        edge.provider = rows.value(row, "provider");
+        edges.push_back(std::move(edge));
+    }
+    return edges;
+}
+
+IndoorRouteResult plan_indoor_dijkstra(const std::map<int, IndoorFeature>& features,
+                                       const std::vector<IndoorEdge>& edges,
+                                       int start_feature_id,
+                                       int end_feature_id,
+                                       const std::string& strategy) {
+    IndoorRouteResult result;
+    if (!features.count(start_feature_id) || !features.count(end_feature_id)) {
+        result.error = "Start or end feature is not in this indoor building";
+        return result;
+    }
+    if (start_feature_id == end_feature_id) {
+        result.success = true;
+        result.feature_path.push_back(start_feature_id);
+        return result;
+    }
+
+    std::map<int, std::vector<IndoorEdge>> adjacency;
+    for (const auto& edge : edges) {
+        if (features.count(edge.from) && features.count(edge.to)) adjacency[edge.from].push_back(edge);
+    }
+
+    constexpr double kInf = std::numeric_limits<double>::infinity();
+    std::map<int, double> distance;
+    std::map<int, int> previous;
+    std::map<int, IndoorEdge> previous_edge;
+    for (const auto& [id, feature] : features) {
+        (void)feature;
+        distance[id] = kInf;
+    }
+
+    using QueueItem = std::pair<double, int>;
+    std::priority_queue<QueueItem, std::vector<QueueItem>, std::greater<QueueItem>> queue;
+    distance[start_feature_id] = 0.0;
+    queue.push({0.0, start_feature_id});
+
+    while (!queue.empty()) {
+        auto [current_cost, current] = queue.top();
+        queue.pop();
+        if (current_cost > distance[current] + 0.0001) continue;
+        if (current == end_feature_id) break;
+
+        auto edge_iter = adjacency.find(current);
+        if (edge_iter == adjacency.end()) continue;
+        for (const auto& edge : edge_iter->second) {
+            double weight = strategy == "distance"
+                ? std::max(edge.distance, 0.01)
+                : std::max(static_cast<double>(edge.travel_time), 1.0);
+            double next_cost = current_cost + weight;
+            if (next_cost + 0.0001 < distance[edge.to]) {
+                distance[edge.to] = next_cost;
+                previous[edge.to] = current;
+                previous_edge[edge.to] = edge;
+                queue.push({next_cost, edge.to});
+            }
+        }
+    }
+
+    if (distance[end_feature_id] == kInf) {
+        result.error = "No connected indoor route between the selected features";
+        return result;
+    }
+
+    std::vector<int> reversed_nodes;
+    int cursor = end_feature_id;
+    reversed_nodes.push_back(cursor);
+    while (cursor != start_feature_id) {
+        auto prev_iter = previous.find(cursor);
+        if (prev_iter == previous.end()) {
+            result.error = "Indoor route reconstruction failed";
+            return result;
+        }
+        result.edge_path.push_back(previous_edge[cursor]);
+        cursor = prev_iter->second;
+        reversed_nodes.push_back(cursor);
+    }
+
+    std::reverse(reversed_nodes.begin(), reversed_nodes.end());
+    std::reverse(result.edge_path.begin(), result.edge_path.end());
+    for (const auto& edge : result.edge_path) {
+        result.distance += edge.distance;
+        result.duration += edge.travel_time;
+    }
+    result.feature_path = std::move(reversed_nodes);
+    result.success = true;
+    return result;
+}
+
+crow::json::wvalue indoor_step_json(const IndoorFeature& from,
+                                    const IndoorFeature& to,
+                                    const IndoorEdge& edge,
+                                    int order) {
+    std::string instruction = "Go from " + from.name + " to " + to.name;
+    if (edge.type == "elevator") instruction = "Take elevator from " + from.floor_name + " to " + to.floor_name;
+    if (edge.type == "stairs") instruction = "Take stairs from " + from.floor_name + " to " + to.floor_name;
+
+    crow::json::wvalue item;
+    item["order"] = order;
+    item["fromFeatureId"] = from.id;
+    item["toFeatureId"] = to.id;
+    item["fromName"] = from.name;
+    item["toName"] = to.name;
+    item["fromFloorCode"] = from.floor_code;
+    item["toFloorCode"] = to.floor_code;
+    item["edgeType"] = edge.type;
+    item["edgeTypeLabel"] = indoor_edge_type_label(edge.type);
+    item["distanceMeters"] = static_cast<int>(std::round(edge.distance));
+    item["durationSeconds"] = edge.travel_time;
+    item["instruction"] = instruction;
+    return item;
+}
+
+void audit_indoor_route(PgConnection& db,
+                        int building_id,
+                        const std::string& provider,
+                        const std::string& algorithm,
+                        int start_feature_id,
+                        int end_feature_id,
+                        const std::string& strategy,
+                        bool success,
+                        bool fallback_used,
+                        int duration_ms,
+                        const std::string& error_message) {
+    try {
+        exec_params(db, R"SQL(
+            INSERT INTO indoor_route_audit
+                (building_id, provider, algorithm, start_feature_id, end_feature_id,
+                 strategy, success, fallback_used, duration_ms, error_message)
+            VALUES
+                ($1::int, $2, $3, $4::int, $5::int, $6, $7::boolean, $8::boolean, $9::int, $10)
+        )SQL", {
+            std::to_string(building_id),
+            provider,
+            algorithm,
+            std::to_string(start_feature_id),
+            std::to_string(end_feature_id),
+            strategy,
+            success ? "TRUE" : "FALSE",
+            fallback_used ? "TRUE" : "FALSE",
+            std::to_string(duration_ms),
+            error_message
+        }, PGRES_COMMAND_OK);
+    } catch (...) {
+        // Audit is helpful for defense and debugging, but route planning should
+        // not fail solely because the audit row could not be written.
+    }
+}
+
 } // namespace
 
 void register_scenic_routes(TourismApp& app) {
@@ -504,6 +834,215 @@ void register_scenic_routes(TourismApp& app) {
             return json_error(500, error.what());
         }
     });
+
+    CROW_ROUTE(app, "/api/v1/scenic-spots/<int>/indoor-buildings")([](int id) -> crow::response {
+        try {
+            PgConnection db;
+            auto rows = exec_params(db, R"SQL(
+                SELECT
+                    b.id::text,
+                    b.scenic_spot_id::text,
+                    b.name,
+                    b.provider,
+                    b.source,
+                    b.source_ref,
+                    COALESCE(b.amap_cpid, '') AS amap_cpid,
+                    CASE WHEN b.has_indoor_map THEN 1 ELSE 0 END::text AS has_indoor_map,
+                    COALESCE(b.description, '') AS description,
+                    COALESCE(b.default_floor_code, '') AS default_floor_code,
+                    COUNT(DISTINCT fl.id)::text AS floor_count,
+                    COUNT(DISTINCT feat.id)::text AS feature_count
+                FROM indoor_buildings b
+                LEFT JOIN indoor_floors fl ON fl.building_id = b.id
+                LEFT JOIN indoor_features feat ON feat.building_id = b.id
+                WHERE b.scenic_spot_id = $1
+                GROUP BY b.id
+                ORDER BY b.has_indoor_map DESC, b.id
+            )SQL", {std::to_string(id)});
+
+            crow::json::wvalue::list items;
+            for (int row = 0; row < rows.rows(); ++row) items.push_back(indoor_building_json(rows, row));
+
+            crow::json::wvalue data;
+            data["available"] = !items.empty();
+            data["total"] = static_cast<int>(items.size());
+            data["items"] = std::move(items);
+            return crow::response(ok(std::move(data)));
+        } catch (const std::exception& error) {
+            return json_error(500, error.what());
+        }
+    });
+
+    CROW_ROUTE(app, "/api/v1/indoor-buildings/<int>/features")([](const crow::request& req, int id) -> crow::response {
+        try {
+            std::string floor = trim_text(req.url_params.get("floor") ? req.url_params.get("floor") : "");
+            std::string type = trim_text(req.url_params.get("type") ? req.url_params.get("type") : "");
+
+            PgConnection db;
+            auto floor_rows = exec_params(db, R"SQL(
+                SELECT
+                    id::text,
+                    building_id::text,
+                    floor_code,
+                    floor_name,
+                    floor_index::text,
+                    provider,
+                    source,
+                    source_ref
+                FROM indoor_floors
+                WHERE building_id = $1
+                ORDER BY floor_index, id
+            )SQL", {std::to_string(id)});
+
+            auto rows = exec_params(db, R"SQL(
+                SELECT
+                    feat.id::text,
+                    feat.name,
+                    feat.type,
+                    COALESCE(feat.x, 0)::text AS x,
+                    COALESCE(feat.y, 0)::text AS y,
+                    feat.provider,
+                    feat.source,
+                    feat.source_ref,
+                    fl.floor_code,
+                    fl.floor_name
+                FROM indoor_features feat
+                JOIN indoor_floors fl ON fl.id = feat.floor_id
+                WHERE feat.building_id = $1
+                  AND ($2 = '' OR fl.floor_code = $2)
+                  AND ($3 = '' OR feat.type = $3)
+                ORDER BY fl.floor_index, feat.sort_order, feat.id
+            )SQL", {std::to_string(id), floor, type});
+
+            crow::json::wvalue::list floors;
+            for (int row = 0; row < floor_rows.rows(); ++row) floors.push_back(indoor_floor_json(floor_rows, row));
+
+            std::map<std::string, int> type_counts;
+            crow::json::wvalue::list items;
+            for (int row = 0; row < rows.rows(); ++row) {
+                auto feature = indoor_feature_from_rows(rows, row);
+                type_counts[feature.type] += 1;
+                items.push_back(indoor_feature_json(feature));
+            }
+
+            crow::json::wvalue::list types;
+            for (const auto& [type_key, count] : type_counts) {
+                crow::json::wvalue item;
+                item["type"] = type_key;
+                item["label"] = indoor_feature_type_label(type_key);
+                item["count"] = count;
+                types.push_back(std::move(item));
+            }
+
+            crow::json::wvalue data;
+            data["total"] = static_cast<int>(items.size());
+            data["items"] = std::move(items);
+            data["floors"] = std::move(floors);
+            data["types"] = std::move(types);
+            return crow::response(ok(std::move(data)));
+        } catch (const std::exception& error) {
+            return json_error(500, error.what());
+        }
+    });
+
+    CROW_ROUTE(app, "/api/v1/indoor-buildings/<int>/routes/plan").methods("POST"_method)(
+        [](const crow::request& req, int id) -> crow::response {
+            auto started_at = std::chrono::steady_clock::now();
+            try {
+                auto body = crow::json::load(req.body);
+                if (!body) return json_error(400, "Invalid JSON");
+
+                int start_feature_id = json_int(body, "startFeatureId");
+                int end_feature_id = json_int(body, "endFeatureId");
+                std::string strategy = normalize_indoor_strategy(json_string(body, "strategy", "time"));
+                if (start_feature_id <= 0 || end_feature_id <= 0) {
+                    return json_error(400, "startFeatureId and endFeatureId are required");
+                }
+
+                PgConnection db;
+                auto building_rows = exec_params(db, R"SQL(
+                    SELECT
+                        id::text,
+                        provider,
+                        CASE WHEN has_indoor_map THEN 1 ELSE 0 END::text AS has_indoor_map
+                    FROM indoor_buildings
+                    WHERE id = $1
+                    LIMIT 1
+                )SQL", {std::to_string(id)});
+                if (!building_rows.rows()) return json_error(404, "Indoor building not found");
+
+                std::string configured_provider = building_rows.value(0, "provider");
+                bool has_amap_indoor = to_int(building_rows.value(0, "has_indoor_map")) > 0;
+                auto features_vector = load_indoor_features(db, id);
+                auto edges = load_indoor_edges(db, id);
+
+                std::map<int, IndoorFeature> features;
+                for (const auto& feature : features_vector) features[feature.id] = feature;
+                if (!features.count(start_feature_id) || !features.count(end_feature_id)) {
+                    int elapsed_ms = static_cast<int>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::steady_clock::now() - started_at).count());
+                    audit_indoor_route(db, id, configured_provider, "indoor-dijkstra",
+                                       start_feature_id, end_feature_id, strategy,
+                                       false, false, elapsed_ms, "Feature is not in this indoor building");
+                    return json_error(400, "Start or end feature is not in this indoor building");
+                }
+                if (edges.empty()) {
+                    int elapsed_ms = static_cast<int>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::steady_clock::now() - started_at).count());
+                    audit_indoor_route(db, id, configured_provider, "indoor-dijkstra",
+                                       start_feature_id, end_feature_id, strategy,
+                                       false, false, elapsed_ms, "Indoor graph has no route edges");
+                    return json_error(422, "Indoor graph has no route edges");
+                }
+
+                auto route = plan_indoor_dijkstra(features, edges, start_feature_id, end_feature_id, strategy);
+                bool fallback_used = configured_provider == "amap_indoor" && has_amap_indoor;
+                std::string response_provider = fallback_used ? "local_indoor_graph" : configured_provider;
+                if (!route.success) {
+                    int elapsed_ms = static_cast<int>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::steady_clock::now() - started_at).count());
+                    audit_indoor_route(db, id, response_provider, "indoor-dijkstra",
+                                       start_feature_id, end_feature_id, strategy,
+                                       false, fallback_used, elapsed_ms, route.error);
+                    return json_error(422, route.error.empty() ? "No indoor route found" : route.error);
+                }
+
+                crow::json::wvalue::list path;
+                for (int feature_id : route.feature_path) {
+                    if (features.count(feature_id)) path.push_back(indoor_feature_json(features.at(feature_id)));
+                }
+
+                crow::json::wvalue::list steps;
+                for (size_t index = 0; index < route.edge_path.size(); ++index) {
+                    const auto& edge = route.edge_path[index];
+                    steps.push_back(indoor_step_json(features.at(edge.from), features.at(edge.to), edge,
+                                                     static_cast<int>(index + 1)));
+                }
+
+                int elapsed_ms = static_cast<int>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now() - started_at).count());
+                audit_indoor_route(db, id, response_provider, "indoor-dijkstra",
+                                   start_feature_id, end_feature_id, strategy,
+                                   true, fallback_used, elapsed_ms, "");
+
+                crow::json::wvalue data;
+                data["buildingId"] = id;
+                data["provider"] = response_provider;
+                data["configuredProvider"] = configured_provider;
+                data["algorithm"] = "indoor-dijkstra";
+                data["distanceMeters"] = static_cast<int>(std::round(route.distance));
+                data["durationSeconds"] = route.duration;
+                data["strategy"] = strategy;
+                data["steps"] = std::move(steps);
+                data["path"] = std::move(path);
+                data["fallbackUsed"] = fallback_used;
+                data["hasAmapIndoor"] = has_amap_indoor;
+                data["elapsedMs"] = elapsed_ms;
+                return crow::response(ok(std::move(data)));
+            } catch (const std::exception& error) {
+                return json_error(500, error.what());
+            }
+        });
 
     CROW_ROUTE(app, "/api/v1/scenic-spots/<int>/internal-map")([](int id) -> crow::response {
         try {

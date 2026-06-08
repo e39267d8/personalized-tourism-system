@@ -27,6 +27,7 @@ Frontend:
 - `frontend/src/views/FoodRecommend.vue`: food recommendation page backed by `/api/v1/foods`.
 - `frontend/src/views/Achievements.vue`: public travel passport / achievement overview page.
 - `frontend/src/views/CollectibleDetail.vue`: authenticated digital collectible certificate page.
+- `frontend/src/components/IndoorNavigationPanel.vue`: indoor building/feature selection and route-result panel.
 - `frontend/src/services/amapLoader.js`: AMap JS API loader for scenic internal navigation.
 - `frontend/src/utils/coordinates.js`: WGS84/GCJ-02 conversion helpers for AMap display and backend route requests.
 - `frontend/src/utils/images.js`: image selection priority and placeholders.
@@ -49,9 +50,12 @@ Database:
 - `database/imports/amap_pois.sql`
 - `database/internal_navigation_schema.sql`
 - `database/imports/internal_navigation.sql`
+- `database/indoor_navigation_schema.sql`
 - `database/seed_demo.sql`
+- `database/seed_indoor_navigation.sql`
 - `database/verify_demo.sql`
 - `scripts/import_internal_map_data.py`: generates real-map internal navigation SQL from OSM/Overpass roads/buildings and AMap nearby facilities. It stores all geometry as WGS84; AMap POIs are queried in GCJ-02 and converted back to WGS84 before SQL output.
+- `scripts/audit_project_data.py`: read-only audit for AMap POI counts, local scenic inserts, and indoor navigation seed/schema coverage.
 
 ## Backend Module Map
 
@@ -59,7 +63,7 @@ Database:
 - Achievement APIs are also registered in `dashboard_routes`: scenic spot check-ins, achievement claim, collectibles, badge redemptions, and review submissions/decisions.
 - `auth_routes`: login, register, logout, current user, change password.
 - `profile_routes`: `/api/v1/profile`, `/api/v1/profile/preferences`.
-- `scenic_routes`: scenic spot list/search/detail/categories/suggestions/reviews, plus internal facilities/map/route APIs.
+- `scenic_routes`: scenic spot list/search/detail/categories/suggestions/reviews, plus internal facilities/map/route APIs and indoor navigation APIs.
 - `recommendation_routes`: budget plans and personalized recommendations.
 - `route_routes`: route nodes, route list, route planning.
 - `diary_routes`: diaries, likes, bookmarks, ratings, comments, achievement review submissions.
@@ -94,6 +98,19 @@ If adding a new API, add it to the matching `backend/src/api/*_routes.cpp` file 
 - Cuisine is inferred in C++ from facility names. Fuzzy search matches name, cuisine key/label, address, and scenic name; "window name" is treated as part of the food/facility name.
 - `sort=hot` uses a derived score only, not a database field: rating 50%, info completeness 20%, price friendliness 15%, type/name trust 15%.
 - Ranking uses `TopKSelector` to keep the first K results before final ordered response. API responses include `hotScore`, `matchReason`, `distanceMeters`, `sort`, and `algorithm`.
+
+## Indoor Navigation Rules
+
+- The only runtime database is `tourism_system`; never create a second database for indoor navigation.
+- AMap scenic POIs are imported offline from `database/imports/amap_pois.sql` into local PostgreSQL. Runtime scenic pages should read local tables, not call AMap POI search on every page load.
+- Indoor navigation uses domain tables in `database/schema.sql`: `indoor_buildings`, `indoor_floors`, `indoor_features`, `indoor_edges`, and `indoor_route_audit`.
+- Providers are explicit: `amap_indoor` for official AMap indoor capability and `local_indoor_graph` for local graph fallback/algorithm defense.
+- All indoor rows need `source`, `source_ref`, and `provider`; seed/import SQL should use stable `source_ref` upserts.
+- Frontend calls must go through `frontend/src/services/tourismApi.js`. Do not bypass the backend from Vue components.
+- Do not implement core indoor route planning in the frontend. Local indoor routing is backend Dijkstra over `indoor_edges`.
+- Indoor APIs live in `backend/src/api/scenic_routes.cpp`: building list, feature list, and route planning.
+- Keep first-phase indoor coverage small but formal. A single real building is acceptable when schema, API, provider fallback, and route audit are complete.
+- Run `python scripts\audit_project_data.py` when checking data counts for defense.
 
 ## Achievement / Collectible Rules
 
@@ -149,7 +166,9 @@ psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\schema.sql
 psql -U postgres -d tourism_system -f database\imports\amap_pois.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\internal_navigation_schema.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\imports\internal_navigation.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\indoor_navigation_schema.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seed_demo.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seed_indoor_navigation.sql
 ```
 
 Regenerate internal scenic-area navigation data:

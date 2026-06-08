@@ -185,7 +185,9 @@ psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\schema.sql
 psql -U postgres -d tourism_system -f database\imports\amap_pois.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\internal_navigation_schema.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\imports\internal_navigation.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\indoor_navigation_schema.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seed_demo.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seed_indoor_navigation.sql
 
 $env:TOURISM_LLM_API_KEY="你的 DeepSeek API Key"
 $env:TOURISM_LLM_BASE_URL="https://api.deepseek.com"
@@ -217,6 +219,8 @@ npm run dev
 
 ```powershell
 cmake --build backend\build-codex-verify-mingw
+
+python scripts\audit_project_data.py
 
 cd frontend
 npm.cmd run lint
