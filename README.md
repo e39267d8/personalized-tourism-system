@@ -1,6 +1,6 @@
 # TourPilot 个性化旅游系统
 
-TourPilot 是一个旅游规划全栈项目。前端使用 Vue 3 + Vite + Tailwind CSS，后端使用 C++ Crow，数据库使用 PostgreSQL/PostGIS。项目支持景点搜索、个性化推荐、预算方案、路线规划、游记、成就和 AI 旅行助手。
+TourPilot 是一个旅游规划全栈项目。前端使用 Vue 3 + Vite + Tailwind CSS，后端使用 C++ Crow，数据库使用 PostgreSQL/PostGIS。项目支持景点搜索、个性化推荐、预算方案、路线规划、景区内部导航、美食推荐、游记、旅行护照成就、数字纪念凭证和 AI 旅行助手。
 
 ## 核心功能
 
@@ -96,16 +96,18 @@ personalized-tourism-system/
 ```text
 backend/src/api/
 ├─ auth_routes.cpp            # 登录、注册、退出、当前用户、修改密码
-├─ dashboard_routes.cpp       # /health、dashboard、achievements
+├─ dashboard_routes.cpp       # /health、dashboard、achievements、checkins、collectibles、badge redemptions、review decisions
 ├─ profile_routes.cpp         # profile、preferences
 ├─ scenic_routes.cpp          # 景点列表、搜索、详情、建议词、评价
 ├─ recommendation_routes.cpp  # 预算方案、个性化推荐
 ├─ route_routes.cpp           # 路线节点、路线列表、路线规划
-├─ diary_routes.cpp           # 游记、点赞、收藏、评分、评论
-└─ aigc_routes.cpp            # AIGC 摘要、润色、旅游助手
+├─ diary_routes.cpp           # 游记、点赞、收藏、评分、评论、成就评审提交
+├─ aigc_routes.cpp            # AIGC 摘要、润色、旅游助手
+└─ food_routes.cpp            # 美食推荐、菜系筛选、Top-K 排序
 
 backend/src/services/
 ├─ auth_service.cpp           # PBKDF2 密码哈希、Bearer token 校验
+├─ achievement_service.cpp    # 旅行护照成就、打卡、数字纪念凭证、实体徽章兑换、游记评审决策
 ├─ scenic_service.cpp         # 景点查询和景点 JSON
 ├─ budget_service.cpp         # 预算方案
 ├─ recommendation_service.cpp # 推荐计算
@@ -125,6 +127,7 @@ backend/src/services/
 | `AMAP_WEB_SERVICE_KEY` / `AMAP_KEY` | 覆盖高德 Web Service Key | 未配置时使用后端内置免费高德 key |
 | `VITE_AMAP_JS_KEY` | 覆盖前端高德 JS API Key | 未配置时使用项目内置免费 JS API key |
 | `VITE_AMAP_SECURITY_JS_CODE` | 前端高德 JS API 安全密钥 | 可选；仅在高德控制台安全配置要求时设置 |
+| `TOURISM_REVIEWER_USERNAMES` | 大师级游记评审用户名白名单 | 逗号分隔；`demo_user` 默认具备评审权限 |
 
 DeepSeek key 不允许写入仓库，只能放本地环境变量：
 
@@ -157,6 +160,8 @@ PowerShell 的 `$env:...` 只对当前窗口和它启动的子进程生效。需
 2. 前端本地拼音图片，目录为 `frontend/public/images/diary/`，映射在 `frontend/src/data/imageCatalog.js`。
 3. 前端 SVG 占位图，由 `frontend/src/utils/images.js` 生成。
 
+本地拼音图片目前是人工整理的北京景点图库，只能作为北京景点的兜底图。前端会优先读取后端返回的 `city`、`province`、`district` 等结构化区域字段判断是否属于北京；如果明确是南京、银川等外地城市，即使地址里包含“北京西路”“北京路”等道路名，也不会使用北京本地图库，而是继续使用数据库图片或 SVG 占位图。
+
 后端不再用外部随机图片做景点 fallback。
 
 ## 登录与演示账号
@@ -171,7 +176,7 @@ PowerShell 的 `$env:...` 只对当前窗口和它启动的子进程生效。需
 密码：demo123456
 ```
 
-需要登录的页面和操作：`/profile`、`/achievements`、`/diary/new`、`/diary/edit/:id`，以及游记点赞、收藏、评分、评论、创建、编辑、删除。首页、搜索、景点详情、路线规划、AI 助手和游记详情仍可匿名浏览。
+需要登录的页面和操作：`/profile`、`/collectibles/:id`、`/diary/new`、`/diary/edit/:id`，以及游记点赞、收藏、评分、评论、创建、编辑、删除，景点打卡、成就奖励领取、数字纪念凭证详情、实体徽章兑换和大师级游记评审提交。大师评审决策只允许 `demo_user` 或 `TOURISM_REVIEWER_USERNAMES` 中配置的用户操作。首页、搜索、景点详情、路线规划、AI 助手、游记详情、`/food` 和 `/achievements` 仍可匿名浏览。
 
 ## 快速启动
 
@@ -205,6 +210,8 @@ npm run dev
 - 前端：http://127.0.0.1:3000
 - 健康检查：http://127.0.0.1:8080/health
 - AI 助手：http://127.0.0.1:3000/agent
+- 美食推荐：http://127.0.0.1:3000/food
+- 旅行护照：http://127.0.0.1:3000/achievements
 
 ## 验证命令
 
@@ -224,6 +231,10 @@ Invoke-WebRequest "http://127.0.0.1:8080/api/v1/scenic-spots?limit=2"
 Invoke-WebRequest "http://127.0.0.1:8080/api/v1/search/suggestions?q=故宫"
 Invoke-WebRequest http://127.0.0.1:8080/api/v1/routes
 Invoke-WebRequest http://127.0.0.1:8080/api/v1/diaries
+Invoke-WebRequest "http://127.0.0.1:8080/api/v1/foods?scenic_spot_id=12&sort=hot&limit=10"
+Invoke-WebRequest http://127.0.0.1:8080/api/v1/achievements
+Invoke-WebRequest http://127.0.0.1:8080/api/v1/badge-redemptions -Headers @{Authorization="Bearer <token>"}
+Invoke-WebRequest "http://127.0.0.1:8080/api/v1/achievement-review-submissions?status=pending" -Headers @{Authorization="Bearer <reviewer-token>"}
 ```
 
 登录冒烟：
@@ -263,6 +274,46 @@ Invoke-WebRequest `
 - 登录失败：确认 `database\seed_demo.sql` 已执行；旧数据库也可用 `demo_user / demo123456` 首次登录并自动升级密码哈希。
 - AI 助手失败：检查 `TOURISM_LLM_API_KEY` 是否在启动后端的同一个窗口设置。
 - 路线规划失败：高德 key 已有内置默认值；若仍失败，检查网络是否能访问 `https://restapi.amap.com`。
+
+## 美食推荐模块
+
+`/food` 页面对应后端 `/api/v1/foods` 和 `/api/v1/foods/cuisines`。数据来源是 `facilities` 表中的 `restaurant`、`cafe`、`fast_food`，景区归属优先使用 `facilities.scenic_spot_id`，也兼容通过 `graph_nodes` 关联到景区的设施。
+
+`GET /api/v1/foods` 支持：
+
+- `scenic_spot_id`：按景区筛选周边餐饮。
+- `q`：模糊查询名称、菜系、地址和景区名；窗口名称按名称处理。
+- `cuisine`：按推断菜系过滤，例如咖啡、火锅、烤鸭、小吃等。
+- `sort`：`hot`、`rating`、`distance`，默认 `hot`。
+- `lat` / `lng`：距离展示或距离排序参考点；未传时使用所选景区坐标。
+- `limit`：默认 10，上限 50。
+
+热门推荐不新增数据库字段，使用派生 `hotScore`：评分 50%、信息完整度 20%、价格友好度 15%、类型/名称可信度 15%。排序统一通过 `TopKSelector` 做 Top-K 部分排序，响应会包含 `hotScore`、`matchReason`、`distanceMeters`、`sort` 和算法说明。
+
+## 旅行护照、成就与数字纪念凭证
+
+`/achievements` 是公开的旅行护照页面，未登录用户可以看示例玩法；登录后展示个人打卡、主题集章、游记创作和大师评审四层成就进度。页面会展示主题所需景点、已收集印章、缺失印章和下一步建议；数字藏品在 V1 中实现为“模拟链上数字纪念凭证”，不会调用真实区块链；实体徽章只做兑换申请和状态记录，不包含库存、物流或后台发货流程。
+
+主要接口：
+
+- `GET /api/v1/achievements`：旅行护照总览、四层成就、进度、奖励状态、数字凭证摘要、缺失印章、下一步建议和兑换记录。
+- `POST /api/v1/scenic-spots/:id/checkins`：景点打卡；有浏览器定位时校验距离，定位失败或缺失时使用 `verification="self"` 演示打卡。
+- `POST /api/v1/achievements/:id/claim`：领取已解锁成就奖励，生成模拟 `token_id` 和 `blockchain_hash`。
+- `GET /api/v1/collectibles`、`GET /api/v1/collectibles/:id`：个人数字纪念凭证墙和证书详情页 `/collectibles/:id`，证书页支持本地生成分享卡图片。
+- `GET /api/v1/badge-redemptions`、`POST /api/v1/badge-redemptions`：实体徽章兑换记录与兑换申请。
+- `POST /api/v1/diaries/:id/achievement-review`：大师级旅行日记评审提交。
+- `GET /api/v1/achievement-review-submissions`、`POST /api/v1/achievement-review-submissions/:id/decision`：轻量评审队列和通过/驳回决策；仅评审用户可访问。
+
+相关数据表：
+
+- `achievements`：成就定义，包含稳定 `code`、`tier`、`display_order`、`requirement` 和 `reward`。
+- `user_achievements`：用户成就进度和解锁状态。
+- `user_scenic_checkins`：景点打卡记录。
+- `digital_collectibles`：数字纪念凭证。
+- `achievement_review_submissions`：大师级游记评审队列。
+- `physical_badge_redemptions`：实体徽章兑换申请。
+
+成就规则集中在 `backend/src/services/achievement_service.cpp`，路由层只负责鉴权、参数解析和调用服务。新增成就规则时优先修改服务层和 seed 数据，不要把判定逻辑散落到多个 route 文件。
 
 ## 景区内部设施导航数据
 

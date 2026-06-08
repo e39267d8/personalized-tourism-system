@@ -22,7 +22,7 @@ export const localSpotImageGroups = {
 }
 
 export const localSpotAliases = [
-  ['guojiabowuguan', ['guojiabowuguan', '国家博物馆', '中国国家博物馆', '国博', '博物馆']],
+  ['guojiabowuguan', ['guojiabowuguan', '国家博物馆', '中国国家博物馆', '国博']],
   ['jingshangongyuan', ['jingshangongyuan', 'jingshan', '景山公园', '景山']],
   ['beihaigongyuan', ['beihaigongyuan', 'beihai', '北海公园', '北海']],
   ['nanluoguxiang', ['nanluoguxiang', 'nanluo', '南锣鼓巷']],
@@ -33,12 +33,12 @@ export const localSpotAliases = [
   ['changcheng', ['changcheng', '长城', '八达岭', '慕田峪']],
   ['qianmen', ['qianmen', '前门大街', '前门', '正阳门']],
   ['tiantan', ['tiantan', '天坛公园', '天坛', '祈年殿']],
-  ['gugong', ['gugong', '故宫博物院', '故宫', '紫禁城', '中轴线']],
+  ['gugong', ['gugong', '故宫博物院', '故宫', '紫禁城']],
   ['yiheyuan', ['yiheyuan', '颐和园']],
   ['sanlitun', ['sanlitun', '三里屯']],
   ['gongti', ['gongti', '工体', '工人体育场']],
   ['gulou', ['gulou', '鼓楼', '钟楼']],
-  ['aosen', ['aosen', '奥森', '奥林匹克森林公园', '奥林匹克公园', '北京奥林匹克公园']],
+  ['aosen', ['aosen', '奥森', '奥林匹克森林公园', '北京奥林匹克公园']],
   ['798', ['798', '798艺术区', '七九八']]
 ]
 

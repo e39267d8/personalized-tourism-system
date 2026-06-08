@@ -50,6 +50,29 @@
             <router-link :to="{ path: '/diary', query: { spot: spot.name } }" class="rounded-md border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100">
               写旅行日记
             </router-link>
+            <button
+              type="button"
+              class="rounded-md bg-teal-700 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:bg-slate-400"
+              :disabled="checkinLoading"
+              @click="checkinSpot"
+            >
+              {{ checkinLoading ? '收集中...' : '收集旅行印章' }}
+            </button>
+          </div>
+          <div
+            v-if="checkinMessage"
+            class="mt-3 rounded-md border px-3 py-2 text-sm"
+            :class="checkinError ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-teal-200 bg-teal-50 text-teal-800'"
+          >
+            {{ checkinMessage }}
+            <div v-if="checkinVerification" class="mt-1 text-xs opacity-80">
+              验证方式：{{ checkinVerification }}
+            </div>
+            <div v-if="checkinUnlocked.length" class="mt-2 flex flex-wrap gap-2">
+              <span v-for="item in checkinUnlocked" :key="item.code" class="rounded-md bg-white/80 px-2 py-1 text-xs font-semibold">
+                新解锁：{{ item.name }}
+              </span>
+            </div>
           </div>
         </div>
       </div>
@@ -269,6 +292,11 @@ const showAllFacilities = ref(false)
 const amapReady = ref(false)
 const amapError = ref('')
 const internalMapContainer = ref(null)
+const checkinLoading = ref(false)
+const checkinMessage = ref('')
+const checkinError = ref(false)
+const checkinVerification = ref('')
+const checkinUnlocked = ref([])
 
 const startModes = [
   { value: 'auto', label: '自动入口' },
@@ -442,6 +470,46 @@ const loadDetail = async () => {
     reviews.value = []
   }
   await loadInternalNavigation()
+}
+
+function browserLocation() {
+  return new Promise(resolve => {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) {
+      resolve(null)
+      return
+    }
+    navigator.geolocation.getCurrentPosition(
+      position => {
+        resolve({
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude
+        })
+      },
+      () => resolve(null),
+      { enableHighAccuracy: true, timeout: 4000, maximumAge: 60000 }
+    )
+  })
+}
+
+const checkinSpot = async () => {
+  checkinLoading.value = true
+  checkinMessage.value = ''
+  checkinError.value = false
+  checkinVerification.value = ''
+  checkinUnlocked.value = []
+  try {
+    const location = await browserLocation()
+    const payload = location ? { latitude: location.latitude, longitude: location.longitude } : {}
+    const result = await tourismApi.checkinScenicSpot(props.id, payload)
+    checkinMessage.value = result.message || '旅行印章已收集，成就进度已更新'
+    checkinVerification.value = result.verificationLabel || (result.verification === 'gps' ? 'GPS 定位验证' : '演示打卡')
+    checkinUnlocked.value = result.unlockedAchievements || []
+  } catch (error) {
+    checkinError.value = true
+    checkinMessage.value = error.response?.data?.message || '打卡失败，请登录后重试'
+  } finally {
+    checkinLoading.value = false
+  }
 }
 
 const loadInternalNavigation = async () => {

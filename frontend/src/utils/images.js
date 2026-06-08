@@ -85,6 +85,48 @@ const imageCandidatesFromSpot = (spot = {}) => [
   ...imageCandidatesFrom(spot.images)
 ].map(normalizeImageText).filter(Boolean)
 
+const BEIJING_DISTRICTS = [
+  '东城', '西城', '朝阳', '海淀', '丰台', '石景山', '门头沟', '房山', '通州',
+  '顺义', '昌平', '大兴', '怀柔', '平谷', '密云', '延庆'
+]
+
+const normalizedFields = (spot = {}, fields = []) =>
+  fields.map(field => String(spot[field] || '').trim()).filter(Boolean)
+
+const isExplicitBeijing = (text = '') => {
+  const value = String(text || '').trim()
+  return /^(北京|北京市|beijing)$/i.test(value) || value.includes('北京市')
+}
+
+const isBeijingDistrict = (text = '') => {
+  const value = String(text || '').trim()
+  return BEIJING_DISTRICTS.some(district =>
+    value === district ||
+    value === `${district}区` ||
+    value === `${district}县` ||
+    value.includes(`北京市${district}`) ||
+    value.includes(`北京${district}`)
+  )
+}
+
+const hasBeijingContext = (spot = {}) => {
+  if (spot.allowLocalImageFallback === true) return true
+  if (spot.disableLocalImageFallback === true) return false
+
+  const cityOrProvince = normalizedFields(spot, ['city', 'province'])
+  if (cityOrProvince.length) {
+    return cityOrProvince.some(isExplicitBeijing)
+  }
+
+  const districts = normalizedFields(spot, ['district'])
+  if (districts.length) {
+    return districts.some(text => isExplicitBeijing(text) || isBeijingDistrict(text))
+  }
+
+  const addressText = normalizedFields(spot, ['location', 'address']).join(' ')
+  return isExplicitBeijing(addressText) || /^北京(市)?[\s，,、]/.test(addressText)
+}
+
 export const isUsableImageUrl = (value) => {
   const text = normalizeImageText(value)
   if (looksEmpty(text)) return false
@@ -136,6 +178,8 @@ export const normalizeDiaryImages = (diary = {}) => {
 }
 
 export const localSpotImageUrl = (spot = {}) => {
+  if (!hasBeijingContext(spot)) return ''
+
   const profile = [
     spot.name,
     spot.title,
@@ -188,7 +232,9 @@ export const diaryDisplayImages = (diary = {}) => {
     category: diary.location || diary.category
   })
   if (localImage) return [localImage]
-  const genericLocalImage = localSpotImageUrlForSeed(`${diary.id || ''}|${diary.title || ''}|${diary.location || ''}`)
+  const genericLocalImage = hasBeijingContext(diary)
+    ? localSpotImageUrlForSeed(`${diary.id || ''}|${diary.title || ''}|${diary.location || ''}`)
+    : ''
   return genericLocalImage ? [genericLocalImage] : []
 }
 
@@ -203,7 +249,9 @@ export const handleDiaryImageError = (event, diary = {}) => {
       ...diary,
       name: diary.title || diary.name,
       category: diary.location || diary.category
-    }) || localSpotImageUrlForSeed(`${diary.id || ''}|${diary.title || ''}|${diary.location || ''}`)
+    }) || (hasBeijingContext(diary)
+      ? localSpotImageUrlForSeed(`${diary.id || ''}|${diary.title || ''}|${diary.location || ''}`)
+      : '')
   if (localImage && current !== localImage) {
     event.target.src = localImage
     return

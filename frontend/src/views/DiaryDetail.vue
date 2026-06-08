@@ -51,6 +51,22 @@
       </div>
     </div>
 
+    <div v-if="canSubmitReview" class="mt-4 rounded-xl border border-amber-100 bg-amber-50 px-5 py-4">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div class="text-sm font-semibold text-amber-900">大师级旅行日记评审</div>
+          <div class="mt-1 text-sm text-amber-800">{{ reviewMessage || '内容完整、图片丰富的游记可以提交人工评审，争取顶级数字纪念凭证和实体徽章。' }}</div>
+        </div>
+        <button
+          class="rounded-md bg-amber-600 px-3 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:bg-slate-400"
+          :disabled="reviewSubmitting"
+          @click="submitAchievementReview"
+        >
+          {{ reviewSubmitting ? '提交中...' : '提交评审' }}
+        </button>
+      </div>
+    </div>
+
     <!-- Comments Section -->
     <div class="mt-6 rounded-xl bg-white border border-slate-100 p-6 shadow-sm">
       <h3 class="text-lg font-semibold text-slate-900 mb-4">评论 ({{ comments.length }})</h3>
@@ -100,7 +116,7 @@ import DiaryPostcard from '@/components/DiaryPostcard.vue'
 import { tourismApi } from '@/services/tourismApi'
 import { diaries as demoDiaries } from '@/data/demoData'
 import { diaryStore } from '@/stores/diaryStore'
-import { isAuthenticated } from '@/stores/auth'
+import { authStore, isAuthenticated } from '@/stores/auth'
 
 const props = defineProps({
   id: { type: Number, required: true }
@@ -118,6 +134,8 @@ const liked = ref(false)
 const bookmarked = ref(false)
 const userRating = ref(0)
 const newComment = ref('')
+const reviewSubmitting = ref(false)
+const reviewMessage = ref('')
 
 const likeCount = computed(() => diary.value.stats?.likes || 0)
 const bookmarkCount = computed(() => diary.value.bookmarkCount || 0)
@@ -127,6 +145,9 @@ const displayScore = computed(() => {
   return (diary.value.ratingScore || 0).toFixed(1)
 })
 const ratingCount = computed(() => diary.value.ratingCount || 0)
+const canSubmitReview = computed(() => {
+  return isAuthenticated() && Number(diary.value.author?.id) === Number(authStore.user?.id)
+})
 
 function ensureAuth() {
   if (isAuthenticated()) return true
@@ -277,6 +298,20 @@ function rateDiary(score) {
   }
 
   tourismApi.rateDiary(props.id, score).catch(() => {})
+}
+
+async function submitAchievementReview() {
+  if (!ensureAuth()) return
+  reviewSubmitting.value = true
+  reviewMessage.value = ''
+  try {
+    const result = await tourismApi.submitAchievementReview(props.id)
+    reviewMessage.value = result.statusLabel ? `评审状态：${result.statusLabel}` : '已提交评审'
+  } catch (error) {
+    reviewMessage.value = error.response?.data?.message || '提交失败，请稍后重试'
+  } finally {
+    reviewSubmitting.value = false
+  }
 }
 
 function submitComment() {

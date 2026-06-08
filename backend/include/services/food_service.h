@@ -11,6 +11,7 @@ namespace tourism::services {
 struct FoodItem {
     int id = 0;
     std::string name;
+    std::string type;
     std::string cuisine;
     std::string cuisine_label;
     double rating = 0.0;
@@ -23,6 +24,7 @@ struct FoodItem {
     int popularity = 0;
     int reviews = 0;
     double distance_meters = 0.0;
+    double hot_score = 0.0;
     int scenic_spot_id = 0;
     std::string scenic_name;
 };
@@ -34,11 +36,10 @@ struct FoodQuery {
     std::string sort = "hot";
     double user_lat = 0.0;
     double user_lng = 0.0;
+    bool has_user_location = false;
     int limit = 10;
 };
 
-// Parse cuisine from source_tags JSON
-std::string extract_cuisine(const std::string& source_tags);
 std::string cuisine_label(const std::string& cuisine_key);
 
 // Infer cuisine type from facility name (keyword matching)

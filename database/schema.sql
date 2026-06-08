@@ -355,13 +355,17 @@ CREATE INDEX idx_route_plans_created ON route_plans(created_at DESC);
 -- =====================================================
 CREATE TABLE achievements (
     id SERIAL PRIMARY KEY,
+    code VARCHAR(80) UNIQUE,
     name VARCHAR(100) NOT NULL,
     description TEXT,
     icon_url VARCHAR(500),
     level INTEGER DEFAULT 1,
     type VARCHAR(50) NOT NULL,  -- 'exploration', 'review', 'diary', 'social'
+    tier INTEGER DEFAULT 1,
+    display_order INTEGER DEFAULT 0,
     requirement JSONB NOT NULL,  -- 解锁条件
     reward JSONB,  -- 奖励内容
+    is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -379,6 +383,55 @@ CREATE TABLE user_achievements (
 
 CREATE INDEX idx_user_achievements_user ON user_achievements(user_id);
 CREATE INDEX idx_user_achievements_status ON user_achievements(status);
+
+-- 用户景点打卡表
+CREATE TABLE user_scenic_checkins (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    scenic_spot_id INTEGER NOT NULL REFERENCES scenic_spots(id) ON DELETE CASCADE,
+    latitude DECIMAL(10, 7),
+    longitude DECIMAL(10, 7),
+    verification VARCHAR(20) DEFAULT 'self' CHECK (verification IN ('gps', 'self')),
+    distance_meters DECIMAL(10, 2),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, scenic_spot_id)
+);
+
+CREATE INDEX idx_checkins_user ON user_scenic_checkins(user_id);
+CREATE INDEX idx_checkins_spot ON user_scenic_checkins(scenic_spot_id);
+
+-- 大师级游记评审队列
+CREATE TABLE achievement_review_submissions (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    diary_id INTEGER NOT NULL REFERENCES travel_diaries(id) ON DELETE CASCADE,
+    status VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+    reviewer_note TEXT,
+    submitted_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    reviewed_at TIMESTAMP WITH TIME ZONE,
+    UNIQUE(user_id, diary_id)
+);
+
+CREATE INDEX idx_review_submissions_user ON achievement_review_submissions(user_id);
+CREATE INDEX idx_review_submissions_status ON achievement_review_submissions(status);
+
+-- 实体徽章兑换申请
+CREATE TABLE physical_badge_redemptions (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    achievement_id INTEGER NOT NULL REFERENCES achievements(id) ON DELETE CASCADE,
+    recipient_name VARCHAR(80) NOT NULL,
+    phone VARCHAR(40) NOT NULL,
+    address TEXT NOT NULL,
+    note TEXT,
+    status VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected', 'shipped')),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, achievement_id)
+);
+
+CREATE INDEX idx_badge_redemptions_user ON physical_badge_redemptions(user_id);
+CREATE INDEX idx_badge_redemptions_status ON physical_badge_redemptions(status);
 
 -- =====================================================
 -- 11. 数字藏品表

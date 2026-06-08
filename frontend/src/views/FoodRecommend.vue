@@ -16,6 +16,7 @@
       >
         <option value="hot">热门推荐</option>
         <option value="rating">评分最高</option>
+        <option value="distance">距离最近</option>
       </select>
     </div>
 
@@ -41,7 +42,7 @@
           <input
             v-model="searchQuery"
             type="text"
-            placeholder="输入餐厅名称..."
+            placeholder="输入美食、菜系、饭店或窗口名称"
             class="flex-1 rounded-md border border-slate-300 h-10 px-3 text-sm outline-none focus:border-teal-700"
             @input="debouncedSearch"
           />
@@ -57,7 +58,7 @@
           @click="toggleCuisine(c.key)"
           :class="[
             'rounded-md px-2.5 py-1 text-xs font-medium transition',
-            selectedCuisines.has(c.key)
+            selectedCuisine === c.key
               ? 'bg-teal-700 text-white'
               : 'bg-slate-100 text-slate-600 hover:bg-teal-50 hover:text-teal-800'
           ]"
@@ -65,7 +66,7 @@
           {{ c.label }}
         </button>
         <button
-          v-if="selectedCuisines.size > 0"
+          v-if="selectedCuisine"
           @click="clearCuisines"
           class="rounded-md px-2.5 py-1 text-xs font-medium text-slate-500 hover:text-red-600 transition"
         >
@@ -123,6 +124,17 @@
             </div>
           </div>
 
+          <div class="mt-4 grid grid-cols-2 gap-2 text-xs">
+            <div class="rounded-md bg-amber-50 px-2.5 py-2 text-amber-800">
+              <div class="font-semibold">综合热度</div>
+              <div class="mt-0.5 text-sm font-bold">{{ formatHotScore(item.hotScore ?? item.score) }}</div>
+            </div>
+            <div class="rounded-md bg-teal-50 px-2.5 py-2 text-teal-800">
+              <div class="font-semibold">距离</div>
+              <div class="mt-0.5 text-sm font-bold">{{ formatDistance(item.distanceMeters) }}</div>
+            </div>
+          </div>
+
           <!-- Address -->
           <div class="mt-3 flex items-center gap-1.5 text-xs text-slate-500">
             <svg class="w-3.5 h-3.5 flex-shrink-0 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -177,7 +189,7 @@ const loading = ref(false)
 const sortBy = ref('hot')
 const searchQuery = ref('')
 const selectedScenic = ref(0)
-const selectedCuisines = ref(new Set())
+const selectedCuisine = ref('')
 
 let searchTimer = null
 
@@ -191,10 +203,22 @@ function formatRating(r) {
   return Number(r || 0).toFixed(1)
 }
 
+function formatHotScore(score) {
+  return Math.round(Number(score || 0))
+}
+
+function formatDistance(meters) {
+  const value = Number(meters || 0)
+  if (!Number.isFinite(value) || value <= 0) return '待计算'
+  if (value < 1000) return `约 ${Math.round(value)}m`
+  return `约 ${(value / 1000).toFixed(1)}km`
+}
+
 function buildParams() {
-  const params = { sort: sortBy.value, limit: 50 }
+  const params = { sort: sortBy.value, limit: 10 }
   if (selectedScenic.value > 0) params.scenic_spot_id = selectedScenic.value
   if (searchQuery.value.trim()) params.q = searchQuery.value.trim()
+  if (selectedCuisine.value) params.cuisine = selectedCuisine.value
   return params
 }
 
@@ -203,11 +227,7 @@ async function loadFoods() {
   try {
     const data = await tourismApi.foodRecommend(buildParams())
     const items = data.items || data || []
-    if (selectedCuisines.value.size > 0) {
-      foods.value = items.filter(f => selectedCuisines.value.has(f.cuisine || ''))
-    } else {
-      foods.value = items
-    }
+    foods.value = items
   } catch {
     foods.value = []
   } finally {
@@ -239,21 +259,17 @@ async function loadScenicSpots() {
 }
 
 function toggleCuisine(key) {
-  if (selectedCuisines.value.has(key)) {
-    selectedCuisines.value.delete(key)
-  } else {
-    selectedCuisines.value.add(key)
-  }
+  selectedCuisine.value = selectedCuisine.value === key ? '' : key
   loadFoods()
 }
 
 function clearCuisines() {
-  selectedCuisines.value = new Set()
+  selectedCuisine.value = ''
   loadFoods()
 }
 
 function onScenicChange() {
-  selectedCuisines.value = new Set()
+  selectedCuisine.value = ''
   loadCuisines()
   loadFoods()
 }
@@ -266,7 +282,7 @@ function debouncedSearch() {
 
 function resetAll() {
   selectedScenic.value = 0
-  selectedCuisines.value = new Set()
+  selectedCuisine.value = ''
   searchQuery.value = ''
   sortBy.value = 'hot'
   loadCuisines()

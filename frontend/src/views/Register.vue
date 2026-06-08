@@ -4,25 +4,50 @@
       <div>
         <p class="text-sm font-semibold text-teal-700">创建账号</p>
         <h1 class="mt-2 text-2xl font-bold text-slate-950">注册 TourPilot</h1>
-        <p class="mt-2 text-sm leading-6 text-slate-500">注册后即可保存旅行偏好和发布自己的游记。</p>
+        <p class="mt-2 text-sm leading-6 text-slate-500">
+          注册后即可保存旅行偏好、发布自己的游记，并持续收集旅行护照印章。
+        </p>
       </div>
 
       <form class="mt-6 space-y-4" @submit.prevent="submit">
         <div>
           <label class="text-sm font-semibold text-slate-700">用户名</label>
-          <input v-model="form.username" autocomplete="username" class="mt-2 h-11 w-full rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-teal-700" maxlength="50">
+          <input
+            v-model="form.username"
+            autocomplete="username"
+            class="mt-2 h-11 w-full rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-teal-700"
+            maxlength="50"
+            placeholder="3-50 位字母、数字、下划线或短横线"
+          >
         </div>
         <div>
           <label class="text-sm font-semibold text-slate-700">邮箱</label>
-          <input v-model="form.email" autocomplete="email" class="mt-2 h-11 w-full rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-teal-700" maxlength="100" type="email">
+          <input
+            v-model="form.email"
+            autocomplete="email"
+            class="mt-2 h-11 w-full rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-teal-700"
+            maxlength="100"
+            placeholder="you@example.com"
+            type="email"
+          >
         </div>
         <div>
           <label class="text-sm font-semibold text-slate-700">昵称</label>
-          <input v-model="form.nickname" class="mt-2 h-11 w-full rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-teal-700" maxlength="50">
+          <input
+            v-model="form.nickname"
+            class="mt-2 h-11 w-full rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-teal-700"
+            maxlength="50"
+            placeholder="可选"
+          >
         </div>
         <div>
           <label class="text-sm font-semibold text-slate-700">密码</label>
-          <input v-model="form.password" autocomplete="new-password" class="mt-2 h-11 w-full rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-teal-700" type="password">
+          <input
+            v-model="form.password"
+            autocomplete="new-password"
+            class="mt-2 h-11 w-full rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-teal-700"
+            type="password"
+          >
           <p class="mt-1 text-xs text-slate-400">至少 8 个字符。</p>
         </div>
 
@@ -74,6 +99,7 @@ async function submit() {
     error.value = validationMessage
     return
   }
+
   submitting.value = true
   try {
     await register({

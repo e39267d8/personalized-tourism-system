@@ -71,7 +71,13 @@ const routes = [
   {
     path: '/achievements',
     name: 'Achievements',
-    component: () => import('@/views/Achievements.vue'),
+    component: () => import('@/views/Achievements.vue')
+  },
+  {
+    path: '/collectibles/:id',
+    name: 'CollectibleDetail',
+    component: () => import('@/views/CollectibleDetail.vue'),
+    props: route => ({ id: Number(route.params.id) }),
     meta: { requiresAuth: true }
   },
   {

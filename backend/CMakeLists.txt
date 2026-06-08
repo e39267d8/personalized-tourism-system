@@ -85,6 +85,7 @@ set(SERVICE_SOURCES
     src/services/scenic_service.cpp
     src/services/route_graph_service.cpp
     src/services/food_service.cpp
+    src/services/achievement_service.cpp
     src/services/huffman_compressor.cpp
     src/services/inverted_index.cpp
     src/services/index_manager.cpp

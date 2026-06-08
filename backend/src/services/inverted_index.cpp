@@ -1,6 +1,7 @@
 #include "services/inverted_index.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <cmath>
 #include <sstream>
 #include <unordered_set>
@@ -12,10 +13,6 @@ bool is_alpha_or_digit(uint8_t byte) {
     return (byte >= 'a' && byte <= 'z') ||
            (byte >= 'A' && byte <= 'Z') ||
            (byte >= '0' && byte <= '9');
-}
-
-bool is_chinese_byte(uint8_t byte) {
-    return byte >= 0x80;
 }
 
 // Parse UTF-8 character: returns next complete character substring and advances index.

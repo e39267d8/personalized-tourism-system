@@ -142,7 +142,8 @@ crow::json::wvalue scenic_json(const tourism::db::PgResult& rows, int row) {
     item["name"] = rows.value(row, "name");
     item["categoryId"] = category_id;
     item["category"] = category;
-    item["district"] = first_nonempty({rows.value(row, "city"), rows.value(row, "address")}, "北京");
+    item["city"] = rows.value(row, "city");
+    item["district"] = first_nonempty({rows.value(row, "city"), rows.value(row, "address")}, "");
     item["rating"] = to_double(rows.value(row, "rating"));
     item["duration"] = duration_label(rows.value(row, "duration_minutes"));
     item["ticket"] = static_cast<int>(to_double(rows.value(row, "ticket_price")));

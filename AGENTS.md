@@ -24,6 +24,9 @@ Frontend:
 - `frontend/src/stores/auth.js`: login state, token persistence, current user.
 - `frontend/src/views/TravelAgent.vue`: real API-backed AI travel assistant page.
 - `frontend/src/views/RoutePlan.vue`: Leaflet map and route planning page.
+- `frontend/src/views/FoodRecommend.vue`: food recommendation page backed by `/api/v1/foods`.
+- `frontend/src/views/Achievements.vue`: public travel passport / achievement overview page.
+- `frontend/src/views/CollectibleDetail.vue`: authenticated digital collectible certificate page.
 - `frontend/src/services/amapLoader.js`: AMap JS API loader for scenic internal navigation.
 - `frontend/src/utils/coordinates.js`: WGS84/GCJ-02 conversion helpers for AMap display and backend route requests.
 - `frontend/src/utils/images.js`: image selection priority and placeholders.
@@ -36,6 +39,7 @@ Backend:
 - `backend/src/api/*_routes.cpp`: route modules.
 - `backend/src/services/*_service.cpp`: business logic and external services.
 - `backend/src/services/auth_service.cpp`: password hashing and Bearer token lookup.
+- `backend/src/services/achievement_service.cpp`: travel passport achievement evaluation, check-ins, collectibles, badge redemptions, and lightweight diary review decisions.
 - `backend/src/db/postgres.cpp`: PostgreSQL connection/query helpers.
 - `backend/src/support/api_helpers.cpp`: response helpers, parameter parsing, headers.
 
@@ -52,13 +56,15 @@ Database:
 ## Backend Module Map
 
 - `dashboard_routes`: `/health`, `/`, `/api/v1/dashboard`, `/api/v1/achievements`.
+- Achievement APIs are also registered in `dashboard_routes`: scenic spot check-ins, achievement claim, collectibles, badge redemptions, and review submissions/decisions.
 - `auth_routes`: login, register, logout, current user, change password.
 - `profile_routes`: `/api/v1/profile`, `/api/v1/profile/preferences`.
 - `scenic_routes`: scenic spot list/search/detail/categories/suggestions/reviews, plus internal facilities/map/route APIs.
 - `recommendation_routes`: budget plans and personalized recommendations.
 - `route_routes`: route nodes, route list, route planning.
-- `diary_routes`: diaries, likes, bookmarks, ratings, comments.
+- `diary_routes`: diaries, likes, bookmarks, ratings, comments, achievement review submissions.
 - `aigc_routes`: diary summary, polish, travel chat.
+- `food_routes`: `/api/v1/foods`, `/api/v1/foods/cuisines`; recommendations use `facilities` restaurant/cafe/fast_food data, inferred cuisine labels, derived `hotScore`, and Top-K partial sorting.
 
 If adding a new API, add it to the matching `backend/src/api/*_routes.cpp` file and keep `main.cpp` small.
 
@@ -77,7 +83,30 @@ If adding a new API, add it to the matching `backend/src/api/*_routes.cpp` file 
 - `/diary/edit/:id`: `DiaryEditor.vue`
 - `/diary/:id`: `DiaryDetail.vue`
 - `/achievements`: `Achievements.vue`
+- `/collectibles/:id`: `CollectibleDetail.vue`
+- `/food`: `FoodRecommend.vue`
 - `/profile`: `Profile.vue`
+
+## Food Recommendation Rules
+
+- `/api/v1/foods` supports `scenic_spot_id`, `q`, `cuisine`, `sort=hot|rating|distance`, `lat/lng`, and `limit`.
+- Food candidates come from `facilities` where type is `restaurant`, `cafe`, or `fast_food`; scenic ownership may come from `facilities.scenic_spot_id` or linked `graph_nodes`.
+- Cuisine is inferred in C++ from facility names. Fuzzy search matches name, cuisine key/label, address, and scenic name; "window name" is treated as part of the food/facility name.
+- `sort=hot` uses a derived score only, not a database field: rating 50%, info completeness 20%, price friendliness 15%, type/name trust 15%.
+- Ranking uses `TopKSelector` to keep the first K results before final ordered response. API responses include `hotScore`, `matchReason`, `distanceMeters`, `sort`, and `algorithm`.
+
+## Achievement / Collectible Rules
+
+- The V1 achievement experience is a public "travel passport" at `/achievements`; unauthenticated users see examples, authenticated users see saved progress.
+- Protected achievement actions: `POST /api/v1/scenic-spots/:id/checkins`, `POST /api/v1/achievements/:id/claim`, `GET /api/v1/collectibles`, `GET /api/v1/collectibles/:id`, `GET/POST /api/v1/badge-redemptions`, and `POST /api/v1/diaries/:id/achievement-review`.
+- Lightweight review actions: `GET /api/v1/achievement-review-submissions` and `POST /api/v1/achievement-review-submissions/:id/decision`. V1 review permission is `demo_user` plus comma-separated `TOURISM_REVIEWER_USERNAMES`.
+- Achievement evaluation is centralized in `backend/src/services/achievement_service.cpp`. Call it after check-ins and diary create/update; do not duplicate rule logic in route handlers.
+- V1 has four tiers: basic scenic check-in, themed stamp collections, qualified travel diary, and master diary review queue.
+- `/api/v1/achievements` returns explanation fields for the passport UI: `requiredSpots`, `checkedSpots`, `missingSpots`, `nextAction`, and `redemptionHistory`.
+- Digital collectibles are simulated on-chain credentials. Do not add real blockchain/network calls unless explicitly requested; `token_id` and `blockchain_hash` are generated locally.
+- Digital collectible certificate pages can generate a local browser share-card image; this is frontend-only and should not call an image service.
+- Physical badges are redemption requests only. Status values are `pending`, `approved`, `rejected`, and `shipped`; there is no inventory, shipping, or admin fulfillment workflow in V1.
+- Check-ins use browser location when available; missing or failed geolocation falls back to self/demo verification.
 
 ## Image Rules
 
@@ -87,6 +116,10 @@ Scenic spot images use exactly three sources, in this order:
 2. Local pinyin-named images from `frontend/public/images/diary/`, resolved through `frontend/src/data/imageCatalog.js`.
 3. Frontend generated SVG placeholder from `frontend/src/utils/images.js`.
 
+- The local pinyin image catalog currently contains manually collected Beijing spot photos. `frontend/src/utils/images.js` must only use it when the spot has a Beijing context.
+- Beijing context is determined by structured region fields first: `city` / `province`, then `district`, then strict address fallback. Do not treat road names such as `北京西路` or `北京路` in non-Beijing cities as Beijing spots.
+- Backend scenic JSON should expose `city` when available, and should not fill missing region fields with a fake default Beijing value. Non-Beijing spots without database images should fall through to the SVG placeholder.
+
 Do not add remote random-image fallbacks.
 
 ## Auth Rules
@@ -95,9 +128,9 @@ Do not add remote random-image fallbacks.
 - Demo account: `demo_user / demo123456`.
 - Tokens are opaque 32-byte random values stored in `refresh_tokens`; they are not JWTs.
 - Frontend stores the token in `localStorage.token` and sends `Authorization: Bearer <token>`.
-- Protected frontend routes: `/profile`, `/achievements`, `/diary/new`, `/diary/edit/:id`.
-- User write actions require auth: profile preferences, diary create/update/delete, likes, bookmarks, ratings, comments.
-- Public browsing remains anonymous: home, search, scenic detail, route planning, AI assistant, diary list/detail.
+- Protected frontend routes: `/profile`, `/collectibles/:id`, `/diary/new`, `/diary/edit/:id`.
+- User write actions require auth: profile preferences, diary create/update/delete, likes, bookmarks, ratings, comments, scenic check-ins, achievement claim, collectible detail, physical badge redemption, and achievement review submission.
+- Public browsing remains anonymous: home, search, scenic detail, route planning, AI assistant, diary list/detail, `/food`, and `/achievements`.
 
 ## Run Commands
 
@@ -154,6 +187,7 @@ $env:TOURISM_LLM_MODEL="deepseek-chat"
 $env:AMAP_WEB_SERVICE_KEY="你的高德 Web Service Key，可选"
 $env:VITE_AMAP_JS_KEY="你的高德 JS API Key，可选"
 $env:VITE_AMAP_SECURITY_JS_CODE="你的高德 JS API 安全密钥，可选"
+$env:TOURISM_REVIEWER_USERNAMES="demo_user,reviewer_name"
 ```
 
 AMap Web Service route planning has a built-in free default key, so `AMAP_WEB_SERVICE_KEY` is optional. The frontend AMap JS API loader also has a built-in free JS API key; set `VITE_AMAP_JS_KEY` only when overriding it, and set `VITE_AMAP_SECURITY_JS_CODE` only if the AMap console security configuration requires it. DeepSeek has no built-in key and must use environment variables.
@@ -168,6 +202,10 @@ Invoke-WebRequest "http://127.0.0.1:8080/api/v1/search/suggestions?q=故宫"
 Invoke-WebRequest "http://127.0.0.1:8080/api/v1/budget-plans?budget=200"
 Invoke-WebRequest http://127.0.0.1:8080/api/v1/routes
 Invoke-WebRequest http://127.0.0.1:8080/api/v1/diaries
+Invoke-WebRequest "http://127.0.0.1:8080/api/v1/foods?scenic_spot_id=12&sort=hot&limit=10"
+Invoke-WebRequest http://127.0.0.1:8080/api/v1/achievements
+Invoke-WebRequest http://127.0.0.1:8080/api/v1/badge-redemptions -Headers @{Authorization="Bearer <token>"}
+Invoke-WebRequest "http://127.0.0.1:8080/api/v1/achievement-review-submissions?status=pending" -Headers @{Authorization="Bearer <reviewer-token>"}
 Invoke-WebRequest -Method POST http://127.0.0.1:8080/api/v1/auth/login -ContentType "application/json" -Body '{"identifier":"demo_user","password":"demo123456"}'
 ```
 
@@ -178,6 +216,8 @@ Frontend URLs:
 - `http://127.0.0.1:3000/agent`
 - `http://127.0.0.1:3000/route`
 - `http://127.0.0.1:3000/diary`
+- `http://127.0.0.1:3000/food`
+- `http://127.0.0.1:3000/achievements`
 
 ## Current Test Policy
 

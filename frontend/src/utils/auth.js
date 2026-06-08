@@ -1,4 +1,5 @@
 const DEFAULT_AUTH_REDIRECT = '/profile'
+const AUTH_PAGES = new Set(['/login', '/register'])
 
 export function safeRedirectPath(value, fallback = DEFAULT_AUTH_REDIRECT) {
   if (typeof value !== 'string') return fallback
@@ -6,6 +7,7 @@ export function safeRedirectPath(value, fallback = DEFAULT_AUTH_REDIRECT) {
   if (!redirect || redirect[0] !== '/') return fallback
   if (redirect.startsWith('//') || redirect.startsWith('/\\')) return fallback
   if (/[\r\n]/.test(redirect)) return fallback
+  if (AUTH_PAGES.has(redirect.split(/[?#]/)[0])) return fallback
   return redirect
 }
 

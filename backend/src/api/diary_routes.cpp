@@ -1,6 +1,7 @@
 #include "api/diary_routes.h"
 
 #include "db/postgres.h"
+#include "services/achievement_service.h"
 #include "services/auth_service.h"
 #include "services/huffman_compressor.h"
 #include "services/index_manager.h"
@@ -13,6 +14,8 @@ using tourism::db::PgConnection;
 using tourism::db::PgResult;
 using tourism::db::exec_params;
 using tourism::services::current_user;
+using tourism::services::evaluate_user_achievements;
+using tourism::services::submit_achievement_review;
 using tourism::support::distance_number;
 using tourism::support::first_nonempty;
 using tourism::support::json_error;
@@ -37,6 +40,7 @@ const std::string kDiarySelectSql = R"SQL(
            COALESCE(d.rating_score, 0)::text AS rating_score,
            COALESCE(d.rating_count, 0)::text AS rating_count,
            COALESCE(d.bookmark_count, 0)::text AS bookmark_count,
+           d.user_id::text AS author_id,
            COALESCE(u.username, '旅行者') AS author_nickname,
            '' AS author_avatar
     FROM travel_diaries d
@@ -66,6 +70,7 @@ crow::json::wvalue diary_json(const PgResult& rows, int row) {
     item["images"] = std::move(imgs);
 
     item["author"]["nickname"] = first_nonempty({rows.value(row, "author_nickname")}, "旅行者");
+    item["author"]["id"] = to_int(rows.value(row, "author_id"));
     item["author"]["avatar"] = rows.value(row, "author_avatar");
 
     item["stats"]["views"] = to_int(rows.value(row, "view_count"));
@@ -340,9 +345,11 @@ void register_diary_routes(TourismApp& app) {
                           view_count::text, like_count::text, comment_count::text,
                           status::text,
                           '0'::text AS rating_score, '0'::text AS rating_count, '0'::text AS bookmark_count,
+                          $9::text AS author_id,
                           '' AS author_nickname, '' AS author_avatar
             )SQL", {title, summary_from(content), content, std::to_string(status), date, distance, images_pg, tags, std::to_string(user->id)});
 
+            evaluate_user_achievements(db, user->id);
             return crow::response(201, ok(diary_json(rows, 0)));
         } catch (const std::exception& error) {
             return json_error(500, error.what());
@@ -381,10 +388,12 @@ void register_diary_routes(TourismApp& app) {
                           COALESCE(rating_score, 0)::text AS rating_score,
                           COALESCE(rating_count, 0)::text AS rating_count,
                           COALESCE(bookmark_count, 0)::text AS bookmark_count,
+                          $10::text AS author_id,
                           '' AS author_nickname, '' AS author_avatar
             )SQL", {title, summary_from(content), content, std::to_string(status), date, distance, images_pg, tags, std::to_string(id), std::to_string(user->id)});
 
             if (rows.rows() == 0) return json_error(404, "Diary not found");
+            evaluate_user_achievements(db, user->id);
             return crow::response(ok(diary_json(rows, 0)));
         } catch (const std::exception& error) {
             return json_error(500, error.what());
@@ -557,6 +566,17 @@ void register_diary_routes(TourismApp& app) {
             data["total"] = static_cast<int>(items.size());
             data["items"] = std::move(items);
             return crow::response(ok(std::move(data)));
+        } catch (const std::exception& error) {
+            return json_error(500, error.what());
+        }
+    });
+
+    CROW_ROUTE(app, "/api/v1/diaries/<int>/achievement-review").methods("POST"_method)([](const crow::request& req, int id) -> crow::response {
+        try {
+            PgConnection db;
+            auto user = current_user(db, req);
+            if (!user) return json_error(401, "请先登录");
+            return crow::response(201, ok(submit_achievement_review(db, user->id, id)));
         } catch (const std::exception& error) {
             return json_error(500, error.what());
         }

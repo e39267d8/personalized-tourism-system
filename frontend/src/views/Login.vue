@@ -4,7 +4,9 @@
       <div>
         <p class="text-sm font-semibold text-teal-700">欢迎回来</p>
         <h1 class="mt-2 text-2xl font-bold text-slate-950">登录 TourPilot</h1>
-        <p class="mt-2 text-sm leading-6 text-slate-500">登录后可以保存偏好、发布游记、收藏和评论。</p>
+        <p class="mt-2 text-sm leading-6 text-slate-500">
+          登录后可以保存偏好、发布游记、收集旅行印章并领取数字纪念凭证。
+        </p>
       </div>
 
       <form class="mt-6 space-y-4" @submit.prevent="submit">
@@ -75,6 +77,7 @@ async function submit() {
     error.value = validationMessage
     return
   }
+
   submitting.value = true
   try {
     await login({ identifier: form.identifier.trim(), password: form.password })
