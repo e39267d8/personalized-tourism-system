@@ -21,20 +21,40 @@ C:\Users\seele\Desktop\code\personalized-tourism-system
 
 ## 2. 初始化数据库
 
-如果数据库不存在，先创建：
+`git pull` 只会更新代码和 SQL 文件，不会自动更新本机 PostgreSQL。室内导航依赖新增的 `indoor_*` 表和北大红楼首批室内图数据；如果没有执行数据库 setup，页面会显示“未接入”。
+
+推荐直接使用统一脚本：
+
+```powershell
+.\scripts\setup_database.cmd
+```
+
+脚本默认连接 `tourism_system`：
+
+- 全新数据库：自动创建数据库并导入基础表、高德 POI、景区内部导航、室内导航和演示数据。
+- 已有 lxd/yhm 数据库：只补室内导航迁移和种子数据，不会新建第二套数据库。
+- 结束时会输出北大红楼室内导航验证结果和可访问的 `/spots/:id` 页面。
+
+如果不用脚本，手动初始化顺序如下：
 
 ```powershell
 createdb -U postgres tourism_system
-```
-
-初始化：
-
-```powershell
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\schema.sql
 psql -U postgres -d tourism_system -f database\imports\amap_pois.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\internal_navigation_schema.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\imports\internal_navigation.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\indoor_navigation_schema.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seed_demo.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seed_indoor_navigation.sql
 psql -U postgres -d tourism_system -f database\maintenance\repair_data_quality.sql
 psql -U postgres -d tourism_system -f database\verify_demo.sql
+```
+
+已有数据库只补室内导航：
+
+```powershell
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\indoor_navigation_schema.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seed_indoor_navigation.sql
 ```
 
 如需覆盖数据库连接：

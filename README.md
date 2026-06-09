@@ -180,6 +180,22 @@ PowerShell 的 `$env:...` 只对当前窗口和它启动的子进程生效。需
 
 ## 快速启动
 
+先初始化或补齐数据库。`git pull` 只会更新代码和 SQL 文件，不会自动修改本机 PostgreSQL；室内导航依赖新增的 `indoor_*` 表和北大红楼首批室内图数据，所以团队成员拉取分支后必须先跑一次数据库 setup。
+
+推荐使用统一脚本：
+
+```powershell
+.\scripts\setup_database.cmd
+```
+
+脚本默认使用 `tourism_system`：
+
+- 如果本机还没有核心表，会按完整顺序导入基础 schema、高德 POI、景区内部导航、室内导航和演示数据。
+- 如果本机已经有 lxd/yhm 的旧数据库，会只补执行室内导航迁移和种子数据，不会新建第二套数据库。
+- 执行结束会输出北大红楼室内导航验证结果和应打开的 `/spots/:id` 页面。
+
+如果不用脚本，也可以手动执行完整初始化：
+
 ```powershell
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\schema.sql
 psql -U postgres -d tourism_system -f database\imports\amap_pois.sql
@@ -188,7 +204,18 @@ psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\imports\intern
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\indoor_navigation_schema.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seed_demo.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seed_indoor_navigation.sql
+```
 
+已有数据库只补室内导航时：
+
+```powershell
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\indoor_navigation_schema.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seed_indoor_navigation.sql
+```
+
+数据库完成后再启动服务：
+
+```powershell
 $env:TOURISM_LLM_API_KEY="你的 DeepSeek API Key"
 $env:TOURISM_LLM_BASE_URL="https://api.deepseek.com"
 $env:TOURISM_LLM_MODEL="deepseek-chat"

@@ -191,12 +191,36 @@ Added:
 
 - `docs/indoor_navigation_plan.md`
 - `docs/changes_after_lxd.md`
+- `scripts/setup_database.cmd`
+- `scripts/setup_database.ps1`
 
 `AGENTS.md` now includes hard engineering rules for indoor navigation and data
 management, so future AI agents or teammates should not recreate a second
 database or bypass existing API boundaries.
 
-## Import Order
+## Database Setup And Import Order
+
+Pulling the branch only updates code and SQL files. It does not update a
+teammate's local PostgreSQL database. If the indoor migration and seed are not
+applied, the scenic detail page can show the indoor navigation component but the
+panel will correctly display "not connected" because `indoor_buildings` has no
+matching row.
+
+Recommended entry point:
+
+```powershell
+.\scripts\setup_database.cmd
+```
+
+The script keeps the single database rule:
+
+- Database name defaults to `tourism_system`.
+- `Auto` mode imports everything for a new database.
+- `Auto` mode only applies indoor migration and seed for an existing database.
+- It prints the Beida Red Building indoor verification result and the expected
+  `/spots/:id` page.
+
+Manual import order is kept below only for troubleshooting.
 
 For a new local database:
 
@@ -219,6 +243,29 @@ psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seed_indoor_na
 ```
 
 ## Verification Commands
+
+After database setup, verify that the indoor seed is in the same database:
+
+```powershell
+psql -U postgres -d tourism_system -c "SELECT b.id, b.scenic_spot_id, s.name, b.name, b.provider, (SELECT COUNT(*) FROM indoor_features f WHERE f.building_id = b.id) AS features FROM indoor_buildings b JOIN scenic_spots s ON s.id = b.scenic_spot_id;"
+```
+
+Expected result:
+
+```text
+北大红楼 / Beida Red Building Main Hall / local_indoor_graph / 10 features
+```
+
+After starting the backend, verify the API:
+
+```powershell
+Invoke-WebRequest http://127.0.0.1:8080/api/v1/scenic-spots/39/indoor-buildings
+```
+
+If the SQL query has a different `scenic_spot_id`, use that id in the API URL and
+the frontend `/spots/:id` page.
+
+Build and static checks:
 
 ```powershell
 python scripts\audit_project_data.py
@@ -261,7 +308,6 @@ Recommended workflow:
 
 ## Remaining Work
 
-- Import the indoor migration and seed into the local PostgreSQL database.
 - Add at least one API smoke test against a running backend after import.
 - Optionally add a second real building once a reliable AMap indoor `cpid` is
   confirmed.
