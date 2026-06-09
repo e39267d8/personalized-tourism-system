@@ -14,15 +14,9 @@
 - `verify_demo.sql`：初始化后检查核心表数据量。
 - `migration.sql`：旧数据库升级参考；全新建库通常不需要执行。
 
-推荐优先使用统一脚本。`git pull` 不会自动更新本机 PostgreSQL；如果只拉代码但不执行数据库 setup，室内导航会显示“未接入”。
+`git pull` 不会自动更新本机 PostgreSQL；如果只拉代码但不执行对应 SQL 迁移和 seed，室内导航会显示“未接入”。所有数据仍然进入唯一数据库 `tourism_system`。
 
-```powershell
-.\scripts\setup_database.cmd
-```
-
-脚本会复用唯一数据库 `tourism_system`。全新数据库走完整导入；已有数据库只补室内导航迁移和种子数据。
-
-手动完整初始化顺序：
+全新数据库完整初始化顺序：
 
 ```bat
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\schema.sql
@@ -41,6 +35,12 @@ psql -U postgres -d tourism_system -f database\verify_demo.sql
 ```bat
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\indoor_navigation_schema.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seed_indoor_navigation.sql
+```
+
+补完后验证室内导航数据：
+
+```bat
+psql -U postgres -d tourism_system -c "SELECT b.scenic_spot_id, s.name, b.name, b.provider, (SELECT COUNT(*) FROM indoor_features f WHERE f.building_id = b.id) AS features FROM indoor_buildings b JOIN scenic_spots s ON s.id = b.scenic_spot_id;"
 ```
 
 ## 数据维护文件

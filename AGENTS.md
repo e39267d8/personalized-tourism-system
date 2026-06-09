@@ -57,6 +57,14 @@ Database:
 - `scripts/import_internal_map_data.py`: generates real-map internal navigation SQL from OSM/Overpass roads/buildings and AMap nearby facilities. It stores all geometry as WGS84; AMap POIs are queried in GCJ-02 and converted back to WGS84 before SQL output.
 - `scripts/audit_project_data.py`: read-only audit for AMap POI counts, local scenic inserts, and indoor navigation seed/schema coverage.
 
+Documentation:
+
+- `README.md`: project overview and common run commands.
+- `QUICKSTART.md`: minimal local startup and database initialization steps.
+- `docs/engineering_log.md`: concise chronological engineering record. Append important changes here instead of creating a new branch-specific change document each time.
+- `docs/adr/`: architecture decision records. Use ADRs for major decisions that explain why a design was chosen.
+- `docs/changes_after_lxd.md`: historical phase document for the lxd handoff; do not duplicate this pattern for every future branch.
+
 ## Backend Module Map
 
 - `dashboard_routes`: `/health`, `/`, `/api/v1/dashboard`, `/api/v1/achievements`.

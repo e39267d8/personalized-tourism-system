@@ -191,8 +191,6 @@ Added:
 
 - `docs/indoor_navigation_plan.md`
 - `docs/changes_after_lxd.md`
-- `scripts/setup_database.cmd`
-- `scripts/setup_database.ps1`
 
 `AGENTS.md` now includes hard engineering rules for indoor navigation and data
 management, so future AI agents or teammates should not recreate a second
@@ -206,21 +204,9 @@ applied, the scenic detail page can show the indoor navigation component but the
 panel will correctly display "not connected" because `indoor_buildings` has no
 matching row.
 
-Recommended entry point:
-
-```powershell
-.\scripts\setup_database.cmd
-```
-
-The script keeps the single database rule:
-
-- Database name defaults to `tourism_system`.
-- `Auto` mode imports everything for a new database.
-- `Auto` mode only applies indoor migration and seed for an existing database.
-- It prints the Beida Red Building indoor verification result and the expected
-  `/spots/:id` page.
-
-Manual import order is kept below only for troubleshooting.
+The formal setup entry is the SQL migration/import order below. The project does
+not keep a personal one-click setup script as the source of truth; migration SQL,
+seed SQL, and verification commands are the team contract.
 
 For a new local database:
 
