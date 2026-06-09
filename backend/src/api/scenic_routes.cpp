@@ -335,23 +335,24 @@ struct IndoorRouteResult {
 };
 
 std::string indoor_feature_type_label(const std::string& type) {
-    if (type == "entrance") return "Entrance";
-    if (type == "hallway") return "Hallway";
-    if (type == "service") return "Service";
-    if (type == "toilet") return "Restroom";
-    if (type == "exhibition") return "Exhibition";
-    if (type == "elevator") return "Elevator";
-    if (type == "stairs") return "Stairs";
-    if (type == "shop") return "Shop";
-    if (type == "cafe") return "Cafe";
-    return type.empty() ? "Feature" : type;
+    if (type == "entrance") return "入口";
+    if (type == "hallway") return "大厅/走廊";
+    if (type == "service") return "服务点";
+    if (type == "toilet") return "卫生间";
+    if (type == "exhibition") return "展厅";
+    if (type == "elevator") return "电梯";
+    if (type == "stairs") return "楼梯";
+    if (type == "room") return "房间";
+    if (type == "shop") return "商店";
+    if (type == "cafe") return "咖啡";
+    return type.empty() ? "节点" : type;
 }
 
 std::string indoor_edge_type_label(const std::string& type) {
-    if (type == "corridor") return "Corridor";
-    if (type == "elevator") return "Elevator";
-    if (type == "stairs") return "Stairs";
-    return type.empty() ? "Path" : type;
+    if (type == "corridor") return "通道";
+    if (type == "elevator") return "电梯";
+    if (type == "stairs") return "楼梯";
+    return type.empty() ? "路径" : type;
 }
 
 std::string normalize_indoor_strategy(std::string strategy) {
@@ -420,6 +421,19 @@ crow::json::wvalue indoor_feature_json(const IndoorFeature& feature) {
     item["provider"] = feature.provider;
     item["source"] = feature.source;
     item["sourceRef"] = feature.source_ref;
+    return item;
+}
+
+crow::json::wvalue indoor_edge_json(const IndoorEdge& edge) {
+    crow::json::wvalue item;
+    item["id"] = edge.id;
+    item["fromFeatureId"] = edge.from;
+    item["toFeatureId"] = edge.to;
+    item["distanceMeters"] = static_cast<int>(std::round(edge.distance));
+    item["durationSeconds"] = edge.travel_time;
+    item["edgeType"] = edge.type;
+    item["edgeTypeLabel"] = indoor_edge_type_label(edge.type);
+    item["provider"] = edge.provider;
     return item;
 }
 
@@ -570,9 +584,9 @@ crow::json::wvalue indoor_step_json(const IndoorFeature& from,
                                     const IndoorFeature& to,
                                     const IndoorEdge& edge,
                                     int order) {
-    std::string instruction = "Go from " + from.name + " to " + to.name;
-    if (edge.type == "elevator") instruction = "Take elevator from " + from.floor_name + " to " + to.floor_name;
-    if (edge.type == "stairs") instruction = "Take stairs from " + from.floor_name + " to " + to.floor_name;
+    std::string instruction = "从 " + from.name + " 前往 " + to.name;
+    if (edge.type == "elevator") instruction = "乘电梯从 " + from.floor_name + " 前往 " + to.floor_name;
+    if (edge.type == "stairs") instruction = "走楼梯从 " + from.floor_name + " 前往 " + to.floor_name;
 
     crow::json::wvalue item;
     item["order"] = order;
@@ -917,6 +931,9 @@ void register_scenic_routes(TourismApp& app) {
             crow::json::wvalue::list floors;
             for (int row = 0; row < floor_rows.rows(); ++row) floors.push_back(indoor_floor_json(floor_rows, row));
 
+            crow::json::wvalue::list edges;
+            for (const auto& edge : load_indoor_edges(db, id)) edges.push_back(indoor_edge_json(edge));
+
             std::map<std::string, int> type_counts;
             crow::json::wvalue::list items;
             for (int row = 0; row < rows.rows(); ++row) {
@@ -939,6 +956,7 @@ void register_scenic_routes(TourismApp& app) {
             data["items"] = std::move(items);
             data["floors"] = std::move(floors);
             data["types"] = std::move(types);
+            data["edges"] = std::move(edges);
             return crow::response(ok(std::move(data)));
         } catch (const std::exception& error) {
             return json_error(500, error.what());

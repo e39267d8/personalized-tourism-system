@@ -1,15 +1,13 @@
 SET client_encoding = 'UTF8';
 
 -- =====================================================
--- TourPilot indoor navigation seed data
+-- TourPilot 室内导航种子数据
 -- =====================================================
--- Scope:
---   1. Uses the same tourism_system database and binds to scenic_spots that
---      were imported from AMap POI data.
---   2. Adds a small formal indoor navigation data slice for Beida Red Building
---      (北京大学红楼 / 北大红楼), which exists in the current AMap import.
---   3. Uses local_indoor_graph as the first local provider. AMap indoor
---      building ids can be filled later in indoor_buildings.amap_cpid.
+-- 范围：
+--   1. 只使用 tourism_system 数据库，并绑定到高德 POI 离线导入的 scenic_spots。
+--   2. 为北大红楼补充一小份正式室内导航图数据。
+--   3. 当前 provider 为 local_indoor_graph；后续如接入高德室内图，可补充
+--      indoor_buildings.amap_cpid。
 
 BEGIN;
 
@@ -45,7 +43,7 @@ LIMIT 1;
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM tmp_indoor_spots WHERE spot_key = 'red_building') THEN
-        RAISE EXCEPTION 'Cannot bind indoor seed to AMap scenic_spots: Beida Red Building POI not found';
+        RAISE EXCEPTION '无法绑定室内导航种子数据：未找到北大红楼对应的高德 POI';
     END IF;
 END $$;
 
@@ -54,13 +52,13 @@ INSERT INTO indoor_buildings
      has_indoor_map, description, default_floor_code)
 SELECT
     scenic_spot_id,
-    'Beida Red Building Main Hall',
+    '北大红楼主楼',
     'local_indoor_graph',
     'manual-curated',
     'red-building:indoor-building:main',
     '',
     FALSE,
-    'Formal local indoor graph for Beida Red Building visitor route. Used when official AMap indoor routing is unavailable.',
+    '北大红楼参观动线的本地室内图数据；当高德官方室内路线不可用时使用本地图计算。',
     'F1'
 FROM tmp_indoor_spots
 WHERE spot_key = 'red_building'
@@ -82,8 +80,8 @@ CREATE TEMP TABLE tmp_indoor_floors (
 ) ON COMMIT DROP;
 
 INSERT INTO tmp_indoor_floors VALUES
-    ('red-building:indoor-building:main', 'F1', 'Floor 1', 1, 'red-building:floor:F1'),
-    ('red-building:indoor-building:main', 'F2', 'Floor 2', 2, 'red-building:floor:F2');
+    ('red-building:indoor-building:main', 'F1', '一层', 1, 'red-building:floor:F1'),
+    ('red-building:indoor-building:main', 'F2', '二层', 2, 'red-building:floor:F2');
 
 INSERT INTO indoor_floors
     (building_id, floor_code, floor_name, floor_index, provider, source, source_ref)
@@ -116,16 +114,16 @@ CREATE TEMP TABLE tmp_indoor_features (
 ) ON COMMIT DROP;
 
 INSERT INTO tmp_indoor_features VALUES
-    ('red-building:indoor-building:main', 'red-building:floor:F1', 'Main Entrance', 'entrance', 10, 50, 'red-building:feature:main-entrance', 10),
-    ('red-building:indoor-building:main', 'red-building:floor:F1', 'F1 Lobby', 'hallway', 28, 50, 'red-building:feature:f1-lobby', 20),
-    ('red-building:indoor-building:main', 'red-building:floor:F1', 'Ticket And Service Desk', 'service', 42, 42, 'red-building:feature:service-desk', 30),
-    ('red-building:indoor-building:main', 'red-building:floor:F1', 'Permanent Exhibition Hall', 'exhibition', 68, 54, 'red-building:feature:permanent-exhibition', 40),
-    ('red-building:indoor-building:main', 'red-building:floor:F1', 'F1 Restroom', 'toilet', 70, 32, 'red-building:feature:f1-restroom', 50),
-    ('red-building:indoor-building:main', 'red-building:floor:F1', 'F1 Stairs', 'stairs', 32, 66, 'red-building:feature:f1-stairs', 60),
-    ('red-building:indoor-building:main', 'red-building:floor:F2', 'F2 Stairs', 'stairs', 32, 66, 'red-building:feature:f2-stairs', 70),
-    ('red-building:indoor-building:main', 'red-building:floor:F2', 'History Exhibition Room', 'exhibition', 62, 55, 'red-building:feature:history-room', 80),
-    ('red-building:indoor-building:main', 'red-building:floor:F2', 'Reading Room', 'room', 48, 38, 'red-building:feature:reading-room', 90),
-    ('red-building:indoor-building:main', 'red-building:floor:F2', 'F2 Restroom', 'toilet', 72, 34, 'red-building:feature:f2-restroom', 100);
+    ('red-building:indoor-building:main', 'red-building:floor:F1', '主入口', 'entrance', 10, 50, 'red-building:feature:main-entrance', 10),
+    ('red-building:indoor-building:main', 'red-building:floor:F1', '一层大厅', 'hallway', 28, 50, 'red-building:feature:f1-lobby', 20),
+    ('red-building:indoor-building:main', 'red-building:floor:F1', '票务服务台', 'service', 42, 42, 'red-building:feature:service-desk', 30),
+    ('red-building:indoor-building:main', 'red-building:floor:F1', '基本陈列展厅', 'exhibition', 68, 54, 'red-building:feature:permanent-exhibition', 40),
+    ('red-building:indoor-building:main', 'red-building:floor:F1', '一层卫生间', 'toilet', 70, 32, 'red-building:feature:f1-restroom', 50),
+    ('red-building:indoor-building:main', 'red-building:floor:F1', '一层楼梯', 'stairs', 32, 66, 'red-building:feature:f1-stairs', 60),
+    ('red-building:indoor-building:main', 'red-building:floor:F2', '二层楼梯', 'stairs', 32, 66, 'red-building:feature:f2-stairs', 70),
+    ('red-building:indoor-building:main', 'red-building:floor:F2', '历史展室', 'exhibition', 62, 55, 'red-building:feature:history-room', 80),
+    ('red-building:indoor-building:main', 'red-building:floor:F2', '阅览室', 'room', 48, 38, 'red-building:feature:reading-room', 90),
+    ('red-building:indoor-building:main', 'red-building:floor:F2', '二层卫生间', 'toilet', 72, 34, 'red-building:feature:f2-restroom', 100);
 
 INSERT INTO indoor_features
     (building_id, floor_id, name, type, x, y, provider, source, source_ref, is_public, sort_order)

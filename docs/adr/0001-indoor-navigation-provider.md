@@ -1,39 +1,27 @@
-# 0001 Indoor Navigation Provider Model
+# 0001 室内导航 Provider 模型
 
-Status: accepted
+状态：已接受
 
-Date: 2026-06-09
+日期：2026-06-09
 
-## Context
+## 背景
 
-The course project needs indoor navigation, but full large-scale indoor map
-coverage is too costly for the current scope. At the same time, the feature
-should not be a fake frontend-only demo. It needs formal data modeling, backend
-route planning, provider boundaries, and a clear explanation for defense.
+课设需要室内导航，但在当前规模下做完整的大型室内地图产品成本过高。与此同时，室内导航不能做成前端假 Demo，必须具备正式的数据模型、后端路线规划、provider 边界和可答辩的算法说明。
 
-The project already has one PostgreSQL/PostGIS database, `tourism_system`, and
-offline AMap scenic POI imports in `database/imports/amap_pois.sql`.
+项目已有唯一运行数据库 `tourism_system`，景点主数据来自 `database/imports/amap_pois.sql` 中的高德 POI 离线导入。
 
-## Decision
+## 决策
 
-Indoor navigation uses a provider model:
+室内导航采用 provider 模型：
 
-- `amap_indoor`: reserved for official AMap indoor map capability, such as
-  `cpid`, floor data, and future indoor routePath integration.
-- `local_indoor_graph`: implemented local provider using indoor graph tables and
-  backend Dijkstra over `indoor_edges`.
+- `amap_indoor`：预留给高德官方室内图能力，例如 `cpid`、楼层数据和后续室内 `routePath` 接入。
+- `local_indoor_graph`：当前已实现的本地 provider，使用室内图表和后端 Dijkstra 在 `indoor_edges` 上计算路线。
 
-All indoor navigation data stays in the existing `tourism_system` database.
-The first phase may cover a small number of real buildings, but it must use the
-same formal schema, API, source fields, provider fields, and verification rules
-expected by a larger implementation.
+所有室内导航数据都保存在现有 `tourism_system` 数据库中。首期可以只覆盖少量真实建筑，但必须使用正式的表结构、API、数据来源字段、provider 字段和验证规则。
 
-## Consequences
+## 影响
 
-- AMap data availability does not block course-project verification.
-- The project can explain both official provider integration and local algorithm
-  fallback.
-- Future buildings can be added by inserting more indoor building, floor,
-  feature, and edge rows without redesigning the API.
-- Teammates must apply database migration and seed SQL after pulling code when
-  their local PostgreSQL database is behind.
+- 高德室内数据是否可用不会阻塞课设验收。
+- 答辩时可以同时讲清“官方 provider 接入边界”和“本地图算法兜底”。
+- 后续增加建筑时，只需要继续插入室内建筑、楼层、节点和边，不需要重做 API。
+- 队友拉取代码后，如果本地 PostgreSQL 没有更新，必须手动执行室内导航迁移和 seed SQL。

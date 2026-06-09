@@ -96,6 +96,31 @@ tourismApi.scenicSpots(params)
 
 景点详情页的评价列表。
 
+### 室内导航
+
+| 方法 | 路径 | 用途 |
+| --- | --- | --- |
+| `GET` | `/api/v1/scenic-spots/<id>/indoor-buildings` | 查询景点已接入的室内导航建筑 |
+| `GET` | `/api/v1/indoor-buildings/<id>/features` | 查询室内楼层、节点、类型和拓扑边 |
+| `POST` | `/api/v1/indoor-buildings/<id>/routes/plan` | 基于室内图规划路线 |
+
+`features` 响应包含 `items`、`floors`、`types` 和 `edges`。其中
+`items` 来自 `indoor_features`，`edges` 来自 `indoor_edges`，前端用它们绘制
+SVG 室内拓扑图。
+
+路线规划 payload：
+
+```json
+{
+  "startFeatureId": 1,
+  "endFeatureId": 8,
+  "strategy": "time"
+}
+```
+
+路线响应包含 `distanceMeters`、`durationSeconds`、`algorithm`、`path` 和
+`steps`。`path` 用于拓扑图节点高亮，`steps` 用于展示楼层内和跨楼层路径步骤。
+
 ## 推荐与预算
 
 ### `GET /api/v1/budget-plans`

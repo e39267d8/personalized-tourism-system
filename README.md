@@ -241,7 +241,8 @@ npm run dev
 ```powershell
 cmake --build backend\build-codex-verify-mingw
 
-python scripts\audit_project_data.py
+psql -U postgres -d tourism_system -c "SELECT COUNT(*) AS scenic_spot_count FROM scenic_spots;"
+psql -U postgres -d tourism_system -c "SELECT b.id, s.name AS scenic_spot, b.name AS indoor_building, b.provider, (SELECT COUNT(*) FROM indoor_features f WHERE f.building_id = b.id) AS features FROM indoor_buildings b JOIN scenic_spots s ON s.id = b.scenic_spot_id;"
 
 cd frontend
 npm.cmd run lint

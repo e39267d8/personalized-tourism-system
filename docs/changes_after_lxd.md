@@ -1,58 +1,45 @@
-# Changes After Pulling The lxd Branch
+# 拉取 lxd 分支后的阶段改动记录
 
-This document records the project changes made after using the `lxd` branch as
-the continuation baseline. It is meant for team collaboration, defense
-preparation, and avoiding repeated work.
+本文记录以 `lxd` 分支为继续开发基础后完成的一组阶段性改动。它是历史交接文档，不要以后每次拉分支都复制一份新文档；后续普通变更请追加到 `docs/engineering_log.md`。
 
-## Baseline Understanding
+## 基线理解
 
-The project baseline after pulling `lxd` already had:
+拉取 `lxd` 后，项目已经具备：
 
-- Vue 3 frontend with scenic detail, scenic search, route planning, food,
-  achievements, diaries, and AI assistant pages.
-- C++ Crow backend with modular route files.
-- One PostgreSQL/PostGIS database: `tourism_system`.
-- Offline AMap POI import file: `database/imports/amap_pois.sql`.
-- Existing scenic-area internal navigation based on `facilities`,
-  `graph_nodes`, `graph_edges`, OSM/Overpass imports, AMap JS display, and
-  backend route planning.
+- Vue 3 前端，包含景点详情、景点搜索、路线规划、美食推荐、成就、游记、AI 助手等页面。
+- C++ Crow 后端，并已按 route module 拆分。
+- 唯一 PostgreSQL/PostGIS 数据库：`tourism_system`。
+- 高德 POI 离线导入文件：`database/imports/amap_pois.sql`。
+- 景区内部导航能力：基于 `facilities`、`graph_nodes`、`graph_edges`、OSM/Overpass 导入、高德 JS 地图展示和后端路线规划。
 
-Important data conclusion:
+重要数据结论：
 
-- The 3476 scenic spot records are AMap POIs collected through the official AMap
-  API, generated into SQL, and imported locally.
-- Runtime scenic pages mainly read local PostgreSQL data instead of calling AMap
-  POI search on every page view.
-- Locally authored scenic spot inserts outside the AMap import are currently 0.
+- 3476 条景点记录来自高德官方 API，一次性生成 SQL 后导入本地库。
+- 系统运行时的景点页面主要读取本地 PostgreSQL，不是每次都实时请求高德 POI 搜索。
+- 当前没有在高德导入外再维护第二套人工景点表。
 
-## Why These Changes Were Made
+## 为什么做这些改动
 
-The course project needs indoor navigation, but building a full large-scale
-indoor map product is not cost-effective. The chosen direction is:
+课设需要室内导航，但完整大规模室内地图建设成本太高。因此采用以下方向：
 
-- Build indoor navigation as a real engineering capability.
-- Keep the first phase small in coverage.
-- Avoid fake one-off demos.
-- Keep data, provider, API, algorithm, and audit boundaries formal.
-- Keep all data in the existing `tourism_system` database.
+- 室内导航按正式工程能力建设。
+- 首期只控制覆盖体量，不降低工程标准。
+- 不做孤立假 Demo。
+- 保持数据、provider、API、算法和审计边界清晰。
+- 所有数据继续放在 `tourism_system`。
 
-## Main Architectural Decision
+## 架构决策
 
-Indoor navigation now uses a provider model:
+室内导航采用 provider 模型：
 
-- `amap_indoor`: reserved preferred provider for official AMap indoor capability
-  such as indoor map, `cpid`, floor data, and future browser-side routePath
-  integration.
-- `local_indoor_graph`: local formal provider based on indoor graph tables and
-  backend Dijkstra. This is the current implemented provider and the course
-  defense fallback.
+- `amap_indoor`：预留给高德官方室内图能力，例如 `cpid`、楼层数据和后续浏览器侧室内路线接入。
+- `local_indoor_graph`：当前实现的本地正式 provider，基于室内图表和后端 Dijkstra，是课设验收与答辩的稳定兜底。
 
-The first phase implements `local_indoor_graph` for one real building. This
-keeps the work realistic while preserving extension paths.
+首期实现北大红楼一个真实建筑的本地室内图，后续可继续扩展更多建筑。
 
-## Database Changes
+## 数据库改动
 
-Added indoor domain tables to `database/schema.sql`:
+新增室内导航领域表：
 
 - `indoor_buildings`
 - `indoor_floors`
@@ -60,25 +47,25 @@ Added indoor domain tables to `database/schema.sql`:
 - `indoor_edges`
 - `indoor_route_audit`
 
-Added incremental migration:
+新增增量迁移：
 
 - `database/indoor_navigation_schema.sql`
 
-Added first indoor seed:
+新增室内数据 seed：
 
 - `database/seed_indoor_navigation.sql`
 
-Seed coverage:
+当前 seed 覆盖：
 
-- One real scenic spot binding: Beida Red Building / 北大红楼.
-- One building: `Beida Red Building Main Hall`.
-- Two floors: `F1`, `F2`.
-- Ten indoor features.
-- Eighteen directed indoor edges.
-- Provider: `local_indoor_graph`.
-- Data source: `manual-curated`.
+- 真实景点绑定：北大红楼。
+- 室内建筑：北大红楼主楼。
+- 楼层：F1、F2。
+- 室内节点：10 个。
+- 有向边：18 条。
+- Provider：`local_indoor_graph`。
+- 数据来源：`manual-curated`。
 
-All indoor rows use:
+所有室内数据行都带有：
 
 - `provider`
 - `source`
@@ -86,17 +73,15 @@ All indoor rows use:
 - `created_at`
 - `updated_at`
 
-The seed binds to existing AMap-imported scenic spots by name and a narrow
-coordinate fallback. If the target POI cannot be found, it raises an explicit SQL
-error instead of silently binding to a wrong scenic spot.
+seed 通过名称和小范围坐标兜底绑定到已有高德 POI。如果找不到目标 POI，会抛出明确 SQL 错误，避免静默绑定到错误景点。
 
-## Backend Changes
+## 后端改动
 
-Updated:
+主要文件：
 
 - `backend/src/api/scenic_routes.cpp`
 
-Added indoor APIs:
+新增室内导航 API：
 
 ```text
 GET  /api/v1/scenic-spots/:id/indoor-buildings
@@ -104,111 +89,66 @@ GET  /api/v1/indoor-buildings/:id/features
 POST /api/v1/indoor-buildings/:id/routes/plan
 ```
 
-Route planning behavior:
+路线规划行为：
 
-- Reads `indoor_features` and `indoor_edges`.
-- Validates that start and end features belong to the same indoor building.
-- Runs backend Dijkstra.
-- Uses `travel_time` as weight for `strategy=time`.
-- Uses `distance` as weight for `strategy=distance`.
-- Returns provider, configured provider, algorithm, distance, duration, path,
-  steps, and fallback status.
-- Writes route attempts to `indoor_route_audit`.
+- 读取 `indoor_features` 和 `indoor_edges`。
+- 校验起点和终点属于同一室内建筑。
+- 在后端运行 Dijkstra。
+- `strategy=time` 使用 `travel_time` 作为权重。
+- `strategy=distance` 使用 `distance` 作为权重。
+- 返回 provider、configured provider、algorithm、distance、duration、path、steps 和 fallback 状态。
+- 将路线请求写入 `indoor_route_audit`。
 
-Current implemented route algorithm:
+当前实现：
 
 ```text
 algorithm = indoor-dijkstra
 provider = local_indoor_graph
 ```
 
-## Frontend Changes
+## 前端改动
 
-Updated:
+主要文件：
 
 - `frontend/src/services/tourismApi.js`
 - `frontend/src/views/ScenicDetail.vue`
-
-Added:
-
 - `frontend/src/components/IndoorNavigationPanel.vue`
 
-The scenic detail page now shows an indoor navigation panel after the existing
-scenic-area internal navigation block.
+景点详情页新增室内导航区域。
 
-The panel supports:
+第一版能力：
 
-- Empty state for scenic spots without indoor data.
-- Indoor building selection.
-- Floor filter.
-- Feature type filter.
-- Start and end feature selection.
-- Time-first and distance-first route strategies.
-- Route result display with distance, duration, algorithm, provider, fallback,
-  and step instructions.
+- 无室内数据时显示空状态。
+- 查询室内建筑、楼层、节点和类型。
+- 选择起点、终点和时间/距离策略。
+- 展示路线距离、耗时、算法、provider、兜底状态和步骤。
 
-Core route planning is not implemented in the frontend.
+后续重构能力：
 
-## Data Audit Tool
+- 从“数据库查询表单”改为“SVG 室内拓扑图 + 路由控制台”。
+- 用 `features.x/y/floorCode` 绘制节点。
+- 用 `edges` 绘制拓扑边。
+- 规划后高亮路径节点和路径边。
+- 支持楼层切换、跨楼层提示和搜索式起终点选择。
 
-Added:
+核心路线规划不在前端实现。
 
-- `scripts/audit_project_data.py`
+## 中文化改动
 
-Run:
+为避免页面出现英文节点名，本阶段进一步完成：
 
-```powershell
-python scripts\audit_project_data.py
-```
+- `database/seed_indoor_navigation.sql` 的建筑、楼层、节点名称改为中文。
+- 后端室内节点类型、边类型、路线步骤说明改为中文。
+- 前端 provider、算法、策略、耗时、步骤说明改为中文展示。
+- 文档默认改为中文；技术契约字段保留英文。
 
-It checks:
+说明：页面中曾出现的 `Main Entrance`、`Ticket And Service Desk` 等名称不是高德实时返回，而是我们最初写在本地室内图 seed 里的英文节点名。
 
-- AMap offline scenic spot insert count.
-- Local manual scenic spot inserts outside AMap import.
-- Indoor schema presence.
-- Indoor incremental migration presence.
-- Indoor seed coverage.
+## 数据库设置与导入顺序
 
-Current audit result:
+`git pull` 只会更新代码和 SQL 文件，不会更新队友本机 PostgreSQL。若没有执行室内导航迁移和 seed，页面会正确显示“未接入”，这不是前端故障。
 
-```text
-AMap offline scenic_spots inserts: 3476
-Local manual scenic_spots inserts outside AMap import: 0
-Indoor schema present: yes
-Indoor migration present: yes
-Indoor building seed blocks: 1
-Acceptance: PASS
-```
-
-## Documentation Changes
-
-Updated:
-
-- `README.md`
-- `AGENTS.md`
-
-Added:
-
-- `docs/indoor_navigation_plan.md`
-- `docs/changes_after_lxd.md`
-
-`AGENTS.md` now includes hard engineering rules for indoor navigation and data
-management, so future AI agents or teammates should not recreate a second
-database or bypass existing API boundaries.
-
-## Database Setup And Import Order
-
-Pulling the branch only updates code and SQL files. It does not update a
-teammate's local PostgreSQL database. If the indoor migration and seed are not
-applied, the scenic detail page can show the indoor navigation component but the
-panel will correctly display "not connected" because `indoor_buildings` has no
-matching row.
-
-The formal setup entry is the SQL migration/import order below. The project does
-not keep a personal one-click setup script as the source of truth; migration SQL,
-seed SQL, and verification commands are the team contract.
-
-For a new local database:
+全新数据库导入顺序：
 
 ```powershell
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\schema.sql
@@ -220,41 +160,39 @@ psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seed_demo.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seed_indoor_navigation.sql
 ```
 
-For an existing `lxd` database that already has schema, AMap POIs, demo seed, and
-internal navigation, run only:
+已有 `lxd` 数据库只补室内导航：
 
 ```powershell
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\indoor_navigation_schema.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seed_indoor_navigation.sql
 ```
 
-## Verification Commands
+## 验证命令
 
-After database setup, verify that the indoor seed is in the same database:
+确认室内 seed 位于同一个数据库：
 
 ```powershell
-psql -U postgres -d tourism_system -c "SELECT b.id, b.scenic_spot_id, s.name, b.name, b.provider, (SELECT COUNT(*) FROM indoor_features f WHERE f.building_id = b.id) AS features FROM indoor_buildings b JOIN scenic_spots s ON s.id = b.scenic_spot_id;"
+psql -U postgres -d tourism_system -c "SELECT b.id, b.scenic_spot_id, s.name AS scenic_spot, b.name AS indoor_building, b.provider, (SELECT COUNT(*) FROM indoor_features f WHERE f.building_id = b.id) AS features FROM indoor_buildings b JOIN scenic_spots s ON s.id = b.scenic_spot_id;"
 ```
 
-Expected result:
+预期能看到类似结果：
 
 ```text
-北大红楼 / Beida Red Building Main Hall / local_indoor_graph / 10 features
+北大红楼 / 北大红楼主楼 / local_indoor_graph / 10 features
 ```
 
-After starting the backend, verify the API:
+后端启动后验证 API：
 
 ```powershell
 Invoke-WebRequest http://127.0.0.1:8080/api/v1/scenic-spots/39/indoor-buildings
+Invoke-WebRequest http://127.0.0.1:8080/api/v1/indoor-buildings/1/features
 ```
 
-If the SQL query has a different `scenic_spot_id`, use that id in the API URL and
-the frontend `/spots/:id` page.
+如果 SQL 查询得到的 `scenic_spot_id` 不是 39，就用实际 id 打开 `/spots/:id`。
 
-Build and static checks:
+构建与静态检查：
 
 ```powershell
-python scripts\audit_project_data.py
 cmake --build backend\build-codex-verify-mingw --target tourism_server --config Debug --parallel 2
 
 cd frontend
@@ -262,52 +200,37 @@ npm.cmd run lint
 npm.cmd run build
 ```
 
-Verified after this change set:
+## 协作规则
 
-- Data audit passed.
-- Backend `tourism_server` build passed.
-- Frontend lint passed.
-- Frontend production build passed.
+硬规则：
 
-## Collaboration Rules Going Forward
+- 只使用 `tourism_system`。
+- 不新增第二套景点表。
+- 不新增第二套用户表。
+- 不重复开发路线规划职责。
+- 前端不绕过 `tourismApi.js` 调后端。
+- 不在 Vue 组件里实现核心 Dijkstra/路线算法。
+- 每条导入或人工整理数据都要有清晰来源。
+- 每个 provider 专属能力都要说明 provider 边界。
+- 新增/修改文档默认使用中文。
 
-Hard rules:
+推荐流程：
 
-- Use only `tourism_system`.
-- Do not add another scenic spot table.
-- Do not add another user table.
-- Do not duplicate route-planning responsibilities.
-- Do not call backend APIs from frontend code outside `tourismApi.js`.
-- Do not put core Dijkstra/route algorithms in Vue components.
-- Every imported or curated data row must have a clear source.
-- Every provider-specific feature must state its provider boundary.
+1. 改数据前先查 `database/schema.sql`、现有迁移文件和 seed 文件。
+2. 新增表结构写增量迁移。
+3. 新增 seed/import 文件使用稳定 `source_ref` upsert。
+4. 重大设计写 ADR；普通工程变化追加到 `docs/engineering_log.md`。
+5. PR 或提交说明里写清楚改动范围和验证结果。
 
-Recommended workflow:
+## 剩余工作
 
-1. Before changing data, run `python scripts\audit_project_data.py`.
-2. Before adding tables, check `database/schema.sql`, existing migration files,
-   and `AGENTS.md`.
-3. Add incremental migration files for existing databases.
-4. Add seed/import files with stable `source_ref` upserts.
-5. Update `docs/changes_after_lxd.md` when a teammate makes a meaningful change.
-6. Keep a small "change ownership" section in pull requests or commits.
+- 根据真实可用 `cpid` 增加第二个室内建筑。
+- 后续接入 `amap_indoor` 的高德室内图展示。
+- 为后端 API 增加更稳定的自动化冒烟测试。
+- 继续优化 SVG 拓扑图的节点布局和路线说明。
 
-## Remaining Work
+## 答辩表述
 
-- Add at least one API smoke test against a running backend after import.
-- Optionally add a second real building once a reliable AMap indoor `cpid` is
-  confirmed.
-- Optionally add browser-side AMap indoor map display for `amap_indoor` buildings.
-- Optionally add a visual indoor floor schematic for `local_indoor_graph`.
+简短版本：
 
-## Defense Explanation
-
-Short version:
-
-> We use AMap official POI data as an offline data source. The 3476 scenic spots
-> were generated into SQL and imported into PostgreSQL, so runtime reads the
-> local database. Indoor navigation is built as a formal provider-based module:
-> official AMap indoor capability is reserved as `amap_indoor`, while
-> `local_indoor_graph` provides a stable backend Dijkstra implementation for
-> course-project verification. The first phase covers one real building, but the
-> database, APIs, provider fields, and audit trail are designed for expansion.
+> 我们使用高德官方 POI 作为离线数据源，3476 条景点数据先生成 SQL 再导入 PostgreSQL，因此运行时主要读本地库。室内导航采用正式 provider 模型：`amap_indoor` 预留给高德官方室内图能力，`local_indoor_graph` 提供稳定的本地图 Dijkstra 实现。首期只覆盖北大红楼一个真实建筑，但数据库、API、provider 字段、审计记录和拓扑可视化都按可扩展功能建设。
