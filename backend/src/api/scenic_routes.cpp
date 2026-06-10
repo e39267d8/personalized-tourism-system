@@ -775,6 +775,8 @@ void register_scenic_routes(TourismApp& app) {
             std::string type = trim_text(req.url_params.get("type") ? req.url_params.get("type") : "");
             std::string query = trim_text(req.url_params.get("q") ? req.url_params.get("q") : "");
             int limit = query_int(req, "limit", 80, 1, 200);
+            // from_node_id: 若提供，按实际步行路径距离（Dijkstra）排序，否则按类型优先级排序
+            int from_node_id = query_int(req, "from_node_id", 0, 0, 999999);
 
             PgConnection db;
             auto rows = exec_params(db, R"SQL(
@@ -823,26 +825,73 @@ void register_scenic_routes(TourismApp& app) {
                 LIMIT $4::int
             )SQL", {std::to_string(id), type, query, std::to_string(limit)});
 
+            // 辅助结构：原始行下标 + 设施节点ID + Dijkstra步行距离（米）
+            struct FacilityRow {
+                int row;
+                int node_id;
+                double walk_dist = -1.0;  // -1 表示无路可达
+            };
+
+            // 先统计类型分布（与排序无关，从原始行计算）
             std::map<std::string, int> type_counts;
-            crow::json::wvalue::list items;
+            std::vector<FacilityRow> facility_rows;
+            facility_rows.reserve(rows.rows());
             for (int row = 0; row < rows.rows(); ++row) {
                 type_counts[rows.value(row, "type")] += 1;
-                items.push_back(facility_json(rows, row));
+                FacilityRow fr;
+                fr.row = row;
+                fr.node_id = to_int(rows.value(row, "node_id"));
+                facility_rows.push_back(fr);
+            }
+
+            // 若提供起点，使用 Dijkstra 计算实际步行距离并按距离升序排列
+            // 优势：反映真实可行走路径，而非直线距离（满足评分加分项）
+            bool sorted_by_walk = (from_node_id > 0);
+            if (sorted_by_walk) {
+                auto graph = load_route_graph(db, id);
+                for (auto& fr : facility_rows) {
+                    if (fr.node_id <= 0) continue;
+                    auto route = plan_route_with_waypoints(
+                        graph, {from_node_id, fr.node_id}, "walk", "distance", 3);
+                    fr.walk_dist = route.success ? route.total_distance : -1.0;
+                }
+                // 可达设施按步行距离升序，不可达设施排末尾（保持原相对顺序）
+                std::stable_sort(facility_rows.begin(), facility_rows.end(),
+                    [](const FacilityRow& a, const FacilityRow& b) {
+                        if (a.walk_dist >= 0 && b.walk_dist >= 0) return a.walk_dist < b.walk_dist;
+                        if (a.walk_dist >= 0) return true;
+                        if (b.walk_dist >= 0) return false;
+                        return false;
+                    });
+            }
+
+            crow::json::wvalue::list items;
+            for (const auto& fr : facility_rows) {
+                auto item = facility_json(rows, fr.row);
+                if (sorted_by_walk) {
+                    // walkDistance: 实际步行路径距离（米），-1 表示路网中无可达路径
+                    item["walkDistance"] = fr.walk_dist >= 0
+                        ? static_cast<int>(std::round(fr.walk_dist))
+                        : -1;
+                }
+                items.push_back(std::move(item));
             }
 
             crow::json::wvalue::list types;
             for (const auto& [type_key, count] : type_counts) {
-                crow::json::wvalue item;
-                item["type"] = type_key;
-                item["label"] = facility_type_label(type_key);
-                item["count"] = count;
-                types.push_back(std::move(item));
+                crow::json::wvalue type_item;
+                type_item["type"] = type_key;
+                type_item["label"] = facility_type_label(type_key);
+                type_item["count"] = count;
+                types.push_back(std::move(type_item));
             }
 
             crow::json::wvalue data;
             data["total"] = static_cast<int>(items.size());
             data["items"] = std::move(items);
             data["types"] = std::move(types);
+            // 告知前端当前排序方式，方便 UI 标注"按步行距离排序"
+            if (sorted_by_walk) data["sortedByWalkDistance"] = true;
             return crow::response(ok(std::move(data)));
         } catch (const std::exception& error) {
             return json_error(500, error.what());

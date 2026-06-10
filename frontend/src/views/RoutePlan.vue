@@ -138,6 +138,12 @@
 
         <div v-if="error" class="mt-4 rounded-md border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">{{ error }}</div>
 
+        <!-- 交通方式自动降级提示：所选模式无可达路线，已回退到混合模式 -->
+        <div v-if="route && route.usedTransportFallback" class="mt-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-700 flex items-center gap-2">
+          <svg class="w-4 h-4 flex-none text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+          当前路网中所选交通方式无可达路线，已自动回退为混合模式出行
+        </div>
+
         <template v-if="route">
           <div class="mt-4 grid grid-cols-3 gap-3">
             <div class="rounded-md bg-slate-50 p-3">

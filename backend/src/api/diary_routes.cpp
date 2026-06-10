@@ -303,6 +303,39 @@ void register_diary_routes(TourismApp& app) {
         }
     });
 
+    // 我的日记：返回当前用户的所有日记（包含草稿，不含已删除）
+    CROW_ROUTE(app, "/api/v1/diaries/mine")([](const crow::request& req) -> crow::response {
+        try {
+            PgConnection db;
+            auto user = current_user(db, req);
+            if (!user) return json_error(401, "请先登录");
+
+            std::string sort = req.url_params.get("sort") ? req.url_params.get("sort") : "latest";
+            std::string limit = std::to_string(query_int(req, "limit", 50, 1, 100));
+
+            std::string order_clause;
+            if (sort == "rating")   order_clause = " ORDER BY d.rating_score DESC, d.id DESC";
+            else if (sort == "popular") order_clause = " ORDER BY (d.like_count * 2 + d.view_count * 0.1) DESC, d.id DESC";
+            else                    order_clause = " ORDER BY d.created_at DESC, d.id DESC";
+
+            // kDiarySelectSql 已包含 WHERE d.status <> 2（排除已删除）
+            // 额外加 AND d.user_id = $1 使只返回本人日记（含草稿 status=0）
+            auto rows = exec_params(db,
+                kDiarySelectSql + " AND d.user_id = $1" + order_clause + " LIMIT " + limit,
+                {std::to_string(user->id)});
+
+            crow::json::wvalue::list items;
+            for (int row = 0; row < rows.rows(); ++row) items.push_back(diary_json(rows, row));
+
+            crow::json::wvalue data;
+            data["total"] = static_cast<int>(items.size());
+            data["items"] = std::move(items);
+            return crow::response(ok(std::move(data)));
+        } catch (const std::exception& error) {
+            return json_error(500, error.what());
+        }
+    });
+
     CROW_ROUTE(app, "/api/v1/diaries/<int>")([](int id) -> crow::response {
         try {
             PgConnection db;

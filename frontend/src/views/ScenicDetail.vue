@@ -113,7 +113,10 @@
       <div class="rounded-md border border-slate-200 bg-white p-5">
         <div class="flex items-center justify-between gap-3">
           <h2 class="text-lg font-semibold text-slate-950">设施查询</h2>
-          <span class="rounded-md bg-slate-100 px-2.5 py-1 text-sm font-semibold text-slate-700">{{ routableFacilities.length }}/{{ facilities.length }} 可导航</span>
+          <div class="flex items-center gap-2">
+            <span v-if="facilitySortedByWalk" class="rounded-md bg-teal-50 px-2.5 py-1 text-xs font-semibold text-teal-700" title="按 Dijkstra 最短路径距离排序">步行距离排序</span>
+            <span class="rounded-md bg-slate-100 px-2.5 py-1 text-sm font-semibold text-slate-700">{{ routableFacilities.length }}/{{ facilities.length }} 可导航</span>
+          </div>
         </div>
 
         <div v-if="internalError" class="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
@@ -186,7 +189,7 @@
             <label class="text-sm font-semibold text-slate-700">目的设施</label>
             <select v-model="selectedFacilityId" class="mt-2 h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm outline-none focus:border-teal-700">
               <option v-for="facility in destinationFacilities" :key="facility.id" :value="facility.id">
-                {{ facility.name }} · {{ facility.typeLabel }}
+                {{ facility.name }} · {{ facility.typeLabel }}{{ facility.walkDistance >= 0 ? ' · ' + facility.walkDistance + 'm' : '' }}
               </option>
             </select>
             <p v-if="!destinationFacilities.length" class="mt-2 text-sm text-amber-700">
@@ -282,6 +285,7 @@ const spot = ref({ ...fallbackSpot, tags: fallbackSpot.tags || [] })
 const reviews = ref([])
 const facilities = ref([])
 const facilityTypes = ref([])
+const facilitySortedByWalk = ref(false)  // 是否按实际步行距离（Dijkstra）排序
 const internalMap = ref({ nodes: [], edges: [] })
 const internalRoute = ref(null)
 const internalError = ref('')
@@ -522,17 +526,25 @@ const loadInternalNavigation = async () => {
   selectedStartMode.value = 'auto'
   selectedStartNodeId.value = ''
   selectedStartPoint.value = null
+  facilitySortedByWalk.value = false
   try {
-    const [facilityData, mapData] = await Promise.all([
-      tourismApi.scenicFacilities(props.id, { limit: 200 }),
-      tourismApi.scenicInternalMap(props.id)
-    ])
-    facilities.value = facilityData.items || []
-    facilityTypes.value = facilityData.types || []
+    // 先加载地图，获取入口节点 ID，再用 Dijkstra 实际步行距离排序设施
+    const mapData = await tourismApi.scenicInternalMap(props.id)
     internalMap.value = {
       nodes: mapData.nodes || [],
       edges: mapData.edges || []
     }
+
+    // 找入口节点（type='entrance' 优先，没有则取第一个节点）
+    const entranceNode = mapData.nodes?.find(n => n.type === 'entrance') || mapData.nodes?.[0]
+    const facilityParams = { limit: 200 }
+    if (entranceNode?.id) facilityParams.from_node_id = entranceNode.id
+
+    const facilityData = await tourismApi.scenicFacilities(props.id, facilityParams)
+    facilities.value = facilityData.items || []
+    facilityTypes.value = facilityData.types || []
+    facilitySortedByWalk.value = !!(facilityData.sortedByWalkDistance && entranceNode?.id)
+
     ensureSelectedFacility()
     drawInternalMap(true)
   } catch (error) {

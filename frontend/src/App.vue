@@ -104,8 +104,7 @@ const navItems = [
   { to: '/food', label: '美食推荐' },
   { to: '/agent', label: 'AI助手' },
   { to: '/diary', label: '旅行日记' },
-  { to: '/achievements', label: '成就' },
-  { to: '/tools/huffman', label: '压缩演示' }
+  { to: '/achievements', label: '成就' }
 ]
 
 const mobileNavItems = [...navItems, { to: '/profile', label: '我的' }]
