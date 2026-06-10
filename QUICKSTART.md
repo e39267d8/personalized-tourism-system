@@ -21,7 +21,7 @@ C:\Users\seele\Desktop\code\personalized-tourism-system
 
 ## 2. 初始化数据库
 
-`git pull` 只会更新代码和 SQL 文件，不会自动更新本机 PostgreSQL。室内导航依赖新增的 `indoor_*` 表和北大红楼首批室内图数据；如果没有执行对应 SQL 迁移和 seed，页面会显示“未接入”。
+`git pull` 只会更新代码和 SQL 文件，不会自动更新本机 PostgreSQL。景区/校园内部道路图、室内导航和日记压缩都需要同步执行对应 SQL 迁移和 seed；如果没有执行对应 SQL，页面会显示“未接入”或查不到新增数据。
 
 全新数据库初始化顺序：
 
@@ -31,6 +31,8 @@ psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\schema.sql
 psql -U postgres -d tourism_system -f database\imports\amap_pois.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\internal_navigation_schema.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\imports\internal_navigation.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seed_campus_spots.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\imports\internal_navigation_pku.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\indoor_navigation_schema.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\diary_compression_schema.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seed_demo.sql
@@ -39,7 +41,15 @@ psql -U postgres -d tourism_system -f database\maintenance\repair_data_quality.s
 psql -U postgres -d tourism_system -f database\verify_demo.sql
 ```
 
-已有数据库只补室内导航：
+已有数据库只补北京大学校园内部道路图：
+
+```powershell
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\internal_navigation_schema.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seed_campus_spots.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\imports\internal_navigation_pku.sql
+```
+
+已有数据库只补北大红楼室内导航：
 
 ```powershell
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\indoor_navigation_schema.sql
@@ -54,7 +64,13 @@ psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\diary_compress
 
 迁移后，新建/更新的日记自动压缩存储；存量明文日记可登录后调用一次 `POST /api/v1/diaries/compression/migrate` 批量压缩，并用 `GET /api/v1/diaries/compression/stats` 验证压缩统计。
 
-补完后验证室内导航数据：
+补完后验证北京大学校园内部道路图：
+
+```powershell
+psql -U postgres -d tourism_system -c "WITH target AS (SELECT scenic_spot_id AS id FROM graph_nodes WHERE source_ref LIKE 'pku:%' GROUP BY scenic_spot_id ORDER BY COUNT(*) DESC LIMIT 1) SELECT (SELECT COUNT(*) FROM graph_nodes n WHERE n.scenic_spot_id=t.id AND n.source_ref LIKE 'pku:%') AS pku_graph_nodes, (SELECT COUNT(*) FROM graph_nodes n WHERE n.scenic_spot_id=t.id AND n.source_ref LIKE 'pku:%' AND n.node_type='building') AS building_nodes, (SELECT COUNT(*) FROM facilities f WHERE f.scenic_spot_id=t.id AND f.source_ref LIKE 'pku:%' AND f.type <> 'building') AS service_facilities, (SELECT COUNT(DISTINCT f.type) FROM facilities f WHERE f.scenic_spot_id=t.id AND f.source_ref LIKE 'pku:%' AND f.type <> 'building') AS service_facility_types, (SELECT COUNT(*) FROM graph_edges e JOIN graph_nodes a ON a.id=e.from_node JOIN graph_nodes b ON b.id=e.to_node WHERE a.scenic_spot_id=t.id AND b.scenic_spot_id=t.id AND a.source_ref LIKE 'pku:%' AND b.source_ref LIKE 'pku:%') AS graph_edges FROM target t;"
+```
+
+补完后验证北大红楼室内导航数据：
 
 ```powershell
 psql -U postgres -d tourism_system -c "SELECT b.scenic_spot_id, s.name, b.name, b.provider, (SELECT COUNT(*) FROM indoor_features f WHERE f.building_id = b.id) AS features FROM indoor_buildings b JOIN scenic_spots s ON s.id = b.scenic_spot_id;"

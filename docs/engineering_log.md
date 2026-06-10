@@ -15,6 +15,51 @@
 - 用户可见页面文案默认使用中文。
 - API 路径、JSON 字段、表名、provider 名、算法标识等技术契约可以保留英文。
 
+## 2026-06-10 / feature-lxd-search / 文档职责收敛
+
+类型：文档规范、协作规则、API 文档补全。
+
+背景：此前 README、AGENTS、QUICKSTART 和分支交接文档之间存在职责重叠，容易在每次拉分支后继续复制 `changes_after_xxx.md`。本次按统一规则收敛：README 只放项目总览，QUICKSTART 只放运行和初始化步骤，AGENTS 只放工程规则，普通工程变更统一写入本文，重大技术决策写入 ADR。
+
+变更：
+
+- 将 `README.md` 收敛为项目总览和文档入口，移除运行命令、环境变量、专题实现细节和阶段流水。
+- 在 `AGENTS.md` 明确文档职责、数据库变更正式口径，以及不再创建 `changes_after_xxx.md` 的协作规则。
+- 删除历史分支交接文档 `docs/changes_after_lxd.md`，其有效内容已由 `docs/engineering_log.md`、`docs/adr/0001-indoor-navigation-provider.md`、`QUICKSTART.md` 和 `database/README.md` 承接。
+- 补全 `docs/api-runtime.md` 中游记运行时 API：全文检索、按标题/景点检索、`GET /api/v1/diaries/<id>/replay-route`、压缩统计/迁移接口和 Huffman 工具接口。
+- 明确 Huffman 工具接口不是日记压缩落库的权威路径；真实存储以日记创建/更新、压缩迁移接口和 `database/diary_compression_schema.sql` 为准。
+
+验证口径：
+
+- 文档检索中不再存在 `docs/changes_after_lxd.md`，`changes_after_xxx` 只保留在 AGENTS 的禁止规则里。
+- `docs/adr/0001-indoor-navigation-provider.md` 已正式记录室内导航采用 `amap_indoor` + `local_indoor_graph` provider 模型的架构决策。
+- `docs/engineering_log.md` 已包含“日记→路线一键复刻”和“日记 Huffman 压缩真实落库”两项工程记录，`docs/api-runtime.md` 已补齐对应 API 契约。
+
+## 2026-06-10 / feature-lxd-search / 北京大学校园内部道路图
+
+类型：校园内部导航、数据库导入、真实地图数据、文档。
+
+背景：课程设计要求景区和校园都应有内部道路图。北大红楼室内导航只覆盖单体建筑室内拓扑，不能替代北京大学校园级道路图；校园内部图必须进入现有 `graph_nodes`、`graph_edges`、`facilities`，不新建第二套校园图表。
+
+变更：
+
+- 新增 `database/seed_campus_spots.sql`：把北京大学作为 `scenic_spots` 中的正式校园对象接入系统，分类为“高校校园”。
+- 新增 `scripts/pku_campus_spots.json`：北京大学校园生成配置，包含燕园主校区边界和排除词，避免把清华或中关村周边 POI 算入北大校园。
+- 新增 `database/imports/internal_navigation_pku.sql`：北京大学校园内部道路图导入 SQL，数据来自 OSM/Overpass；导入前会清理同一景点下旧的 `pku:%` 内部图数据，再写入当前校园范围，保持幂等。
+- 扩展 `scripts/import_internal_map_data.py`：支持按 `bounds` 和 `exclude_terms` 过滤节点/边，并在生成 SQL 中加入旧内部图清理段，避免重复导入造成历史宽范围数据残留。
+- 更新 README、QUICKSTART 和数据库说明，补充校园内部图导入顺序、只补校园图命令、验证 SQL，并明确“北京大学校园内部道路图”和“北大红楼室内导航”是两项不同能力。
+
+验证口径：
+
+- 已在本地 `tourism_system` 执行：
+  - `database/internal_navigation_schema.sql`
+  - `database/seed_campus_spots.sql`
+  - `database/imports/internal_navigation_pku.sql`
+- 导入日志显示旧宽范围 `pku:%` 数据被清理后重新写入：794 个 PKU 图节点、402 条 OSM 道路边、567 条设施表记录、358 条设施接入边。
+- 正式表统计结果：北京大学校园范围内 794 个图节点、760 条内部图边，其中 OSM 真实道路边 402 条、设施接入边 358 条；建筑节点 449 个，非建筑服务设施 118 个、10 类。
+- `facilities` 表总计 567 条是因为建筑节点也会以 `building` 类型同步到设施表；课程设计口径下，“其它服务设施”按 `type <> 'building'` 统计。
+- 课程设计口径下，校园内部道路图满足边数不少于 200、建筑不少于 20、其它服务设施不少于 50 且服务设施类型不少于 10 的要求。
+
 ## 2026-06-10 / feature-lxd-search / 日记→路线一键复刻「重走这条路线」
 
 类型：后端新接口、前端交互、UGC 与路线规划闭环。
@@ -65,6 +110,11 @@
 - 日记详情接口返回的 `content` 应与提交原文一致（解压还原），并带 `compressedStorage: true`。
 - `GET /api/v1/diaries/compression/stats` 的 `savedPercent` 应大于 0。
 - 全文检索 `/diaries/search/fulltext?q=<正文词>` 仍能命中压缩存储的日记。
+
+补记：
+
+- 新增 `GET /api/v1/diaries/<id>/compression`，补齐日记详情页单篇压缩信息卡片所需接口，避免前端请求 404 后只能回退为 `0 bytes / 等待校验` 的占位展示。
+- 同步修正 `frontend/src/tests/tourismApi.test.js` 的 Huffman 测试契约：请求字段改为 `content` / `compressed`，响应字段改为 `originalBytes`、`compressedBytes`、`compressionRatio`、`content`。
 
 ## 2026-06-09 / feature-yhm-graph / 室内导航中文化
 

@@ -215,21 +215,137 @@ tourismApi.planRoute({
 
 游记搜索。
 
+### `GET /api/v1/diaries/search/fulltext`
+
+倒排索引全文检索，用于游记广场的增强搜索。
+
+常见查询参数：
+
+- `q`: 必填，检索关键词。
+- `mode`: 检索模式，默认 `any`。
+- `limit`: 返回数量，默认 30，上限 100。
+
+响应包含 `total`、`items`、`algorithm`、`indexSize`。当前算法标识为
+`inverted-index-bm25`。后端读取游记正文时会透明处理 `content_compressed`，
+因此 Huffman 压缩存储后的游记仍可被检索。
+
+### `GET /api/v1/diaries/search/title`
+
+按标题精准索引检索。查询参数 `title` 必填，响应包含 `items` 和
+`algorithm: "hash-title-index"`。
+
+### `GET /api/v1/diaries/search/spot`
+
+按景点检索游记。常见查询参数：
+
+- `scenic_spot_id`: 必填，景点 ID。
+- `sort`: `latest`、`rating` 或 `popular`。
+- `limit`: 返回数量，默认 30，上限 100。
+
 ### `GET /api/v1/diaries/<id>`
 
-游记详情。
+游记详情。后端会把压缩列中的正文透明解压后返回；前端不需要知道正文实际存放在
+`content` 还是 `content_compressed`。
+
+### `GET /api/v1/diaries/<id>/compression`
+
+查询单篇日记的压缩存储详情，对应日记详情页中的“Huffman 无损压缩存储”信息卡片。
+
+响应核心字段：
+
+```json
+{
+  "diaryId": 1,
+  "algorithm": "huffman",
+  "originalBytes": 100,
+  "compressedBytes": 65,
+  "compressionRatio": 65,
+  "spaceSavedPercent": 35,
+  "compressedStorage": true,
+  "verified": true
+}
+```
+
+其中 `compressionRatio` 表示压缩后字节占原始字节的百分比，`spaceSavedPercent`
+表示节省空间百分比。明文存储的短日记会返回 `compressedStorage: false`。
 
 ### `POST /api/v1/diaries`
 
-创建游记。
+创建游记。需要登录。后端会在写入时自动尝试 Huffman 压缩正文：
+压缩结果确实小于原文时，正文写入 `travel_diaries.content_compressed`，
+`content` 置空；短文本或压缩无收益时保留明文，避免频率表头开销导致反向膨胀。
 
 ### `PUT /api/v1/diaries/<id>`
 
-更新游记。
+更新游记。需要登录。正文压缩策略与创建游记一致。
 
 ### `DELETE /api/v1/diaries/<id>`
 
 删除游记。
+
+### `GET /api/v1/diaries/<id>/replay-route`
+
+日记到路线的一键复刻接口，对应日记详情页「重走这条路线」按钮。
+
+后端优先读取 `travel_diaries.scenic_spot_ids` 中显式关联的景点，并保持数组原始顺序；
+如果关联景点不足 2 个，则从标题、正文和标签中按景点名出现顺序提取站点。
+
+响应核心字段：
+
+```json
+{
+  "diaryId": 1,
+  "title": "北京一日游",
+  "city": "北京",
+  "total": 3,
+  "source": "spot-ids",
+  "stops": [
+    { "id": 1, "name": "故宫博物院", "longitude": 116.397, "latitude": 39.917 }
+  ]
+}
+```
+
+`source` 可能为 `spot-ids` 或 `narrative-extraction`。前端拿到 `stops` 后跳转到
+`/route`，把站点喂给现有路线规划流程渲染。
+
+### 日记压缩存储
+
+日记压缩已经进入真实存储路径，不再只是演示页能力。
+
+| 方法 | 路径 | 用途 |
+| --- | --- | --- |
+| `GET` | `/api/v1/diaries/<id>/compression` | 查询单篇日记的压缩详情 |
+| `GET` | `/api/v1/diaries/compression/stats` | 查询全站日记压缩统计 |
+| `POST` | `/api/v1/diaries/compression/migrate` | 将存量明文日记批量迁移为压缩存储，需登录 |
+
+`GET /api/v1/diaries/compression/stats` 响应核心字段：
+
+```json
+{
+  "totalDiaries": 12,
+  "compressedDiaries": 8,
+  "originalBytes": 42000,
+  "compressedBytes": 27000,
+  "savedBytes": 15000,
+  "savedPercent": 35.71,
+  "algorithm": "huffman"
+}
+```
+
+`POST /api/v1/diaries/compression/migrate` 会逐行压缩仍存放在 `content` 中的明文正文。
+响应包含 `migrated`、`skipped` 和 `algorithm`。短文本或压缩后不节省空间的记录会计入
+`skipped` 并继续保留明文。
+
+### Huffman 工具接口
+
+| 方法 | 路径 | 用途 |
+| --- | --- | --- |
+| `POST` | `/api/v1/huffman/compress` | 手动压缩一段正文，主要供工具页和算法说明使用 |
+| `POST` | `/api/v1/huffman/decompress` | 手动解压工具接口返回的压缩内容 |
+
+这些接口不是日记压缩落库的权威路径。真实日记存储以 `POST /api/v1/diaries`、
+`PUT /api/v1/diaries/<id>`、`POST /api/v1/diaries/compression/migrate` 和
+`database/diary_compression_schema.sql` 为准。
 
 ### 游记互动
 

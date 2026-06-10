@@ -20,11 +20,20 @@ const mockAxiosInstance = {
   post: vi.fn(),
   put: vi.fn(),
   delete: vi.fn(),
+  interceptors: {
+    request: { use: vi.fn() },
+    response: { use: vi.fn() },
+  },
 }
 
 // Reset mocks before each test
 beforeEach(() => {
-  Object.values(mockAxiosInstance).forEach(m => m.mockReset())
+  mockAxiosInstance.get.mockReset()
+  mockAxiosInstance.post.mockReset()
+  mockAxiosInstance.put.mockReset()
+  mockAxiosInstance.delete.mockReset()
+  mockAxiosInstance.interceptors.request.use.mockReset()
+  mockAxiosInstance.interceptors.response.use.mockReset()
 })
 
 // Dynamic import to capture the mocked axios
@@ -37,30 +46,30 @@ beforeEach(async () => {
 describe('tourismApi - Scenic Spots', () => {
   it('should request scenic spots with default params', async () => {
     mockAxiosInstance.get.mockResolvedValue({ data: { data: [] } })
-    await tourismApi.getScenicSpots()
+    await tourismApi.scenicSpots()
     expect(mockAxiosInstance.get).toHaveBeenCalledWith(
       '/scenic-spots',
-      expect.objectContaining({ params: expect.any(Object) })
+      { params: undefined }
     )
   })
 
   it('should request scenic spots with custom params', async () => {
     mockAxiosInstance.get.mockResolvedValue({ data: { data: [] } })
-    await tourismApi.getScenicSpots({ city: 'beijing', limit: 10, search: '故宫' })
+    await tourismApi.scenicSpots({ city: 'beijing', limit: 10, q: '故宫' })
     const call = mockAxiosInstance.get.mock.calls[0]
     expect(call[1].params.limit).toBe(10)
-    expect(call[1].params.search).toBe('故宫')
+    expect(call[1].params.q).toBe('故宫')
   })
 
   it('should handle scenic spot detail', async () => {
     mockAxiosInstance.get.mockResolvedValue({ data: { data: { id: 1, name: '故宫' } } })
-    const result = await tourismApi.fetchScenicSpot(1)
+    const result = await tourismApi.scenicSpot(1)
     expect(result).toEqual({ id: 1, name: '故宫' })
   })
 
   it('should handle API errors for scenic spots', async () => {
     mockAxiosInstance.get.mockRejectedValue(new Error('Network error'))
-    await expect(tourismApi.getScenicSpots()).rejects.toThrow()
+    await expect(tourismApi.scenicSpots()).rejects.toThrow()
   })
 })
 
@@ -115,42 +124,63 @@ describe('tourismApi - Diary Search', () => {
 
   it('should search diaries by title', async () => {
     mockAxiosInstance.get.mockResolvedValue({ data: { data: [] } })
-    await tourismApi.searchDiaryByTitle({ q: '故宫游', limit: 5 })
+    await tourismApi.searchDiaryByTitle({ title: '故宫游', limit: 5 })
     const call = mockAxiosInstance.get.mock.calls[0]
     expect(call[0]).toBe('/diaries/search/title')
+    expect(call[1].params.title).toBe('故宫游')
   })
 
   it('should search diaries by scenic spot', async () => {
     mockAxiosInstance.get.mockResolvedValue({ data: { data: [] } })
-    await tourismApi.searchDiaryBySpot({ spot_id: 5, limit: 10 })
+    await tourismApi.searchDiaryBySpot({ scenic_spot_id: 5, limit: 10 })
     const call = mockAxiosInstance.get.mock.calls[0]
-    expect(call[1].params.spot_id).toBe(5)
+    expect(call[1].params.scenic_spot_id).toBe(5)
   })
 })
 
 describe('tourismApi - Huffman Compression', () => {
+  it('should fetch diary compression details', async () => {
+    mockAxiosInstance.get.mockResolvedValue({
+      data: {
+        data: {
+          diaryId: 7,
+          algorithm: 'huffman',
+          originalBytes: 100,
+          compressedBytes: 65,
+          compressionRatio: 65,
+          verified: true
+        }
+      }
+    })
+    const result = await tourismApi.diaryCompression(7)
+    expect(result.compressionRatio).toBe(65)
+    expect(result.originalBytes).toBe(100)
+    expect(mockAxiosInstance.get).toHaveBeenCalledWith('/diaries/7/compression')
+  })
+
   it('should compress text', async () => {
     mockAxiosInstance.post.mockResolvedValue({
       data: {
         data: {
           compressed: 'base64enc',
-          original_size: 100,
-          compressed_size: 65,
-          compression_ratio: 0.35,
+          algorithm: 'huffman',
+          originalBytes: 100,
+          compressedBytes: 65,
+          compressionRatio: 65,
         }
       }
     })
-    const result = await tourismApi.huffmanCompress({ text: 'Hello World' })
-    expect(result.compression_ratio).toBe(0.35)
-    expect(result.original_size).toBe(100)
+    const result = await tourismApi.huffmanCompress({ content: 'Hello World' })
+    expect(result.compressionRatio).toBe(65)
+    expect(result.originalBytes).toBe(100)
   })
 
   it('should decompress text', async () => {
     mockAxiosInstance.post.mockResolvedValue({
-      data: { data: { decompressed: 'Hello World' } }
+      data: { data: { content: 'Hello World', originalBytes: 11 } }
     })
-    const result = await tourismApi.huffmanDecompress({ data: 'base64enc' })
-    expect(result.decompressed).toBe('Hello World')
+    const result = await tourismApi.huffmanDecompress({ compressed: 'base64enc' })
+    expect(result.content).toBe('Hello World')
   })
 })
 

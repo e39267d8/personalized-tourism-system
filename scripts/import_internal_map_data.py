@@ -389,6 +389,50 @@ def trim_spot_graph(nodes: list[dict[str, Any]], edges: list[dict[str, Any]], ma
     return trimmed_nodes, trimmed_edges
 
 
+def node_matches_scope(node: dict[str, Any], spot: dict[str, Any]) -> bool:
+    bounds = spot.get("bounds") or {}
+    if bounds:
+        lng = float(node["lng"])
+        lat = float(node["lat"])
+        if lng < float(bounds["west"]) or lng > float(bounds["east"]):
+            return False
+        if lat < float(bounds["south"]) or lat > float(bounds["north"]):
+            return False
+
+    exclude_terms = [str(term) for term in spot.get("exclude_terms", [])]
+    if exclude_terms:
+        searchable = json.dumps({
+            "name": node.get("name", ""),
+            "address": node.get("address", ""),
+            "source_tags": node.get("source_tags", {}),
+        }, ensure_ascii=False)
+        if any(term in searchable for term in exclude_terms):
+            return False
+    return True
+
+
+def edge_matches_scope(edge: dict[str, Any], spot: dict[str, Any], used_refs: set[str]) -> bool:
+    if edge["from_ref"] not in used_refs or edge["to_ref"] not in used_refs:
+        return False
+
+    exclude_terms = [str(term) for term in spot.get("exclude_terms", [])]
+    if exclude_terms:
+        searchable = json.dumps(edge.get("source_tags", {}), ensure_ascii=False)
+        if any(term in searchable for term in exclude_terms):
+            return False
+    return True
+
+
+def filter_spot_scope(spot: dict[str, Any], nodes: list[dict[str, Any]], edges: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    if not spot.get("bounds") and not spot.get("exclude_terms"):
+        return nodes, edges
+
+    scoped_nodes = [node for node in nodes if node_matches_scope(node, spot)]
+    scoped_refs = {node["source_ref"] for node in scoped_nodes}
+    scoped_edges = [edge for edge in edges if edge_matches_scope(edge, spot, scoped_refs)]
+    return scoped_nodes, scoped_edges
+
+
 def linestring_wkt(points: list[tuple[float, float]]) -> str:
     text = ", ".join(f"{lng:.7f} {lat:.7f}" for lng, lat in points)
     return f"SRID=4326;LINESTRING({text})"
@@ -491,6 +535,22 @@ CREATE TEMP TABLE tmp_internal_spots (
 ) ON COMMIT DROP;
 
 {"".join(spot_rows)}
+
+DELETE FROM graph_edges ge
+USING graph_nodes linked_node, tmp_internal_spots s
+WHERE (ge.from_node = linked_node.id OR ge.to_node = linked_node.id)
+  AND linked_node.scenic_spot_id = s.scenic_spot_id
+  AND linked_node.source_ref LIKE s.spot_key || ':%';
+
+DELETE FROM graph_nodes node
+USING tmp_internal_spots s
+WHERE node.scenic_spot_id = s.scenic_spot_id
+  AND node.source_ref LIKE s.spot_key || ':%';
+
+DELETE FROM facilities facility
+USING tmp_internal_spots s
+WHERE facility.scenic_spot_id = s.scenic_spot_id
+  AND facility.source_ref LIKE s.spot_key || ':%';
 
 CREATE TEMP TABLE tmp_internal_nodes (
     spot_key TEXT NOT NULL,
@@ -721,6 +781,7 @@ def main() -> None:
         try:
             print(f"Fetching OSM internal map for {spot['name']} ...")
             nodes, edges = collect_overpass_spot(spot)
+            nodes, edges = filter_spot_scope(spot, nodes, edges)
             nodes, edges = trim_spot_graph(nodes, edges, args.max_edges_per_spot)
             all_nodes.extend(nodes)
             all_edges.extend(edges)
@@ -730,6 +791,7 @@ def main() -> None:
             if key:
                 print(f"Fetching AMap facilities around {spot['name']} ...")
                 amap_nodes = collect_amap_spot(spot, key, args.amap_pages, args.delay)
+                amap_nodes, _ = filter_spot_scope(spot, amap_nodes, [])
                 all_nodes.extend(amap_nodes)
                 print(f"  AMap facilities={len(amap_nodes)}")
         except Exception as error:

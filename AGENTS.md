@@ -57,6 +57,8 @@ DeepSeek key 必须放在环境变量中。后端内置一个免费的高德 Web
 - `database/imports/amap_pois.sql`
 - `database/internal_navigation_schema.sql`
 - `database/imports/internal_navigation.sql`
+- `database/seed_campus_spots.sql`
+- `database/imports/internal_navigation_pku.sql`
 - `database/indoor_navigation_schema.sql`
 - `database/seed_demo.sql`
 - `database/seed_indoor_navigation.sql`
@@ -65,12 +67,21 @@ DeepSeek key 必须放在环境变量中。后端内置一个免费的高德 Web
 
 文档：
 
-- `README.md`：项目概览和常用运行命令。
+- `README.md`：项目总览和文档入口。
 - `QUICKSTART.md`：最小本地启动和数据库初始化步骤。
 - `docs/api-runtime.md`：当前真实运行 API 文档。
 - `docs/engineering_log.md`：按时间记录重要工程变化，普通协作变更追加这里。
 - `docs/adr/`：架构决策记录，用于解释重大设计取舍。
-- `docs/changes_after_lxd.md`：lxd 交接后的历史阶段文档，不要每个分支都复制这种模式。
+
+文档职责：
+
+- README 只放项目总览和文档导航，不放运行手册、阶段变更流水或专题实现细节。
+- QUICKSTART 只放本地运行、数据库初始化和验证命令。
+- AGENTS 只放给开发者/AI 的工程规则、数据边界和协作约束。
+- 普通工程变更统一追加到 `docs/engineering_log.md`。
+- 重大技术决策单独写到 `docs/adr/`，例如室内导航 provider 取舍。
+- 数据库变更以 SQL 迁移、seed 和 import 文件为准，不把个人核查脚本作为正式流程。
+- 不要每拉取一个分支就新建 `changes_after_xxx.md` 之类的阶段文档。
 
 ## 后端模块
 
@@ -125,6 +136,9 @@ DeepSeek key 必须放在环境变量中。后端内置一个免费的高德 Web
 - 内部路线必须包含真实 OSM 道路/路径边；生成的设施接入边只允许在配置阈值内使用。
 - 无法接入路网的设施应返回明确错误，不要用直线假路线。
 - 不要把 OSM 节点名、接入段等底层概念放大成主要用户文案。
+- 校园内部道路图也使用 `graph_nodes`、`graph_edges`、`facilities`，不要新建第二套校园图表。
+- `database/imports/internal_navigation_pku.sql` 是北京大学校园内部道路图；`database/seed_indoor_navigation.sql` 是北大红楼室内拓扑，两者不是同一项能力，不能相互替代。
+- PKU 校园图按 `scripts/pku_campus_spots.json` 的燕园主校区边界过滤，避免把清华或中关村周边 POI 算入北京大学校园。
 
 ## 美食推荐规则
 
@@ -166,100 +180,13 @@ DeepSeek key 必须放在环境变量中。后端内置一个免费的高德 Web
 - 用户写操作需要登录：偏好、游记、点赞、收藏、评分、评论、打卡、成就领取、纪念凭证、徽章兑换、审核提交。
 - 首页、搜索、景点详情、路线规划、AI 助手、游记列表/详情、`/food`、`/achievements` 保持匿名可浏览。
 
-## 运行命令
+## 运行与验证规则
 
-后端：
-
-```powershell
-cmake -S backend -B backend\build-codex-verify-mingw
-cmake --build backend\build-codex-verify-mingw
-backend\build-codex-verify-mingw\bin\tourism_server.exe --host 127.0.0.1 --port 8080
-```
-
-数据库导入：
-
-```powershell
-psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\schema.sql
-psql -U postgres -d tourism_system -f database\imports\amap_pois.sql
-psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\internal_navigation_schema.sql
-psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\imports\internal_navigation.sql
-psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\indoor_navigation_schema.sql
-psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seed_demo.sql
-psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seed_indoor_navigation.sql
-```
-
-验证数据：
-
-```powershell
-psql -U postgres -d tourism_system -c "SELECT COUNT(*) AS scenic_spot_count FROM scenic_spots;"
-psql -U postgres -d tourism_system -c "SELECT b.id, s.name AS scenic_spot, b.name AS indoor_building, b.provider, (SELECT COUNT(*) FROM indoor_features f WHERE f.building_id = b.id) AS features FROM indoor_buildings b JOIN scenic_spots s ON s.id = b.scenic_spot_id;"
-```
-
-重新生成景区内部导航数据：
-
-```powershell
-py scripts\import_internal_map_data.py --amap-pages 1 --max-edges-per-spot 2000 --connector-max-distance 60 --output database\imports\internal_navigation.sql
-```
-
-前端：
-
-```powershell
-cd frontend
-npm install
-npm run dev
-npm.cmd run lint
-npm.cmd run build
-```
-
-前端 dev/preview 使用自定义 Node launcher：
-
-- `npm run dev` -> `node scripts/vite-dev.mjs`
-- `npm run preview` -> `node scripts/vite-preview.mjs`
-
-这些 launcher 使用 `configFile: false`，用于避开当前 Windows 工作区出现过的 Vite 配置加载问题。
-
-## 环境变量
-
-```powershell
-$env:TOURISM_DB_CONN="host=127.0.0.1 port=5432 dbname=tourism_system user=postgres password=你的密码"
-$env:TOURISM_LLM_API_KEY="你的 DeepSeek API Key"
-$env:TOURISM_LLM_BASE_URL="https://api.deepseek.com"
-$env:TOURISM_LLM_MODEL="deepseek-chat"
-$env:AMAP_WEB_SERVICE_KEY="你的高德 Web Service Key，可选"
-$env:VITE_AMAP_JS_KEY="你的高德 JS API Key，可选"
-$env:VITE_AMAP_SECURITY_JS_CODE="你的高德 JS API 安全密钥，可选"
-$env:TOURISM_REVIEWER_USERNAMES="demo_user,reviewer_name"
-```
-
-高德 Web Service 路线规划有内置默认 key，所以 `AMAP_WEB_SERVICE_KEY` 可选。前端高德 JS API loader 也有内置 key；只有覆盖时才设置 `VITE_AMAP_JS_KEY`，只有高德控制台安全配置要求时才设置 `VITE_AMAP_SECURITY_JS_CODE`。DeepSeek 没有内置 key，必须走环境变量。
-
-## 冒烟检查
-
-```powershell
-Invoke-WebRequest http://127.0.0.1:8080/health
-Invoke-WebRequest "http://127.0.0.1:8080/api/v1/scenic-spots?limit=2"
-Invoke-WebRequest http://127.0.0.1:8080/api/v1/scenic-categories
-Invoke-WebRequest "http://127.0.0.1:8080/api/v1/search/suggestions?q=故宫"
-Invoke-WebRequest "http://127.0.0.1:8080/api/v1/budget-plans?budget=200"
-Invoke-WebRequest http://127.0.0.1:8080/api/v1/routes
-Invoke-WebRequest http://127.0.0.1:8080/api/v1/diaries
-Invoke-WebRequest "http://127.0.0.1:8080/api/v1/foods?scenic_spot_id=12&sort=hot&limit=10"
-Invoke-WebRequest http://127.0.0.1:8080/api/v1/achievements
-Invoke-WebRequest http://127.0.0.1:8080/api/v1/badge-redemptions -Headers @{Authorization="Bearer <token>"}
-Invoke-WebRequest "http://127.0.0.1:8080/api/v1/achievement-review-submissions?status=pending" -Headers @{Authorization="Bearer <reviewer-token>"}
-Invoke-WebRequest -Method POST http://127.0.0.1:8080/api/v1/auth/login -ContentType "application/json" -Body '{"identifier":"demo_user","password":"demo123456"}'
-```
-
-前端地址：
-
-- `http://127.0.0.1:3000/`
-- `http://127.0.0.1:3000/search?q=故宫`
-- `http://127.0.0.1:3000/agent`
-- `http://127.0.0.1:3000/route`
-- `http://127.0.0.1:3000/diary`
-- `http://127.0.0.1:3000/food`
-- `http://127.0.0.1:3000/achievements`
-- `http://127.0.0.1:3000/spots/39`
+- 具体运行、初始化和冒烟命令只维护在 `QUICKSTART.md`，不要在 README 或 AGENTS 里重复维护第二份命令清单。
+- 数据库入口、导入顺序和验证 SQL 维护在 `database/README.md`。
+- 拉取分支后如果页面功能缺数据，先看 `QUICKSTART.md` 和 `database/README.md`，确认本机 `tourism_system` 是否执行了对应 SQL 迁移、seed 或 import。
+- 环境变量名称和安全规则可以在这里说明，但具体设置命令放在 `QUICKSTART.md`。
+- DeepSeek key、数据库密码和 token 不允许写入仓库、截图、日志或文档示例中的真实值。
 
 ## 当前测试策略
 
