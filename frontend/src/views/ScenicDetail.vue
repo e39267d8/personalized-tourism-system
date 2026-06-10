@@ -119,6 +119,15 @@
           </div>
         </div>
 
+        <!-- 等时圈图例：从入口步行可达时间分层（地图标记同色） -->
+        <div v-if="facilitySortedByWalk" class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md bg-slate-50 px-3 py-2">
+          <span class="text-xs font-semibold text-slate-600">入口步行等时圈</span>
+          <span v-for="band in WALK_TIME_BANDS" :key="band.label" class="flex items-center gap-1 text-xs text-slate-600">
+            <span class="h-2.5 w-2.5 rounded-full" :style="{ backgroundColor: band.color }"></span>
+            {{ band.label }}
+          </span>
+        </div>
+
         <div v-if="internalError" class="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
           {{ internalError }}
         </div>
@@ -189,7 +198,7 @@
             <label class="text-sm font-semibold text-slate-700">目的设施</label>
             <select v-model="selectedFacilityId" class="mt-2 h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm outline-none focus:border-teal-700">
               <option v-for="facility in destinationFacilities" :key="facility.id" :value="facility.id">
-                {{ facility.name }} · {{ facility.typeLabel }}{{ facility.walkDistance >= 0 ? ' · ' + facility.walkDistance + 'm' : '' }}
+                {{ facility.name }} · {{ facility.typeLabel }}{{ facility.walkDistance >= 0 ? ` · ${facility.walkDistance}m · 步行约${Math.max(1, Math.round(facility.walkDistance / 72))}分钟` : '' }}
               </option>
             </select>
             <p v-if="!destinationFacilities.length" class="mt-2 text-sm text-amber-700">
@@ -556,9 +565,33 @@ const loadInternalNavigation = async () => {
   }
 }
 
+// 等时圈分档：按实际步行路径距离换算时间（步速 1.2m/s = 72m/min）
+const WALK_TIME_BANDS = [
+  { maxMinutes: 5, color: '#16a34a', label: '≤5分钟' },
+  { maxMinutes: 10, color: '#eab308', label: '≤10分钟' },
+  { maxMinutes: 15, color: '#f97316', label: '≤15分钟' },
+  { maxMinutes: Infinity, color: '#ef4444', label: '>15分钟' }
+]
+
+const walkMinutes = (facility) => {
+  if (!(facility.walkDistance >= 0)) return null
+  return facility.walkDistance / 72
+}
+
+const walkTimeBand = (facility) => {
+  const minutes = walkMinutes(facility)
+  if (minutes === null) return null
+  return WALK_TIME_BANDS.find(band => minutes <= band.maxMinutes) || null
+}
+
 const markerColor = (facility) => {
   if (!facility.routable) return '#94a3b8'
   if (String(facility.id) === String(selectedFacilityId.value)) return '#0f766e'
+  // 步行距离排序模式下按等时圈着色：地图一眼看出可达性分层
+  if (facilitySortedByWalk.value) {
+    const band = walkTimeBand(facility)
+    if (band) return band.color
+  }
   if (facility.type === 'toilet') return '#2563eb'
   if (facility.type === 'restaurant' || facility.type === 'cafe') return '#c2410c'
   if (facility.type === 'entrance') return '#7c3aed'

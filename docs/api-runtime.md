@@ -211,6 +211,12 @@ tourismApi.planRoute({
 - `offset`
 - `sort`
 
+`sort=popular` 使用时间衰减热度排序（Hacker News 风格重力公式）：
+`(likes*2 + comments*3 + views*0.1 + rating*rating_count) / (age_days + 2)^1.5`，
+互动得分随发布时间衰减，新优质内容可以浮上来。此时响应附带 `sortAlgorithm` 字段，
+前端直接展示。`GET /api/v1/diaries/mine` 与 `GET /api/v1/diaries/search/spot`
+的 `sort=popular` 使用同一公式。
+
 ### `GET /api/v1/diaries/search`
 
 游记搜索。

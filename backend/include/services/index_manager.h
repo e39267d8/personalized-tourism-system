@@ -17,6 +17,14 @@ public:
     // Build/rebuild index from database travel_diaries table.
     bool rebuild_index(class tourism::db::PgConnection& db);
 
+    // Incrementally sync a single diary after create/update: re-reads the row
+    // from DB (decompressing if needed) and replaces its index entries.
+    // O(单篇) instead of O(全库) rebuild. No-op if index not built yet.
+    void sync_document(class tourism::db::PgConnection& db, int doc_id);
+
+    // Remove a single diary from the index (after delete).
+    void remove_document(int doc_id);
+
     // Check if index is ready.
     bool ready() const { return ready_; }
 

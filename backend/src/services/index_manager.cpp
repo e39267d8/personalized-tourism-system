@@ -35,6 +35,41 @@ std::string content_for_index(const std::string& content, const std::string& com
     }
 }
 
+// 单篇日记入索引（rebuild 与增量同步共用）：
+// tags 按 | 分隔；spot_ids 按 , 分隔，每个景点各建一条 spot 索引项
+void add_diary_to_index(InvertedIndex& index, int doc_id,
+                        const std::string& title, const std::string& content,
+                        const std::string& tags_str, const std::string& spot_ids_str) {
+    std::vector<std::string> tags;
+    if (!tags_str.empty()) {
+        auto parts = tourism::support::split_pipe(tags_str);
+        tags.assign(parts.begin(), parts.end());
+    }
+
+    int primary_spot_id = 0;
+    if (!spot_ids_str.empty()) {
+        std::vector<std::string> spot_parts;
+        std::stringstream ss(spot_ids_str);
+        std::string item;
+        while (std::getline(ss, item, ',')) {
+            item = tourism::support::trim_text(item);
+            if (!item.empty()) spot_parts.push_back(item);
+        }
+        if (!spot_parts.empty()) {
+            primary_spot_id = tourism::support::to_int(spot_parts[0]);
+        }
+        for (const auto& spot_str : spot_parts) {
+            int spot_id = tourism::support::to_int(spot_str);
+            if (spot_id > 0) {
+                index.add_document(doc_id, title, content, tags, spot_id);
+            }
+        }
+    }
+    if (primary_spot_id <= 0) {
+        index.add_document(doc_id, title, content, tags, 0);
+    }
+}
+
 } // namespace
 
 IndexManager& IndexManager::instance() {
@@ -57,44 +92,10 @@ bool IndexManager::rebuild_index(tourism::db::PgConnection& db) {
 
         for (int row = 0; row < rows.rows(); ++row) {
             int doc_id = tourism::support::to_int(rows.value(row, "id"));
-            std::string title = rows.value(row, "title");
             std::string content = content_for_index(rows.value(row, "content"),
                                                     rows.value(row, "content_compressed_hex"));
-            std::string tags_str = rows.value(row, "tags");
-            std::string spot_ids_str = rows.value(row, "spot_ids");
-
-            std::vector<std::string> tags;
-            if (!tags_str.empty()) {
-                auto parts = tourism::support::split_pipe(tags_str);
-                tags.assign(parts.begin(), parts.end());
-            }
-
-            // Parse scenic spot IDs
-            int primary_spot_id = 0;
-            if (!spot_ids_str.empty()) {
-                auto comma_parts = tourism::support::split_pipe(spot_ids_str);
-                // Actually split by comma
-                std::vector<std::string> spot_parts;
-                std::stringstream ss(spot_ids_str);
-                std::string item;
-                while (std::getline(ss, item, ',')) {
-                    item = tourism::support::trim_text(item);
-                    if (!item.empty()) spot_parts.push_back(item);
-                }
-                if (!spot_parts.empty()) {
-                    primary_spot_id = tourism::support::to_int(spot_parts[0]);
-                }
-                // Add each scenic spot as a separate entry in spot_index_
-                for (const auto& spot_str : spot_parts) {
-                    int spot_id = tourism::support::to_int(spot_str);
-                    if (spot_id > 0) {
-                        index_.add_document(doc_id, title, content, tags, spot_id);
-                    }
-                }
-            }
-            if (primary_spot_id <= 0) {
-                index_.add_document(doc_id, title, content, tags, 0);
-            }
+            add_diary_to_index(index_, doc_id, rows.value(row, "title"), content,
+                               rows.value(row, "tags"), rows.value(row, "spot_ids"));
         }
 
         ready_ = true;
@@ -103,6 +104,39 @@ bool IndexManager::rebuild_index(tourism::db::PgConnection& db) {
         ready_ = false;
         return false;
     }
+}
+
+void IndexManager::sync_document(tourism::db::PgConnection& db, int doc_id) {
+    // 索引未构建时不做增量（首次检索会全量构建，自然包含本篇）
+    if (!ready_) return;
+    try {
+        auto rows = tourism::db::exec_params(db, R"SQL(
+            SELECT d.id::text, d.title, COALESCE(d.content, '') AS content,
+                   COALESCE(ENCODE(d.content_compressed, 'hex'), '') AS content_compressed_hex,
+                   COALESCE(array_to_string(d.tags, '|'), '') AS tags,
+                   array_to_string(d.scenic_spot_ids, ',') AS spot_ids,
+                   d.status::text
+            FROM travel_diaries d
+            WHERE d.id = $1
+        )SQL", {std::to_string(doc_id)});
+
+        // 先移除旧索引项；仅已发布（status=1）的日记重新入索引
+        index_.remove_document(doc_id);
+        if (rows.rows() == 0) return;
+        if (tourism::support::to_int(rows.value(0, "status")) != 1) return;
+
+        std::string content = content_for_index(rows.value(0, "content"),
+                                                rows.value(0, "content_compressed_hex"));
+        add_diary_to_index(index_, doc_id, rows.value(0, "title"), content,
+                           rows.value(0, "tags"), rows.value(0, "spot_ids"));
+    } catch (const std::exception&) {
+        // 增量失败不影响业务；该篇将在下次全量重建时回到索引
+    }
+}
+
+void IndexManager::remove_document(int doc_id) {
+    if (!ready_) return;
+    index_.remove_document(doc_id);
 }
 
 std::vector<InvertedIndex::SearchResult> IndexManager::search(const std::string& query, const std::string& mode) const {

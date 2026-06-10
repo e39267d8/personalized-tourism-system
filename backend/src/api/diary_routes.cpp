@@ -56,6 +56,17 @@ const std::string kDiarySelectSql = R"SQL(
 
 std::string diary_content_from_row(const PgResult& rows, int row);
 
+// 热度排序：Hacker News 风格重力公式，互动得分随时间衰减，
+// 新的优质内容能浮上来，避免老内容凭存量浏览永久霸榜。
+// score = (likes*2 + comments*3 + views*0.1 + rating*rating_count) / (age_days + 2)^1.5
+const char* kPopularOrderClause =
+    " ORDER BY (d.like_count * 2 + d.comment_count * 3 + d.view_count * 0.1"
+    " + COALESCE(d.rating_score, 0) * COALESCE(d.rating_count, 0))"
+    " / POWER(GREATEST(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - d.created_at)) / 86400.0, 0) + 2, 1.5)"
+    " DESC, d.id DESC";
+
+const char* kPopularAlgorithmLabel = "时间衰减热度（重力公式 t^1.5）";
+
 crow::json::wvalue diary_json(const PgResult& rows, int row) {
     std::string images_raw = rows.value(row, "images");
     auto image_list = split_pipe(images_raw);
@@ -211,7 +222,7 @@ void register_diary_routes(TourismApp& app) {
 
             std::string order_clause;
             if (sort == "rating") order_clause = " ORDER BY d.rating_score DESC, d.like_count DESC, d.id DESC";
-            else if (sort == "popular") order_clause = " ORDER BY (d.like_count * 2 + d.comment_count * 3 + d.view_count * 0.1) DESC, d.id DESC";
+            else if (sort == "popular") order_clause = kPopularOrderClause;
             else order_clause = " ORDER BY d.created_at DESC, d.id DESC";
 
             PgConnection db;
@@ -225,6 +236,7 @@ void register_diary_routes(TourismApp& app) {
             crow::json::wvalue data;
             data["total"] = static_cast<int>(items.size());
             data["items"] = std::move(items);
+            if (sort == "popular") data["sortAlgorithm"] = kPopularAlgorithmLabel;
             return crow::response(ok(std::move(data)));
         } catch (const std::exception& error) {
             return json_error(500, error.what());
@@ -349,7 +361,7 @@ void register_diary_routes(TourismApp& app) {
             PgConnection db;
             std::string order_clause;
             if (sort == "rating") order_clause = " ORDER BY d.rating_score DESC, d.like_count DESC, d.id DESC";
-            else if (sort == "popular") order_clause = " ORDER BY (d.like_count * 2 + d.comment_count * 3 + d.view_count * 0.1) DESC, d.id DESC";
+            else if (sort == "popular") order_clause = kPopularOrderClause;
             else order_clause = " ORDER BY d.created_at DESC, d.id DESC";
 
             crow::json::wvalue::list items;
@@ -407,7 +419,7 @@ void register_diary_routes(TourismApp& app) {
 
             std::string order_clause;
             if (sort == "rating")   order_clause = " ORDER BY d.rating_score DESC, d.id DESC";
-            else if (sort == "popular") order_clause = " ORDER BY (d.like_count * 2 + d.view_count * 0.1) DESC, d.id DESC";
+            else if (sort == "popular") order_clause = kPopularOrderClause;
             else                    order_clause = " ORDER BY d.created_at DESC, d.id DESC";
 
             // kDiarySelectSql 已包含 WHERE d.status <> 2（排除已删除）
@@ -422,6 +434,7 @@ void register_diary_routes(TourismApp& app) {
             crow::json::wvalue data;
             data["total"] = static_cast<int>(items.size());
             data["items"] = std::move(items);
+            if (sort == "popular") data["sortAlgorithm"] = kPopularAlgorithmLabel;
             return crow::response(ok(std::move(data)));
         } catch (const std::exception& error) {
             return json_error(500, error.what());
@@ -712,6 +725,8 @@ void register_diary_routes(TourismApp& app) {
                     packed.hex, std::to_string(packed.original_bytes)});
 
             evaluate_user_achievements(db, user->id);
+            // 倒排索引增量同步：新发布日记立即可被全文检索（O(单篇)，无需全量重建）
+            tourism::services::IndexManager::instance().sync_document(db, to_int(rows.value(0, "id")));
             return crow::response(201, ok(diary_json(rows, 0)));
         } catch (const std::exception& error) {
             return json_error(500, error.what());
@@ -767,6 +782,8 @@ void register_diary_routes(TourismApp& app) {
 
             if (rows.rows() == 0) return json_error(404, "Diary not found");
             evaluate_user_achievements(db, user->id);
+            // 倒排索引增量同步：内容/状态变化即时反映到全文检索（转草稿则移出索引）
+            tourism::services::IndexManager::instance().sync_document(db, id);
             return crow::response(ok(diary_json(rows, 0)));
         } catch (const std::exception& error) {
             return json_error(500, error.what());
@@ -782,6 +799,8 @@ void register_diary_routes(TourismApp& app) {
             auto rows = exec_params(db, "DELETE FROM travel_diaries WHERE id = $1 AND user_id = $2 RETURNING id",
                                     {std::to_string(id), std::to_string(user->id)});
             if (rows.rows() == 0) return json_error(404, "Diary not found");
+            // 倒排索引增量同步：删除的日记立即从全文检索移除
+            tourism::services::IndexManager::instance().remove_document(id);
             crow::json::wvalue data;
             data["deleted"] = true;
             return crow::response(ok(std::move(data)));
