@@ -87,7 +87,29 @@
       </div>
     </div>
 
-    <!-- Huffman tree visualization card -->
+    <!-- Character frequency bar chart -->
+    <div v-if="charFreqs.length" class="mt-6 rounded-xl border border-slate-200 bg-white p-5">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-base font-semibold text-slate-800">字符频率分布（Top 20）</h2>
+        <span class="text-xs text-slate-400">高频字符 → 最短编码</span>
+      </div>
+      <div class="space-y-1.5">
+        <div v-for="item in charFreqs.slice(0, 20)" :key="item.char" class="flex items-center gap-2">
+          <span class="w-10 text-center text-xs font-mono font-bold text-slate-700 bg-slate-100 rounded px-1 py-0.5 flex-shrink-0">{{ item.displayChar }}</span>
+          <div class="flex-1 h-4 bg-slate-100 rounded overflow-hidden">
+            <div class="h-full rounded" :style="{ width: item.pct + '%', background: item.color }"></div>
+          </div>
+          <span class="w-20 text-right text-xs text-slate-500 flex-shrink-0 tabular-nums">{{ item.freq }} 次</span>
+        </div>
+      </div>
+      <p class="mt-3 text-xs text-slate-400">
+        共 {{ uniqueChars }} 种字符 ·
+        定长编码需 {{ fixedBits }} 位/字符 ·
+        <span v-if="avgBits !== '-'">Huffman 平均 {{ avgBits }} 位/字符（节省 {{ Math.round((1 - avgBits / fixedBits / 8) * 100) }}% 空间）</span>
+      </p>
+    </div>
+
+    <!-- Huffman principle card -->
     <div v-if="stats.algorithm" class="mt-6 rounded-xl border border-slate-200 bg-white p-5">
       <h2 class="text-base font-semibold text-slate-800 mb-2">哈夫曼编码原理</h2>
       <div class="prose prose-sm text-slate-600 max-w-none">
@@ -105,7 +127,7 @@
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue'
+import { ref, reactive, computed } from 'vue'
 import { tourismApi } from '@/services/tourismApi'
 
 const inputText = ref('')
@@ -120,6 +142,34 @@ const stats = reactive({
   ratio: '0.00',
   saved: '0.00',
   algorithm: ''
+})
+
+// Character frequency for bar chart (recomputed reactively from inputText)
+const charFreqs = computed(() => {
+  const text = inputText.value
+  if (!text) return []
+  const freq = {}
+  for (const ch of text) freq[ch] = (freq[ch] || 0) + 1
+  const sorted = Object.entries(freq).sort((a, b) => b[1] - a[1])
+  const maxFreq = sorted[0]?.[1] || 1
+  const colors = ['#0d9488', '#0891b2', '#7c3aed', '#db2777', '#ea580c', '#65a30d', '#ca8a04']
+  return sorted.map(([ch, f], i) => ({
+    char: ch,
+    displayChar: ch === ' ' ? '空格' : ch === '\n' ? '换行' : ch === '\t' ? '制表' : ch,
+    freq: f,
+    pct: Math.round((f / maxFreq) * 100),
+    color: colors[i % colors.length]
+  }))
+})
+const uniqueChars = computed(() => charFreqs.value.length)
+const fixedBits = computed(() => {
+  const k = uniqueChars.value
+  return k <= 1 ? 1 : Math.ceil(Math.log2(k))
+})
+const avgBits = computed(() => {
+  if (!stats.originalBytes || !stats.compressedBytes) return '-'
+  const chars = inputText.value.length
+  return chars > 0 ? ((stats.compressedBytes * 8) / chars).toFixed(2) : '-'
 })
 
 function resetResults() {

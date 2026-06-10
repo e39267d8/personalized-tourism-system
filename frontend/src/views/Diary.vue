@@ -549,8 +549,7 @@ onMounted(loadDiaries)
 }
 
 .scale-card {
-  transform: scale(0.92);
-  transform-origin: top left;
+  /* cards fill the grid cell naturally */
 }
 
 .char-float {

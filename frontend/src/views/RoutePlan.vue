@@ -250,6 +250,12 @@ const congestionColor = computed(() => {
   return '#84cc16'
 })
 
+// Route polyline color: follows congestion level when congestion mode is on
+const routeLineColor = computed(() => {
+  if (!useCongestion.value) return '#0f766e'
+  return congestionColor.value
+})
+
 const form = reactive({
   city: '北京',
   startText: '前门大街',
@@ -581,7 +587,7 @@ const drawRoute = () => {
     return
   }
 
-  L.polyline(coords, { color: '#0f766e', weight: 5, opacity: 0.9 }).addTo(routeLayer)
+  L.polyline(coords, { color: routeLineColor.value, weight: useCongestion.value ? 7 : 5, opacity: 0.9 }).addTo(routeLayer)
 
   const markers = route.value?.requestedPlaces?.length
     ? route.value.requestedPlaces.map(place => [place.latitude, place.longitude, place.name])

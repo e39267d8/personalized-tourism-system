@@ -275,9 +275,16 @@
 
     <!-- Action Bar (floating bottom) -->
     <div class="sticky bottom-4 mt-6 flex items-center justify-between rounded-xl bg-white/95 backdrop-blur border border-slate-100 px-5 py-3.5 shadow-lg">
-      <span class="text-xs text-slate-400">
-        {{ form.images.length }} 张图片 · {{ form.videos.length }} 个视频 · {{ contentLength }} 字
-      </span>
+      <div class="flex items-center gap-3">
+        <span class="text-xs text-slate-400">
+          {{ form.images.length }} 张图片 · {{ form.videos.length }} 个视频 · {{ contentLength }} 字
+        </span>
+        <span
+          v-if="huffmanStats.saved > 0"
+          class="text-xs text-teal-600"
+          title="存储时使用 Huffman 无损压缩"
+        >压缩节省 {{ huffmanStats.saved }}%</span>
+      </div>
       <div class="flex items-center gap-2.5">
         <button
           @click="saveDraft"
@@ -320,7 +327,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import DiaryPostcard from '@/components/DiaryPostcard.vue'
 import { tourismApi } from '@/services/tourismApi'
@@ -440,8 +447,24 @@ const previewDiary = computed(() => {
   }
 })
 
+// Huffman compression stats — debounced, shown as "节省 X%" in action bar
+const huffmanStats = reactive({ saved: 0 })
+let _huffmanTimer = null
+function _refreshHuffmanStats() {
+  clearTimeout(_huffmanTimer)
+  _huffmanTimer = setTimeout(async () => {
+    const text = editorEl.value?.innerText || ''
+    if (text.length < 30) { huffmanStats.saved = 0; return }
+    try {
+      const data = await tourismApi.huffmanCompress({ content: text })
+      huffmanStats.saved = Math.round(100 - (data.compressionRatio || 0))
+    } catch { /* silent */ }
+  }, 2000)
+}
+
 function syncEditorContent() {
   editorHtml.value = editorEl.value?.innerHTML || ''
+  _refreshHuffmanStats()
 }
 
 function setEditorContent(html = '') {
