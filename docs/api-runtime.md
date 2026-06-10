@@ -120,6 +120,7 @@ tourismApi.scenicSpots(params)
 | `GET` | `/api/v1/scenic-spots/<id>/indoor-buildings` | 查询景点已接入的室内导航建筑 |
 | `GET` | `/api/v1/indoor-buildings/<id>/features` | 查询室内楼层、节点、类型和拓扑边 |
 | `POST` | `/api/v1/indoor-buildings/<id>/routes/plan` | 基于室内图规划路线 |
+| `POST` | `/api/v1/indoor-buildings/<id>/routes/plan-cross` | 跨层规划：景区路网起点 → 建筑入口 → 室内终点 |
 
 `features` 响应包含 `items`、`floors`、`types` 和 `edges`。其中
 `items` 来自 `indoor_features`，`edges` 来自 `indoor_edges`，前端用它们绘制
@@ -137,6 +138,29 @@ SVG 室内拓扑图。
 
 路线响应包含 `distanceMeters`、`durationSeconds`、`algorithm`、`path` 和
 `steps`。`path` 用于拓扑图节点高亮，`steps` 用于展示楼层内和跨楼层路径步骤。
+
+跨层规划 `plan-cross` payload：
+
+```json
+{
+  "startNodeId": 123,
+  "endFeatureId": 8,
+  "strategy": "time"
+}
+```
+
+`startNodeId` 是景区路网 `graph_nodes` 节点。后端先在室外图上跑 Dijkstra
+到建筑的室外锚点（`indoor_buildings.outdoor_node_id`，由
+`database/cross_layer_navigation_schema.sql` 按名称自动绑定），再从室内
+`entrance` feature 跑室内 Dijkstra 到终点。响应字段：
+
+- `outdoor`：室外段，结构与路线规划接口一致（含地图坐标）。
+- `indoor`：室内段，结构与室内规划接口一致（含 `steps` / `path`）。
+- `handoff`：交接信息（`outdoorNodeId` / `outdoorNodeName` / `entranceFeatureId` / `entranceName`）。
+- `totalDistanceMeters` / `totalDurationSeconds`：两段合计。
+- `algorithm`: `cross-layer-dijkstra`。
+
+建筑未绑定室外锚点且名称匹配失败时返回 422 与明确错误信息，纯室内导航不受影响。
 
 ## 推荐与预算
 

@@ -59,6 +59,7 @@ export const tourismApi = {
   indoorBuildings: (id) => client.get(`/scenic-spots/${id}/indoor-buildings`).then(unwrap),
   indoorFeatures: (id, params) => client.get(`/indoor-buildings/${id}/features`, { params }).then(unwrap),
   planIndoorRoute: (id, payload) => client.post(`/indoor-buildings/${id}/routes/plan`, payload).then(unwrap),
+  planCrossLayerRoute: (id, payload) => client.post(`/indoor-buildings/${id}/routes/plan-cross`, payload).then(unwrap),
   scenicInternalMap: (id) => client.get(`/scenic-spots/${id}/internal-map`).then(unwrap),
   planScenicInternalRoute: (id, payload) => client.post(`/scenic-spots/${id}/internal-routes/plan`, payload).then(unwrap),
   budgetPlans: (params) => client.get('/budget-plans', { params }).then(unwrap),

@@ -35,6 +35,7 @@ psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seed_campus_sp
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\imports\internal_navigation_pku.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\indoor_navigation_schema.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\diary_compression_schema.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\cross_layer_navigation_schema.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seed_demo.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seed_indoor_navigation.sql
 psql -U postgres -d tourism_system -f database\maintenance\repair_data_quality.sql
@@ -60,6 +61,18 @@ psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seed_indoor_na
 
 ```powershell
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\diary_compression_schema.sql
+```
+
+已有数据库只补室内外跨层导航（`indoor_buildings` 新增 `outdoor_node_id` 室外锚点绑定，需先导入内部路网和室内导航数据）：
+
+```powershell
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\cross_layer_navigation_schema.sql
+```
+
+迁移会按名称自动绑定建筑与室外路网节点（如"北大红楼"↔"北京大学红楼"）。验证绑定结果：
+
+```powershell
+psql -U postgres -d tourism_system -c "SELECT b.id, b.name, b.outdoor_node_id, gn.name AS outdoor_node FROM indoor_buildings b LEFT JOIN graph_nodes gn ON gn.id = b.outdoor_node_id;"
 ```
 
 迁移后，新建/更新的日记自动压缩存储；存量明文日记可登录后调用一次 `POST /api/v1/diaries/compression/migrate` 批量压缩，并用 `GET /api/v1/diaries/compression/stats` 验证压缩统计。

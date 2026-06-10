@@ -1202,6 +1202,148 @@ void register_scenic_routes(TourismApp& app) {
             }
         });
 
+    // 室内外跨层导航：一次请求完成"景区路网步行 → 建筑入口交接 → 室内逐层导航"。
+    // 室外段走 graph_nodes/graph_edges 的 Dijkstra，室内段走 indoor_features/indoor_edges
+    // 的 Dijkstra，两层在建筑的室外锚点节点（outdoor_node_id）与室内入口 feature 处缝合。
+    CROW_ROUTE(app, "/api/v1/indoor-buildings/<int>/routes/plan-cross").methods("POST"_method)(
+        [](const crow::request& req, int id) -> crow::response {
+            auto started_at = std::chrono::steady_clock::now();
+            try {
+                auto body = crow::json::load(req.body);
+                if (!body) return json_error(400, "Invalid JSON");
+
+                int start_node_id = json_int(body, "startNodeId");
+                int end_feature_id = json_int(body, "endFeatureId");
+                std::string strategy = normalize_indoor_strategy(json_string(body, "strategy", "time"));
+                if (start_node_id <= 0 || end_feature_id <= 0) {
+                    return json_error(400, "startNodeId and endFeatureId are required");
+                }
+
+                PgConnection db;
+                auto building_rows = exec_params(db, R"SQL(
+                    SELECT b.id::text, b.name, b.provider, b.scenic_spot_id::text,
+                           COALESCE(b.outdoor_node_id, 0)::text AS outdoor_node_id
+                    FROM indoor_buildings b
+                    WHERE b.id = $1
+                    LIMIT 1
+                )SQL", {std::to_string(id)});
+                if (!building_rows.rows()) return json_error(404, "Indoor building not found");
+
+                std::string building_name = building_rows.value(0, "name");
+                int scenic_spot_id = to_int(building_rows.value(0, "scenic_spot_id"));
+                int anchor_node_id = to_int(building_rows.value(0, "outdoor_node_id"));
+
+                // 锚点未持久化时按名称规则实时匹配（与迁移 SQL 同一规则）
+                if (anchor_node_id <= 0) {
+                    auto anchor_rows = exec_params(db, R"SQL(
+                        SELECT gn.id::text
+                        FROM graph_nodes gn
+                        WHERE gn.location IS NOT NULL
+                          AND (
+                              gn.name = $1
+                              OR REPLACE(gn.name, '北京大学', '北大') = $1
+                              OR REPLACE($1, '北大', '北京大学') = gn.name
+                          )
+                        ORDER BY (gn.node_type = 'building') DESC, gn.id
+                        LIMIT 1
+                    )SQL", {building_name});
+                    if (anchor_rows.rows() > 0) anchor_node_id = to_int(anchor_rows.value(0, "id"));
+                }
+                if (anchor_node_id <= 0) {
+                    return json_error(422, "该建筑尚未绑定室外路网锚点，无法跨层导航（可执行 cross_layer_navigation_schema.sql 或手动设置 outdoor_node_id）");
+                }
+
+                // ---- 室外段：景区路网 Dijkstra（步行）----
+                auto graph = load_route_graph(db, scenic_spot_id);
+                if (!graph.nodes.count(start_node_id)) {
+                    return json_error(400, "室外起点不在该景区路网中");
+                }
+                if (!graph.nodes.count(anchor_node_id)) {
+                    return json_error(422, "建筑锚点不在该景区路网中，请检查 outdoor_node_id 绑定");
+                }
+
+                std::string optimization = strategy == "distance" ? "distance" : "time";
+                auto outdoor = plan_route_with_waypoints(
+                    graph, {start_node_id, anchor_node_id}, "walk", optimization, 3);
+                if (!outdoor.success) {
+                    return json_error(422, outdoor.error.empty() ? "室外段无可达路线" : outdoor.error);
+                }
+
+                // ---- 交接点：室内入口 feature（楼层最低的 entrance）----
+                auto entrance_rows = exec_params(db, R"SQL(
+                    SELECT feat.id::text, feat.name
+                    FROM indoor_features feat
+                    JOIN indoor_floors fl ON fl.id = feat.floor_id
+                    WHERE feat.building_id = $1 AND feat.type = 'entrance'
+                    ORDER BY fl.floor_index, feat.sort_order, feat.id
+                    LIMIT 1
+                )SQL", {std::to_string(id)});
+                if (!entrance_rows.rows()) {
+                    return json_error(422, "该建筑室内图未定义入口节点（type='entrance'）");
+                }
+                int entrance_feature_id = to_int(entrance_rows.value(0, "id"));
+                std::string entrance_name = entrance_rows.value(0, "name");
+
+                // ---- 室内段：室内图 Dijkstra ----
+                auto features_vector = load_indoor_features(db, id);
+                auto indoor_edges = load_indoor_edges(db, id);
+                std::map<int, IndoorFeature> features;
+                for (const auto& feature : features_vector) features[feature.id] = feature;
+                if (!features.count(end_feature_id)) {
+                    return json_error(400, "室内终点不在该建筑中");
+                }
+
+                auto indoor = plan_indoor_dijkstra(features, indoor_edges, entrance_feature_id, end_feature_id, strategy);
+                if (!indoor.success) {
+                    return json_error(422, indoor.error.empty() ? "室内段无可达路线" : indoor.error);
+                }
+
+                int elapsed_ms = static_cast<int>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now() - started_at).count());
+                audit_indoor_route(db, id, "local_indoor_graph", "cross-layer-dijkstra",
+                                   entrance_feature_id, end_feature_id, strategy, true, false, elapsed_ms, "");
+
+                // ---- 组装响应：室外段（地图坐标）+ 交接信息 + 室内段（楼层步骤）+ 总计 ----
+                crow::json::wvalue::list indoor_path;
+                for (int feature_id : indoor.feature_path) {
+                    if (features.count(feature_id)) indoor_path.push_back(indoor_feature_json(features.at(feature_id)));
+                }
+                crow::json::wvalue::list indoor_steps;
+                for (size_t index = 0; index < indoor.edge_path.size(); ++index) {
+                    const auto& edge = indoor.edge_path[index];
+                    indoor_steps.push_back(indoor_step_json(features.at(edge.from), features.at(edge.to), edge,
+                                                            static_cast<int>(index + 1)));
+                }
+
+                crow::json::wvalue indoor_json;
+                indoor_json["algorithm"] = "indoor-dijkstra";
+                indoor_json["distanceMeters"] = static_cast<int>(std::round(indoor.distance));
+                indoor_json["durationSeconds"] = indoor.duration;
+                indoor_json["strategy"] = strategy;
+                indoor_json["steps"] = std::move(indoor_steps);
+                indoor_json["path"] = std::move(indoor_path);
+                indoor_json["entranceFeatureId"] = entrance_feature_id;
+
+                crow::json::wvalue data;
+                data["buildingId"] = id;
+                data["buildingName"] = building_name;
+                data["algorithm"] = "cross-layer-dijkstra";
+                data["strategy"] = strategy;
+                data["outdoor"] = computed_route_json(graph, outdoor, optimization, "walk");
+                data["indoor"] = std::move(indoor_json);
+                data["handoff"]["outdoorNodeId"] = anchor_node_id;
+                data["handoff"]["outdoorNodeName"] = graph.nodes.at(anchor_node_id).name;
+                data["handoff"]["entranceFeatureId"] = entrance_feature_id;
+                data["handoff"]["entranceName"] = entrance_name;
+                data["totalDistanceMeters"] = static_cast<int>(std::round(outdoor.total_distance + indoor.distance));
+                data["totalDurationSeconds"] = outdoor.total_duration + indoor.duration;
+                data["elapsedMs"] = elapsed_ms;
+                return crow::response(ok(std::move(data)));
+            } catch (const std::exception& error) {
+                return json_error(500, error.what());
+            }
+        });
+
     CROW_ROUTE(app, "/api/v1/scenic-spots/<int>/internal-map")([](int id) -> crow::response {
         try {
             PgConnection db;

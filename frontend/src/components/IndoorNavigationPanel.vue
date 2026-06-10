@@ -211,25 +211,56 @@
             </div>
 
             <div>
-              <label class="text-sm font-semibold text-slate-700">起点</label>
-              <input
-                v-model="startQuery"
-                type="search"
-                class="mt-2 h-10 w-full rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-teal-700"
-                :placeholder="selectedStartFeature ? selectedStartFeature.name : '搜索入口、房间或设施'"
-              >
-              <div class="mt-2 flex flex-wrap gap-2">
-                <button
-                  v-for="feature in startCandidates"
-                  :key="feature.id"
-                  type="button"
-                  class="rounded-md border px-2.5 py-1.5 text-xs font-semibold"
-                  :class="String(feature.id) === String(startFeatureId) ? 'border-teal-700 bg-teal-50 text-teal-800' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'"
-                  @click="setRouteEndpoint('start', feature)"
-                >
-                  {{ feature.name }} · {{ feature.floorCode }}
-                </button>
+              <div class="flex items-center justify-between">
+                <label class="text-sm font-semibold text-slate-700">起点</label>
+                <div class="grid grid-cols-2 overflow-hidden rounded-md border border-slate-300 text-xs font-semibold">
+                  <button
+                    type="button"
+                    class="h-7 px-2.5"
+                    :class="startMode === 'indoor' ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'"
+                    @click="setStartMode('indoor')"
+                  >室内</button>
+                  <button
+                    type="button"
+                    class="h-7 px-2.5"
+                    :class="startMode === 'outdoor' ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'"
+                    @click="setStartMode('outdoor')"
+                  >景区路网</button>
+                </div>
               </div>
+
+              <template v-if="startMode === 'outdoor'">
+                <select
+                  v-model="outdoorStartNodeId"
+                  class="mt-2 h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm outline-none focus:border-teal-700"
+                >
+                  <option value="">选择景区路网起点</option>
+                  <option v-for="node in outdoorNodes" :key="node.id" :value="String(node.id)">
+                    {{ node.name }}
+                  </option>
+                </select>
+                <p class="mt-1.5 text-xs text-slate-400">从景区路网出发，系统自动规划"室外步行 → 建筑入口 → 室内"完整路径</p>
+              </template>
+              <template v-else>
+                <input
+                  v-model="startQuery"
+                  type="search"
+                  class="mt-2 h-10 w-full rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-teal-700"
+                  :placeholder="selectedStartFeature ? selectedStartFeature.name : '搜索入口、房间或设施'"
+                >
+                <div class="mt-2 flex flex-wrap gap-2">
+                  <button
+                    v-for="feature in startCandidates"
+                    :key="feature.id"
+                    type="button"
+                    class="rounded-md border px-2.5 py-1.5 text-xs font-semibold"
+                    :class="String(feature.id) === String(startFeatureId) ? 'border-teal-700 bg-teal-50 text-teal-800' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'"
+                    @click="setRouteEndpoint('start', feature)"
+                  >
+                    {{ feature.name }} · {{ feature.floorCode }}
+                  </button>
+                </div>
+              </template>
             </div>
 
             <div>
@@ -260,8 +291,40 @@
               :disabled="routeLoading || !canPlanRoute"
               @click="planRoute"
             >
-              {{ routeLoading ? '规划中...' : '规划室内路线' }}
+              {{ routeLoading ? '规划中...' : startMode === 'outdoor' ? '规划跨层路线' : '规划室内路线' }}
             </button>
+          </div>
+
+          <!-- 跨层路线摘要：室外段 → 入口交接 → 室内段 -->
+          <div v-if="crossSummary" class="mt-5 rounded-md border border-teal-200 bg-teal-50/60 p-4">
+            <div class="text-sm font-semibold text-teal-900">跨层路线总览</div>
+            <div class="mt-2 grid grid-cols-2 gap-3 text-sm">
+              <div>
+                <div class="text-xs text-slate-500">总距离</div>
+                <div class="mt-0.5 font-bold text-slate-950">{{ crossSummary.totalDistanceMeters }} m</div>
+              </div>
+              <div>
+                <div class="text-xs text-slate-500">总耗时</div>
+                <div class="mt-0.5 font-bold text-slate-950">{{ durationLabel(crossSummary.totalDurationSeconds) }}</div>
+              </div>
+            </div>
+            <div class="mt-3 space-y-1.5 text-sm leading-6 text-slate-700">
+              <div class="flex items-start gap-2">
+                <span class="mt-1.5 h-2 w-2 flex-none rounded-full bg-teal-600"></span>
+                <span>
+                  <span class="font-semibold">室外段</span>：步行 {{ crossSummary.outdoor?.distance || '-' }}
+                  · {{ crossSummary.outdoor?.time || '-' }}，到达 {{ crossSummary.handoff?.outdoorNodeName || crossSummary.buildingName }}
+                </span>
+              </div>
+              <div class="flex items-start gap-2">
+                <span class="mt-1.5 h-2 w-2 flex-none rounded-full bg-amber-500"></span>
+                <span><span class="font-semibold">交接</span>：从 {{ crossSummary.handoff?.entranceName || '入口' }} 进入 {{ crossSummary.buildingName }}</span>
+              </div>
+              <div class="flex items-start gap-2">
+                <span class="mt-1.5 h-2 w-2 flex-none rounded-full bg-sky-500"></span>
+                <span><span class="font-semibold">室内段</span>：{{ route?.distanceMeters || 0 }} m · {{ durationLabel(route?.durationSeconds) }}，详细步骤见下方</span>
+              </div>
+            </div>
           </div>
 
           <div v-if="route" class="mt-5 border-t border-slate-200 pt-5">
@@ -340,6 +403,13 @@ const startQuery = ref('')
 const endQuery = ref('')
 const strategy = ref('time')
 const route = ref(null)
+
+// 跨层导航：起点可以是景区路网（室外）节点，系统自动完成"室外步行→入口→室内"
+const startMode = ref('indoor')  // 'indoor' | 'outdoor'
+const outdoorNodes = ref([])
+const outdoorNodesLoaded = ref(false)
+const outdoorStartNodeId = ref('')
+const crossSummary = ref(null)  // { outdoor, handoff, totalDistanceMeters, totalDurationSeconds }
 
 const strategyOptions = [
   { value: 'time', label: '时间优先' },
@@ -445,11 +515,42 @@ const hasIncompleteGraph = computed(() => {
 
 const canPlanRoute = computed(() => {
   if (hasIncompleteGraph.value) return false
-  if (!selectedBuildingId.value || !startFeatureId.value || !endFeatureId.value) return false
+  if (!selectedBuildingId.value || !endFeatureId.value) return false
+  if (startMode.value === 'outdoor') {
+    return Boolean(outdoorStartNodeId.value) && featureById.value.has(String(endFeatureId.value))
+  }
+  if (!startFeatureId.value) return false
   if (String(startFeatureId.value) === String(endFeatureId.value)) return false
   const ids = featureById.value
   return ids.has(String(startFeatureId.value)) && ids.has(String(endFeatureId.value))
 })
+
+// 室外起点候选：景区路网中的入口/景点/设施节点（路口不可选）
+const loadOutdoorNodes = async () => {
+  if (outdoorNodesLoaded.value) return
+  try {
+    const data = await tourismApi.scenicInternalMap(props.scenicSpotId)
+    const priority = { entrance: 0, scenic: 1, facility: 2, building: 3 }
+    outdoorNodes.value = (data.nodes || [])
+      .filter(node => node.id && node.name && node.type !== 'junction')
+      .sort((left, right) => (priority[left.type] ?? 9) - (priority[right.type] ?? 9) || left.name.localeCompare(right.name))
+      .slice(0, 100)
+    outdoorNodesLoaded.value = true
+    if (!outdoorStartNodeId.value && outdoorNodes.value.length) {
+      const entrance = outdoorNodes.value.find(node => node.type === 'entrance')
+      outdoorStartNodeId.value = String((entrance || outdoorNodes.value[0]).id)
+    }
+  } catch {
+    outdoorNodes.value = []
+  }
+}
+
+const setStartMode = (mode) => {
+  startMode.value = mode
+  route.value = null
+  crossSummary.value = null
+  if (mode === 'outdoor') loadOutdoorNodes()
+}
 
 const startCandidates = computed(() => candidateFeatures(startQuery.value, 'start'))
 const endCandidates = computed(() => candidateFeatures(endQuery.value, 'end'))
@@ -559,6 +660,7 @@ const providerStatusLabel = (provider) => {
 
 const algorithmLabel = (algorithm) => {
   if (algorithm === 'indoor-dijkstra') return 'Dijkstra 最短路径'
+  if (algorithm === 'cross-layer-dijkstra') return '跨层 Dijkstra'
   if (algorithm === 'amap-indoor-routePath') return '高德室内路线'
   return algorithm || '未返回算法'
 }
@@ -683,23 +785,49 @@ const planRoute = async () => {
   routeLoading.value = true
   error.value = ''
   route.value = null
+  crossSummary.value = null
   try {
-    const data = await tourismApi.planIndoorRoute(selectedBuildingId.value, {
-      startFeatureId: Number(startFeatureId.value),
-      endFeatureId: Number(endFeatureId.value),
-      strategy: strategy.value
-    })
-    route.value = data
-    const first = data.path?.[0]
+    if (startMode.value === 'outdoor') {
+      // 跨层规划：室外 Dijkstra → 建筑入口交接 → 室内 Dijkstra
+      const data = await tourismApi.planCrossLayerRoute(selectedBuildingId.value, {
+        startNodeId: Number(outdoorStartNodeId.value),
+        endFeatureId: Number(endFeatureId.value),
+        strategy: strategy.value
+      })
+      // 室内段结构与纯室内规划一致，SVG 高亮与步骤渲染直接复用
+      route.value = { ...data.indoor, algorithm: data.algorithm, configuredProvider: 'local_indoor_graph', fallbackUsed: false }
+      crossSummary.value = {
+        outdoor: data.outdoor,
+        handoff: data.handoff,
+        buildingName: data.buildingName,
+        totalDistanceMeters: data.totalDistanceMeters,
+        totalDurationSeconds: data.totalDurationSeconds
+      }
+    } else {
+      const data = await tourismApi.planIndoorRoute(selectedBuildingId.value, {
+        startFeatureId: Number(startFeatureId.value),
+        endFeatureId: Number(endFeatureId.value),
+        strategy: strategy.value
+      })
+      route.value = data
+    }
+    const first = route.value.path?.[0]
     if (first?.floorCode) activeFloor.value = first.floorCode
   } catch (requestError) {
-    error.value = requestError.response?.data?.message || '室内路线规划失败'
+    error.value = requestError.response?.data?.message || (startMode.value === 'outdoor' ? '跨层路线规划失败' : '室内路线规划失败')
   } finally {
     routeLoading.value = false
   }
 }
 
-watch(() => props.scenicSpotId, loadBuildings, { immediate: true })
+watch(() => props.scenicSpotId, () => {
+  outdoorNodes.value = []
+  outdoorNodesLoaded.value = false
+  outdoorStartNodeId.value = ''
+  crossSummary.value = null
+  startMode.value = 'indoor'
+  loadBuildings()
+}, { immediate: true })
 
 watch(selectedBuildingId, async (next, previous) => {
   if (!next || next === previous) return
@@ -715,9 +843,11 @@ watch(selectedBuildingId, async (next, previous) => {
 
 watch([selectedType, strategy], () => {
   route.value = null
+  crossSummary.value = null
 })
 
-watch([startFeatureId, endFeatureId], () => {
+watch([startFeatureId, endFeatureId, outdoorStartNodeId], () => {
   route.value = null
+  crossSummary.value = null
 })
 </script>

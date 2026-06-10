@@ -60,6 +60,31 @@
 - `facilities` 表总计 567 条是因为建筑节点也会以 `building` 类型同步到设施表；课程设计口径下，“其它服务设施”按 `type <> 'building'` 统计。
 - 课程设计口径下，校园内部道路图满足边数不少于 200、建筑不少于 20、其它服务设施不少于 50 且服务设施类型不少于 10 的要求。
 
+## 2026-06-11 / feature-lxd-search / 室内外跨层导航
+
+类型：跨层路径规划、数据库迁移、后端新接口、前端交互。
+
+背景：室外景区路网（graph_nodes/graph_edges）和室内图（indoor_features/indoor_edges）此前是两套孤立的图，导航在建筑门口"断链"。本次在建筑入口处缝合两层，一次请求完成"景区路网步行 → 建筑入口交接 → 室内逐层导航"的完整路径（如：从故宫南门步行到北大红楼，再走到二层展厅）。
+
+变更：
+
+- 新增迁移 `database/cross_layer_navigation_schema.sql`：`indoor_buildings` 增加 `outdoor_node_id`（室外路网锚点节点），并按名称规则自动绑定（精确匹配 + "北大/北京大学"前缀归一化，处理室内 seed"北大红楼"与 OSM 室外节点"北京大学红楼"的命名差异）；幂等可重复执行。
+- 新增 `POST /api/v1/indoor-buildings/<id>/routes/plan-cross`：
+  - 室外段：景区路网 Dijkstra（步行，时间/距离策略跟随请求）。
+  - 交接点：建筑室外锚点 ↔ 室内楼层最低的 `entrance` feature。
+  - 室内段：复用既有 indoor-dijkstra（楼层步骤、楼梯/电梯指令）。
+  - 锚点未持久化时按迁移同款名称规则实时匹配；匹配失败返回明确错误，不影响纯室内导航。
+  - 响应含 `outdoor`（含地图坐标，结构同路线规划接口）、`indoor`（结构同室内规划接口）、`handoff`（交接点信息）与总距离/总耗时；审计记录算法为 `cross-layer-dijkstra`。
+- 前端室内导航面板起点新增「室内 / 景区路网」模式切换：选景区路网起点（入口/景点/设施节点下拉）后一键规划跨层路线；结果显示"跨层路线总览"（室外段 → 入口交接 → 室内段 + 总计），室内段步骤与 SVG 高亮完全复用现有渲染。
+
+验证口径：
+
+- 后端 `tourism_server` 与前端生产构建均通过。
+- 执行迁移后 `SELECT name, outdoor_node_id FROM indoor_buildings` 中北大红楼应已绑定到室外"北京大学红楼"节点。
+- `POST /api/v1/indoor-buildings/<id>/routes/plan-cross`（startNodeId=景区入口节点，endFeatureId=二层展厅）应返回室外段坐标、交接信息、室内跨楼层步骤与总计；`indoor_route_audit` 留下 `cross-layer-dijkstra` 记录。
+- 前端景点详情页室内导航面板切到「景区路网」起点，规划后出现"跨层路线总览"卡片，室内 SVG 正常高亮路径。
+- 纯室内导航回归不受影响（起点保持「室内」模式时行为与之前一致）。
+
 ## 2026-06-11 / feature-lxd-search / 拥挤度数据闭环（行为画像 + 热门时段）
 
 类型：拥挤度算法、行为数据聚合、后端新接口、前端可视化。
