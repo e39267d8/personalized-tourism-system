@@ -15,6 +15,34 @@
 - 用户可见页面文案默认使用中文。
 - API 路径、JSON 字段、表名、provider 名、算法标识等技术契约可以保留英文。
 
+## 2026-06-10 / feature-lxd-search / 日记 Huffman 压缩真实落库
+
+类型：数据库结构、后端存储路径、倒排索引、前端展示。
+
+背景：此前 Huffman 压缩只是独立演示 API，`travel_diaries.content` 实际存明文，不满足"日记压缩存储"的字面要求。本次把压缩做进真实写入/读取路径。
+
+变更：
+
+- 新增迁移 `database/diary_compression_schema.sql`：`travel_diaries` 增加 `content_compressed BYTEA`（压缩字节流，NULL=明文存储）与 `content_original_bytes INTEGER`（原文字节数）两列，幂等可重复执行。
+- 后端创建/更新日记时自动 Huffman 压缩：仅当压缩结果小于原文时存压缩列并将 `content` 置空（短于 64 字节或压缩无收益的文本保持明文，避免频率表头开销反向膨胀）。
+- 所有日记读取路径（列表、详情、mine、检索）透明解压，前端无感知；响应新增 `compressedStorage` 与 `spaceSavedPercent` 字段。
+- 倒排索引构建（`index_manager.cpp`）读取压缩列并解压后建索引，全文检索不受压缩影响。
+- 新增 `GET /api/v1/diaries/compression/stats`：全站压缩存储统计（总数、已压缩数、原始/压缩字节、节省比例）。
+- 新增 `POST /api/v1/diaries/compression/migrate`（需登录）：存量明文日记一键批量压缩。
+- 前端：日记详情页显示"已压缩存储 · 省 X%"徽标；`/tools/huffman` 页定位改为"日记存储引擎"说明页，顶部新增系统实时存储统计卡片。
+
+已知取舍：
+
+- 压缩行的 `content` 为空，因此基础 LIKE 检索（`/diaries?q=`）只覆盖标题+摘要；全文内容检索由倒排索引端点（`/diaries/search/fulltext`）承担，这与真实系统"存储压缩、检索走索引"的架构一致。
+
+验证口径：
+
+- 后端 `tourism_server` 与前端生产构建均通过。
+- 执行迁移 SQL 后：新建一篇长日记，`SELECT content = '', OCTET_LENGTH(content_compressed), content_original_bytes FROM travel_diaries WHERE id = <新id>` 应显示明文为空、压缩字节小于原文字节。
+- 日记详情接口返回的 `content` 应与提交原文一致（解压还原），并带 `compressedStorage: true`。
+- `GET /api/v1/diaries/compression/stats` 的 `savedPercent` 应大于 0。
+- 全文检索 `/diaries/search/fulltext?q=<正文词>` 仍能命中压缩存储的日记。
+
 ## 2026-06-09 / feature-yhm-graph / 室内导航中文化
 
 类型：室内导航、数据 seed、后端响应、前端文案、文档规范。

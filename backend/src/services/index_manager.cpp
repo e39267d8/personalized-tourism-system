@@ -1,11 +1,41 @@
 #include "services/index_manager.h"
 
 #include "db/postgres.h"
+#include "services/huffman_compressor.h"
 #include "support/api_helpers.h"
 
 #include <sstream>
 
 namespace tourism::services {
+namespace {
+
+// Huffman 压缩行：content 为空、content_compressed 有值。
+// 索引构建需要全文，因此在这里解压（hex 来自 SQL 的 ENCODE(..., 'hex')）。
+std::string content_for_index(const std::string& content, const std::string& compressed_hex) {
+    if (!content.empty() || compressed_hex.empty()) return content;
+    static const auto nibble = [](char c) -> int {
+        if (c >= '0' && c <= '9') return c - '0';
+        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+        if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+        return -1;
+    };
+    std::vector<uint8_t> bytes;
+    bytes.reserve(compressed_hex.size() / 2);
+    for (size_t i = 0; i + 1 < compressed_hex.size(); i += 2) {
+        int high = nibble(compressed_hex[i]);
+        int low = nibble(compressed_hex[i + 1]);
+        if (high < 0 || low < 0) return content;
+        bytes.push_back(static_cast<uint8_t>((high << 4) | low));
+    }
+    try {
+        HuffmanCompressor decompressor;
+        return decompressor.decompress(bytes);
+    } catch (...) {
+        return content;
+    }
+}
+
+} // namespace
 
 IndexManager& IndexManager::instance() {
     static IndexManager manager;
@@ -16,6 +46,7 @@ bool IndexManager::rebuild_index(tourism::db::PgConnection& db) {
     try {
         auto rows = tourism::db::exec_sql(db, R"SQL(
             SELECT d.id::text, d.title, COALESCE(d.content, '') AS content,
+                   COALESCE(ENCODE(d.content_compressed, 'hex'), '') AS content_compressed_hex,
                    COALESCE(array_to_string(d.tags, '|'), '') AS tags,
                    array_to_string(d.scenic_spot_ids, ',') AS spot_ids
             FROM travel_diaries d
@@ -27,7 +58,8 @@ bool IndexManager::rebuild_index(tourism::db::PgConnection& db) {
         for (int row = 0; row < rows.rows(); ++row) {
             int doc_id = tourism::support::to_int(rows.value(row, "id"));
             std::string title = rows.value(row, "title");
-            std::string content = rows.value(row, "content");
+            std::string content = content_for_index(rows.value(row, "content"),
+                                                    rows.value(row, "content_compressed_hex"));
             std::string tags_str = rows.value(row, "tags");
             std::string spot_ids_str = rows.value(row, "spot_ids");
 

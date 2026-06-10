@@ -32,6 +32,7 @@ psql -U postgres -d tourism_system -f database\imports\amap_pois.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\internal_navigation_schema.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\imports\internal_navigation.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\indoor_navigation_schema.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\diary_compression_schema.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seed_demo.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seed_indoor_navigation.sql
 psql -U postgres -d tourism_system -f database\maintenance\repair_data_quality.sql
@@ -44,6 +45,14 @@ psql -U postgres -d tourism_system -f database\verify_demo.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\indoor_navigation_schema.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seed_indoor_navigation.sql
 ```
+
+已有数据库只补日记压缩存储（新增 `content_compressed` / `content_original_bytes` 列）：
+
+```powershell
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\diary_compression_schema.sql
+```
+
+迁移后，新建/更新的日记自动压缩存储；存量明文日记可登录后调用一次 `POST /api/v1/diaries/compression/migrate` 批量压缩，并用 `GET /api/v1/diaries/compression/stats` 验证压缩统计。
 
 补完后验证室内导航数据：
 

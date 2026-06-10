@@ -2,10 +2,36 @@
   <div>
     <div class="flex items-center justify-between mb-6">
       <div>
-        <h1 class="text-2xl font-bold text-slate-900">哈夫曼无损压缩演示</h1>
-        <p class="mt-1 text-sm text-slate-500">基于字符频率构建哈夫曼树，实现不等长前缀码的无损压缩</p>
+        <h1 class="text-2xl font-bold text-slate-900">哈夫曼无损压缩</h1>
+        <p class="mt-1 text-sm text-slate-500">旅行日记正文在数据库中以哈夫曼编码压缩存储，本页展示其工作原理</p>
       </div>
-      <span class="rounded-md bg-teal-50 px-3 py-1 text-sm font-semibold text-teal-800">算法演示</span>
+      <span class="rounded-md bg-teal-50 px-3 py-1 text-sm font-semibold text-teal-800">日记存储引擎</span>
+    </div>
+
+    <!-- 系统真实压缩存储统计 -->
+    <div v-if="systemStats" class="mb-6 rounded-xl border border-teal-100 bg-teal-50/50 p-5">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-base font-semibold text-slate-800">系统存储概况（实时）</h2>
+        <span class="text-xs text-slate-400">数据来自 travel_diaries 表</span>
+      </div>
+      <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div class="rounded-lg bg-white p-3 text-center">
+          <div class="text-xs text-slate-500">日记总数</div>
+          <div class="mt-1 text-lg font-bold text-slate-800">{{ systemStats.totalDiaries }}</div>
+        </div>
+        <div class="rounded-lg bg-white p-3 text-center">
+          <div class="text-xs text-slate-500">已压缩存储</div>
+          <div class="mt-1 text-lg font-bold text-teal-700">{{ systemStats.compressedDiaries }}</div>
+        </div>
+        <div class="rounded-lg bg-white p-3 text-center">
+          <div class="text-xs text-slate-500">节省空间</div>
+          <div class="mt-1 text-lg font-bold text-amber-700">{{ formatBytes(systemStats.savedBytes) }}</div>
+        </div>
+        <div class="rounded-lg bg-white p-3 text-center">
+          <div class="text-xs text-slate-500">总压缩率</div>
+          <div class="mt-1 text-lg font-bold text-slate-800">{{ systemStats.savedPercent }}%</div>
+        </div>
+      </div>
     </div>
 
     <div class="grid gap-6 lg:grid-cols-2">
@@ -127,8 +153,23 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { tourismApi } from '@/services/tourismApi'
+
+// 系统级压缩存储统计（真实数据库数据）
+const systemStats = ref(null)
+onMounted(async () => {
+  try {
+    systemStats.value = await tourismApi.diaryCompressionStats()
+  } catch { /* 后端不可用时隐藏统计卡片 */ }
+})
+
+function formatBytes(bytes) {
+  if (!bytes || bytes <= 0) return '0 B'
+  if (bytes < 1024) return bytes + ' B'
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
+  return (bytes / 1024 / 1024).toFixed(2) + ' MB'
+}
 
 const inputText = ref('')
 const compressedB64 = ref('')

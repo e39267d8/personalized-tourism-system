@@ -13,6 +13,7 @@ namespace {
 using tourism::db::PgConnection;
 using tourism::db::PgResult;
 using tourism::db::exec_params;
+using tourism::db::exec_sql;
 using tourism::services::current_user;
 using tourism::services::evaluate_user_achievements;
 using tourism::services::submit_achievement_review;
@@ -33,6 +34,9 @@ using tourism::support::today;
 
 const std::string kDiarySelectSql = R"SQL(
     SELECT d.id, d.title, d.summary, d.content, d.start_date::text, d.total_distance_km::text,
+           COALESCE(ENCODE(d.content_compressed, 'hex'), '') AS content_compressed_hex,
+           COALESCE(d.content_original_bytes, 0)::text AS content_original_bytes,
+           COALESCE(OCTET_LENGTH(d.content_compressed), 0)::text AS content_compressed_bytes,
            COALESCE(array_to_string(d.images, '|'), '') AS images,
            COALESCE(array_to_string(d.tags, '|'), '') AS tags,
            d.view_count::text, d.like_count::text, d.comment_count::text,
@@ -48,10 +52,13 @@ const std::string kDiarySelectSql = R"SQL(
     WHERE d.status <> 2
 )SQL";
 
+std::string diary_content_from_row(const PgResult& rows, int row);
+
 crow::json::wvalue diary_json(const PgResult& rows, int row) {
     std::string images_raw = rows.value(row, "images");
     auto image_list = split_pipe(images_raw);
     std::string cover = image_list.empty() ? "" : image_list[0];
+    std::string content = diary_content_from_row(rows, row);
 
     crow::json::wvalue item;
     item["id"] = to_int(rows.value(row, "id"));
@@ -61,9 +68,20 @@ crow::json::wvalue diary_json(const PgResult& rows, int row) {
     item["mood"] = "已记录";
     item["cover"] = cover;
     item["tags"] = string_list(split_pipe(rows.value(row, "tags")));
-    item["excerpt"] = first_nonempty({rows.value(row, "summary"), rows.value(row, "content")});
-    item["content"] = rows.value(row, "content");
+    item["excerpt"] = first_nonempty({rows.value(row, "summary"), content});
+    item["content"] = content;
     item["status"] = to_int(rows.value(row, "status"), 1);
+
+    // 压缩存储信息（仅压缩行返回有效值），供前端展示"已压缩存储 · 节省X%"
+    int original_bytes = to_int(rows.value(row, "content_original_bytes"));
+    int compressed_bytes = to_int(rows.value(row, "content_compressed_bytes"));
+    item["compressedStorage"] = compressed_bytes > 0;
+    if (compressed_bytes > 0 && original_bytes > 0) {
+        item["spaceSavedPercent"] = static_cast<int>(
+            std::round(100.0 * (original_bytes - compressed_bytes) / original_bytes));
+    } else {
+        item["spaceSavedPercent"] = 0;
+    }
 
     crow::json::wvalue::list imgs;
     for (const auto& img : image_list) imgs.push_back(img);
@@ -106,6 +124,78 @@ void refresh_diary_count(PgConnection& db, const std::string& id, const char* ta
     sql += table;
     sql += " WHERE diary_id = $1) WHERE id = $1";
     exec_params(db, sql, {id}, PGRES_COMMAND_OK);
+}
+
+std::string bytes_to_hex(const std::vector<uint8_t>& bytes) {
+    static const char* digits = "0123456789abcdef";
+    std::string hex;
+    hex.reserve(bytes.size() * 2);
+    for (uint8_t byte : bytes) {
+        hex += digits[byte >> 4];
+        hex += digits[byte & 0x0F];
+    }
+    return hex;
+}
+
+std::vector<uint8_t> hex_to_bytes(const std::string& hex) {
+    static const auto nibble = [](char c) -> int {
+        if (c >= '0' && c <= '9') return c - '0';
+        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+        if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+        return -1;
+    };
+    std::vector<uint8_t> bytes;
+    bytes.reserve(hex.size() / 2);
+    for (size_t i = 0; i + 1 < hex.size(); i += 2) {
+        int high = nibble(hex[i]);
+        int low = nibble(hex[i + 1]);
+        if (high < 0 || low < 0) return {};
+        bytes.push_back(static_cast<uint8_t>((high << 4) | low));
+    }
+    return bytes;
+}
+
+// 压缩存储决策：仅当 Huffman 压缩确实变小时才采用压缩存储。
+// 返回 {compressed_hex, store_plaintext}：hex 为空表示按明文存储
+// （短文本的频率表头开销可能让压缩结果大于原文）。
+struct CompressedContent {
+    std::string hex;          // 压缩字节流的 hex 编码；空 = 不压缩
+    std::string stored_text;  // 实际写入 content 列的文本
+    int original_bytes = 0;
+};
+
+CompressedContent compress_for_storage(const std::string& content) {
+    CompressedContent result;
+    result.original_bytes = static_cast<int>(content.size());
+    result.stored_text = content;
+    if (content.size() < 64) return result;  // 过短文本不压缩
+    try {
+        tourism::services::HuffmanCompressor compressor;
+        auto compressed = compressor.compress(content);
+        if (!compressed.empty() && compressed.size() < content.size()) {
+            result.hex = bytes_to_hex(compressed);
+            result.stored_text = "";  // 正文转入压缩列，明文列置空
+        }
+    } catch (...) {
+        // 压缩失败回退明文，不影响业务
+    }
+    return result;
+}
+
+// 行级正文读取：明文列为空且存在压缩列时解压还原。
+std::string diary_content_from_row(const PgResult& rows, int row) {
+    std::string content = rows.value(row, "content");
+    if (!content.empty()) return content;
+    std::string hex = rows.value(row, "content_compressed_hex");
+    if (hex.empty()) return content;
+    try {
+        auto bytes = hex_to_bytes(hex);
+        if (bytes.empty()) return content;
+        tourism::services::HuffmanCompressor decompressor;
+        return decompressor.decompress(bytes);
+    } catch (...) {
+        return content;
+    }
 }
 
 } // namespace
@@ -336,6 +426,79 @@ void register_diary_routes(TourismApp& app) {
         }
     });
 
+    // 压缩存储统计：全站日记原始字节 vs 压缩字节
+    CROW_ROUTE(app, "/api/v1/diaries/compression/stats")([]() -> crow::response {
+        try {
+            PgConnection db;
+            auto rows = exec_sql(db, R"SQL(
+                SELECT
+                    COUNT(*)::text AS total_diaries,
+                    COUNT(content_compressed)::text AS compressed_diaries,
+                    COALESCE(SUM(content_original_bytes) FILTER (WHERE content_compressed IS NOT NULL), 0)::text AS original_bytes,
+                    COALESCE(SUM(OCTET_LENGTH(content_compressed)), 0)::text AS compressed_bytes
+                FROM travel_diaries
+                WHERE status <> 2
+            )SQL");
+
+            long long original_bytes = std::stoll(first_nonempty({rows.value(0, "original_bytes")}, "0"));
+            long long compressed_bytes = std::stoll(first_nonempty({rows.value(0, "compressed_bytes")}, "0"));
+
+            crow::json::wvalue data;
+            data["totalDiaries"] = to_int(rows.value(0, "total_diaries"));
+            data["compressedDiaries"] = to_int(rows.value(0, "compressed_diaries"));
+            data["originalBytes"] = static_cast<int64_t>(original_bytes);
+            data["compressedBytes"] = static_cast<int64_t>(compressed_bytes);
+            data["savedBytes"] = static_cast<int64_t>(original_bytes - compressed_bytes);
+            data["savedPercent"] = original_bytes > 0
+                ? std::round(10000.0 * (original_bytes - compressed_bytes) / original_bytes) / 100.0
+                : 0.0;
+            data["algorithm"] = "huffman";
+            return crow::response(ok(std::move(data)));
+        } catch (const std::exception& error) {
+            return json_error(500, error.what());
+        }
+    });
+
+    // 存量明文日记一键压缩迁移（需登录；逐行 Huffman 压缩后写回）
+    CROW_ROUTE(app, "/api/v1/diaries/compression/migrate").methods("POST"_method)([](const crow::request& req) -> crow::response {
+        try {
+            PgConnection db;
+            auto user = current_user(db, req);
+            if (!user) return json_error(401, "请先登录");
+
+            auto rows = exec_sql(db, R"SQL(
+                SELECT id::text, content
+                FROM travel_diaries
+                WHERE status <> 2 AND content <> '' AND content_compressed IS NULL
+            )SQL");
+
+            int migrated = 0;
+            int skipped = 0;
+            for (int row = 0; row < rows.rows(); ++row) {
+                auto packed = compress_for_storage(rows.value(row, "content"));
+                if (packed.hex.empty()) {
+                    skipped++;  // 压缩无收益（短文本），保持明文
+                    continue;
+                }
+                exec_params(db, R"SQL(
+                    UPDATE travel_diaries
+                    SET content = '', content_compressed = decode($2, 'hex'), content_original_bytes = $3::int
+                    WHERE id = $1
+                )SQL", {rows.value(row, "id"), packed.hex, std::to_string(packed.original_bytes)},
+                    PGRES_COMMAND_OK);
+                migrated++;
+            }
+
+            crow::json::wvalue data;
+            data["migrated"] = migrated;
+            data["skipped"] = skipped;
+            data["algorithm"] = "huffman";
+            return crow::response(ok(std::move(data)));
+        } catch (const std::exception& error) {
+            return json_error(500, error.what());
+        }
+    });
+
     CROW_ROUTE(app, "/api/v1/diaries/<int>")([](int id) -> crow::response {
         try {
             PgConnection db;
@@ -366,13 +529,23 @@ void register_diary_routes(TourismApp& app) {
             auto user = current_user(db, req);
             if (!user) return json_error(401, "请先登录");
 
+            // Huffman 压缩存储：压缩有收益时正文存 content_compressed，明文列置空
+            auto packed = compress_for_storage(content);
+
             auto rows = exec_params(db, R"SQL(
                 INSERT INTO travel_diaries
-                    (user_id, title, summary, content, status, start_date, end_date, total_distance_km,
+                    (user_id, title, summary, content, content_compressed, content_original_bytes,
+                     status, start_date, end_date, total_distance_km,
                      images, tags, view_count, like_count, comment_count)
                 VALUES
-                    ($9::bigint, $1, $2, $3, $4::int, $5::date, $5::date, $6::numeric, $7::text[], $8::text[], 0, 0, 0)
+                    ($9::bigint, $1, $2, $3,
+                     CASE WHEN $10 = '' THEN NULL ELSE decode($10, 'hex') END,
+                     $11::int,
+                     $4::int, $5::date, $5::date, $6::numeric, $7::text[], $8::text[], 0, 0, 0)
                 RETURNING id, title, summary, content, start_date::text, total_distance_km::text,
+                          COALESCE(ENCODE(content_compressed, 'hex'), '') AS content_compressed_hex,
+                          COALESCE(content_original_bytes, 0)::text AS content_original_bytes,
+                          COALESCE(OCTET_LENGTH(content_compressed), 0)::text AS content_compressed_bytes,
                           COALESCE(array_to_string(images, '|'), '') AS images,
                           COALESCE(array_to_string(tags, '|'), '') AS tags,
                           view_count::text, like_count::text, comment_count::text,
@@ -380,7 +553,9 @@ void register_diary_routes(TourismApp& app) {
                           '0'::text AS rating_score, '0'::text AS rating_count, '0'::text AS bookmark_count,
                           $9::text AS author_id,
                           '' AS author_nickname, '' AS author_avatar
-            )SQL", {title, summary_from(content), content, std::to_string(status), date, distance, images_pg, tags, std::to_string(user->id)});
+            )SQL", {title, summary_from(content), packed.stored_text, std::to_string(status), date, distance,
+                    images_pg, tags, std::to_string(user->id),
+                    packed.hex, std::to_string(packed.original_bytes)});
 
             evaluate_user_achievements(db, user->id);
             return crow::response(201, ok(diary_json(rows, 0)));
@@ -406,14 +581,23 @@ void register_diary_routes(TourismApp& app) {
             auto user = current_user(db, req);
             if (!user) return json_error(401, "请先登录");
 
+            // Huffman 压缩存储：与创建路径一致
+            auto packed = compress_for_storage(content);
+
             auto rows = exec_params(db, R"SQL(
                 UPDATE travel_diaries
-                SET title = $1, summary = $2, content = $3, status = $4::int,
+                SET title = $1, summary = $2, content = $3,
+                    content_compressed = CASE WHEN $11 = '' THEN NULL ELSE decode($11, 'hex') END,
+                    content_original_bytes = $12::int,
+                    status = $4::int,
                     start_date = $5::date, end_date = $5::date,
                     total_distance_km = $6::numeric, images = $7::text[], tags = $8::text[],
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = $9 AND user_id = $10 AND status <> 2
                 RETURNING id, title, summary, content, start_date::text, total_distance_km::text,
+                          COALESCE(ENCODE(content_compressed, 'hex'), '') AS content_compressed_hex,
+                          COALESCE(content_original_bytes, 0)::text AS content_original_bytes,
+                          COALESCE(OCTET_LENGTH(content_compressed), 0)::text AS content_compressed_bytes,
                           COALESCE(array_to_string(images, '|'), '') AS images,
                           COALESCE(array_to_string(tags, '|'), '') AS tags,
                           view_count::text, like_count::text, comment_count::text,
@@ -423,7 +607,9 @@ void register_diary_routes(TourismApp& app) {
                           COALESCE(bookmark_count, 0)::text AS bookmark_count,
                           $10::text AS author_id,
                           '' AS author_nickname, '' AS author_avatar
-            )SQL", {title, summary_from(content), content, std::to_string(status), date, distance, images_pg, tags, std::to_string(id), std::to_string(user->id)});
+            )SQL", {title, summary_from(content), packed.stored_text, std::to_string(status), date, distance,
+                    images_pg, tags, std::to_string(id), std::to_string(user->id),
+                    packed.hex, std::to_string(packed.original_bytes)});
 
             if (rows.rows() == 0) return json_error(404, "Diary not found");
             evaluate_user_achievements(db, user->id);
