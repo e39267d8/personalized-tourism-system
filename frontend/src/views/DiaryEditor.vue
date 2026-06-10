@@ -97,6 +97,30 @@
             </div>
           </div>
         </div>
+
+        <div class="mt-3 rounded-lg border border-slate-150 bg-white/80 p-3">
+          <div class="flex items-center gap-2">
+            <input
+              v-model="videoInput"
+              type="url"
+              placeholder="添加视频 URL"
+              class="min-w-0 flex-1 bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400"
+              @keydown.enter.prevent="addVideoUrl"
+            />
+            <button
+              class="rounded-md bg-slate-800 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-slate-900"
+              @click="addVideoUrl"
+            >
+              添加
+            </button>
+          </div>
+          <div v-if="form.videos.length" class="mt-2 space-y-2">
+            <div v-for="(video, idx) in form.videos" :key="video" class="flex items-center gap-2 text-xs text-slate-500">
+              <span class="min-w-0 flex-1 truncate">{{ video }}</span>
+              <button class="text-rose-500 hover:text-rose-700" @click="removeVideo(idx)">移除</button>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- Center: Dashed divider (desktop) -->
@@ -115,6 +139,16 @@
         <!-- Date -->
         <div class="flex items-center gap-2 mb-4 text-xs text-slate-400">
           <input v-model="form.date" type="date" class="bg-transparent border-none outline-none text-xs text-slate-500 cursor-pointer" />
+        </div>
+
+        <div class="mb-4 flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2">
+          <span class="text-xs text-slate-400">景点ID</span>
+          <input
+            v-model="scenicSpotInput"
+            type="text"
+            placeholder="多个 ID 用逗号分隔，用于目的地检索"
+            class="min-w-0 flex-1 bg-transparent text-sm text-slate-600 outline-none placeholder:text-slate-300"
+          />
         </div>
 
         <!-- Tiptap Editor (iPhone Notes style) -->
@@ -242,7 +276,7 @@
     <!-- Action Bar (floating bottom) -->
     <div class="sticky bottom-4 mt-6 flex items-center justify-between rounded-xl bg-white/95 backdrop-blur border border-slate-100 px-5 py-3.5 shadow-lg">
       <span class="text-xs text-slate-400">
-        {{ form.images.length }} 张图片 · {{ contentLength }} 字
+        {{ form.images.length }} 张图片 · {{ form.videos.length }} 个视频 · {{ contentLength }} 字
       </span>
       <div class="flex items-center gap-2.5">
         <button
@@ -312,9 +346,12 @@ const form = ref({
   location: '',
   mood: '',
   moodLabel: '',
-  images: []
+  images: [],
+  videos: []
 })
 const tagInput = ref('')
+const videoInput = ref('')
+const scenicSpotInput = ref('')
 const saving = ref(false)
 const isProcessingImages = ref(false)
 const imageUploadError = ref('')
@@ -367,6 +404,13 @@ const parsedTags = computed(() =>
   tagInput.value.split(/[,，]/).map(t => t.trim()).filter(Boolean)
 )
 
+const parsedScenicSpotIds = computed(() =>
+  scenicSpotInput.value
+    .split(/[,，\s]+/)
+    .map(item => Number.parseInt(item, 10))
+    .filter(id => Number.isInteger(id) && id > 0)
+)
+
 const contentLength = computed(() => {
   const text = editor.value?.getText() || ''
   return text.length
@@ -385,6 +429,8 @@ const previewDiary = computed(() => {
     content: editor.value?.getHTML() || '',
     images,
     cover: images[0] || '',
+    videos: form.value.videos,
+    scenicSpotIds: parsedScenicSpotIds.value,
     date: form.value.date,
     location: form.value.location,
     mood: form.value.mood,
@@ -655,6 +701,17 @@ function removeImage(idx) {
   }
 }
 
+function addVideoUrl() {
+  const value = videoInput.value.trim()
+  if (!value) return
+  if (!form.value.videos.includes(value)) form.value.videos.push(value)
+  videoInput.value = ''
+}
+
+function removeVideo(idx) {
+  form.value.videos.splice(idx, 1)
+}
+
 function prevPreview() {
   currentPreviewIdx.value = (currentPreviewIdx.value - 1 + form.value.images.length) % form.value.images.length
 }
@@ -690,6 +747,8 @@ async function publishDiary() {
     date: form.value.date,
     location: form.value.location,
     images,
+    videos: form.value.videos,
+    scenicSpotIds: parsedScenicSpotIds.value,
     tags: parsedTags.value,
     status: 1
   }
@@ -703,6 +762,8 @@ async function publishDiary() {
     mood: form.value.moodLabel || '',
     cover: images[0] || '',
     images,
+    videos: form.value.videos,
+    scenicSpotIds: parsedScenicSpotIds.value,
     tags: parsedTags.value,
     excerpt: (editor.value?.getText() || '').slice(0, 80) + '...',
     content: editor.value?.getHTML() || '',
@@ -747,6 +808,8 @@ async function saveDiaryWithStatus(status) {
     date: form.value.date,
     location: form.value.location,
     images,
+    videos: form.value.videos,
+    scenicSpotIds: parsedScenicSpotIds.value,
     tags: parsedTags.value,
     status
   }
@@ -774,6 +837,8 @@ async function loadExistingDiary() {
     form.value.location = data.location || ''
     form.value.mood = data.mood || ''
     form.value.images = normalizeDiaryImages(data).slice(0, MAX_DIARY_IMAGES)
+    form.value.videos = data.videos || []
+    scenicSpotInput.value = (data.scenicSpotIds || []).join(', ')
     tagInput.value = (data.tags || []).join(', ')
     if (editor.value && data.content) {
       editor.value.commands.setContent(data.content)
@@ -786,6 +851,8 @@ async function loadExistingDiary() {
       form.value.location = demo.location || ''
       form.value.mood = demo.mood || ''
       form.value.images = normalizeDiaryImages(demo).slice(0, MAX_DIARY_IMAGES)
+      form.value.videos = demo.videos || []
+      scenicSpotInput.value = (demo.scenicSpotIds || []).join(', ')
       tagInput.value = (demo.tags || []).join(', ')
       if (editor.value && demo.content) {
         editor.value.commands.setContent(demo.content)

@@ -4,6 +4,26 @@
     <div class="flex items-center justify-between mb-4">
       <h1 class="text-2xl font-bold text-slate-900">日记广场</h1>
       <div class="flex items-center gap-3">
+        <div class="flex rounded-lg bg-slate-100 p-1 text-sm">
+          <button
+            @click="switchView('public')"
+            :class="['px-3 py-1.5 rounded-md font-medium transition', viewMode === 'public' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700']"
+          >公开广场</button>
+          <button
+            @click="switchView('mine')"
+            :class="['px-3 py-1.5 rounded-md font-medium transition', viewMode === 'mine' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700']"
+          >我的日记</button>
+        </div>
+        <select
+          v-if="viewMode === 'mine'"
+          v-model="mineStatus"
+          class="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/40"
+          @change="loadDiaries"
+        >
+          <option value="all">全部</option>
+          <option value="published">已发布</option>
+          <option value="draft">草稿</option>
+        </select>
         <select
           v-model="sort"
           class="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/40"
@@ -39,6 +59,7 @@
           检索中...
         </div>
         <span v-if="searchAlgo && searchTotal > 0" class="text-xs text-teal-600 bg-teal-50 px-2 py-1 rounded-full">{{ searchAlgo }} · {{ searchTotal }} 篇</span>
+        <span v-if="sortAlgorithm" class="text-xs text-slate-500 bg-slate-100 px-2 py-1 rounded-full">{{ sortAlgorithm }}</span>
       </div>
     </div>
 
@@ -64,6 +85,9 @@
                 <div v-if="isJustPublished(diary)" class="absolute top-2 left-2 bg-teal-600/90 text-white text-[10px] px-1.5 py-0.5 rounded">
                   刚发布
                 </div>
+                <div v-else-if="diary.status === 0" class="absolute top-2 left-2 bg-amber-500/90 text-white text-[10px] px-1.5 py-0.5 rounded">
+                  草稿
+                </div>
               </div>
               <div class="px-3 py-3 flex flex-col gap-2">
                 <h3 class="text-[15px] font-semibold text-slate-800 leading-snug line-clamp-2">{{ diary.title }}</h3>
@@ -84,6 +108,10 @@
                       {{ diary.stats?.likes || 0 }}
                     </span>
                   </div>
+                </div>
+                <div v-if="viewMode === 'mine'" class="flex items-center gap-2 pt-1">
+                  <button class="rounded-md bg-slate-100 px-2 py-1 text-xs text-slate-600 hover:bg-slate-200" @click.stop="$router.push('/diary/edit/' + diary.id)">编辑</button>
+                  <button class="rounded-md bg-rose-50 px-2 py-1 text-xs text-rose-600 hover:bg-rose-100" @click.stop="deleteMineDiary(diary)">删除</button>
                 </div>
               </div>
             </div>
@@ -185,22 +213,28 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { tourismApi } from '@/services/tourismApi'
 import { diaries as demoDiaries } from '@/data/demoData'
 import { diaryStore } from '@/stores/diaryStore'
 import { diaryCoverImage, handleDiaryImageError } from '@/utils/images'
+import { isAuthenticated } from '@/stores/auth'
 
 const PAGE_SIZE = 6
+const router = useRouter()
 
 const diaries = ref([])
 const query = ref('')
 const sort = ref(localStorage.getItem('diary_sort') || 'popular')
+const viewMode = ref('public')
+const mineStatus = ref('all')
 const currentPage = ref(1)
 const pinJustPublished = ref(!!diaryStore.justPublished)
 const searchMode = ref('fulltext')
 const loading = ref(false)
 const searchAlgo = ref('')
 const searchTotal = ref(0)
+const sortAlgorithm = ref('')
 let searchDebounce = null
 
 const searchModes = [
@@ -364,19 +398,42 @@ function onSearchChange() {
     diaries.value = [] // use demo fallback below
   }
   clearTimeout(searchDebounce)
+  if (viewMode.value === 'mine') loadAllDiaries()
 }
 
 function onSortChange() {
   localStorage.setItem('diary_sort', sort.value)
   currentPage.value = 1
   pinJustPublished.value = false
-  if (query.value.trim()) {
+  if (viewMode.value === 'mine') {
+    loadAllDiaries()
+  } else if (query.value.trim()) {
     doSearch()
+  } else {
+    loadAllDiaries()
   }
+}
+
+function switchView(mode) {
+  if (mode === 'mine' && !isAuthenticated()) {
+    router.push({ path: '/login', query: { redirect: '/diary' } })
+    return
+  }
+  viewMode.value = mode
+  currentPage.value = 1
+  query.value = ''
+  searchAlgo.value = ''
+  searchTotal.value = 0
+  loadAllDiaries()
 }
 
 async function doSearch() {
   const q = query.value.trim()
+
+  if (viewMode.value === 'mine') {
+    await loadAllDiaries()
+    return
+  }
 
   // Local mode: no backend call needed
   if (searchMode.value === 'local') {
@@ -385,7 +442,7 @@ async function doSearch() {
     return
   }
 
-  if (!q && searchMode.value !== 'spot') {
+  if (!q) {
     // Empty query: fall back to all diaries
     searchAlgo.value = ''
     searchTotal.value = 0
@@ -407,15 +464,8 @@ async function doSearch() {
       searchTotal.value = data.total || (data.items ? data.items.length : 0)
       diaries.value = data.items || data || []
     } else if (searchMode.value === 'spot') {
-      const spotId = parseInt(q, 10)
-      if (isNaN(spotId) || spotId <= 0) {
-        diaries.value = []
-        searchAlgo.value = ''
-        searchTotal.value = 0
-        return
-      }
-      data = await tourismApi.searchDiaryBySpot({ scenic_spot_id: spotId, sort: sort.value, limit: 50 })
-      searchAlgo.value = 'spot-index'
+      data = await tourismApi.searchDiaryBySpot({ q, sort: sort.value, limit: 50 })
+      searchAlgo.value = data.algorithm || 'spot-index'
       searchTotal.value = data.total || (data.items ? data.items.length : 0)
       diaries.value = data.items || data || []
     }
@@ -442,11 +492,24 @@ function diaryCardImage(diary) {
 
 async function loadAllDiaries() {
   try {
-    const data = await tourismApi.diaries({ sort: sort.value })
+    const data = viewMode.value === 'mine'
+      ? await tourismApi.myDiaries({ sort: sort.value, status: mineStatus.value })
+      : await tourismApi.diaries({ sort: sort.value })
     diaries.value = data.items || data || []
-    if (diaries.value.length === 0) diaries.value = demoDiaries
+    sortAlgorithm.value = data.sortAlgorithm || (sort.value === 'popular' ? '热度排序：浏览+点赞+评论+收藏+评分' : '')
+    if (diaries.value.length === 0 && viewMode.value === 'public') diaries.value = demoDiaries
   } catch {
-    diaries.value = demoDiaries
+    diaries.value = viewMode.value === 'public' ? demoDiaries : []
+    sortAlgorithm.value = ''
+  }
+}
+
+async function deleteMineDiary(diary) {
+  try {
+    await tourismApi.deleteDiary(diary.id)
+    diaries.value = diaries.value.filter(item => item.id !== diary.id)
+  } catch {
+    diaries.value = diaries.value.filter(item => item.id !== diary.id)
   }
 }
 

@@ -57,6 +57,16 @@
         v-html="diary.content || diary.excerpt"
       />
 
+      <div v-if="diary.videos && diary.videos.length" class="mt-5 space-y-3">
+        <video
+          v-for="video in diary.videos"
+          :key="video"
+          :src="video"
+          controls
+          class="w-full rounded-lg border border-slate-100 bg-slate-900"
+        />
+      </div>
+
       <!-- Tags & Location (bottom-left of text area) -->
       <div v-if="(diary.tags && diary.tags.length) || diary.location" class="mt-6 flex flex-wrap gap-2">
         <span

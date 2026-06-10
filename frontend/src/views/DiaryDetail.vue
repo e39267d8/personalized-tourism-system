@@ -67,6 +67,47 @@
       </div>
     </div>
 
+    <div class="mt-4 grid gap-4 lg:grid-cols-2">
+      <div class="rounded-xl border border-slate-100 bg-white px-5 py-4 shadow-sm">
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <div class="text-sm font-semibold text-slate-900">Huffman 无损压缩存储</div>
+            <div class="mt-1 text-sm text-slate-500">
+              {{ compressionText }}
+            </div>
+          </div>
+          <button
+            class="rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50"
+            @click="loadCompression"
+          >
+            刷新
+          </button>
+        </div>
+      </div>
+
+      <div class="rounded-xl border border-teal-100 bg-teal-50 px-5 py-4">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div class="text-sm font-semibold text-teal-950">AIGC 旅行动画</div>
+            <div class="mt-1 text-sm text-teal-800">{{ animationMessage || '根据日记照片生成分镜、字幕和旁白短片。' }}</div>
+          </div>
+          <button
+            class="rounded-md bg-teal-700 px-3 py-2 text-sm font-semibold text-white hover:bg-teal-800 disabled:bg-slate-400"
+            :disabled="animationLoading"
+            @click="generateAnimation"
+          >
+            {{ animationLoading ? '生成中...' : '生成动画' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <TravelAnimationPreview
+      v-if="animationStoryboard"
+      class="mt-4"
+      :storyboard="animationStoryboard"
+    />
+
     <!-- Comments Section -->
     <div class="mt-6 rounded-xl bg-white border border-slate-100 p-6 shadow-sm">
       <h3 class="text-lg font-semibold text-slate-900 mb-4">评论 ({{ comments.length }})</h3>
@@ -113,6 +154,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import DiaryPostcard from '@/components/DiaryPostcard.vue'
+import TravelAnimationPreview from '@/components/TravelAnimationPreview.vue'
 import { tourismApi } from '@/services/tourismApi'
 import { diaries as demoDiaries } from '@/data/demoData'
 import { diaryStore } from '@/stores/diaryStore'
@@ -136,6 +178,10 @@ const userRating = ref(0)
 const newComment = ref('')
 const reviewSubmitting = ref(false)
 const reviewMessage = ref('')
+const compression = ref(null)
+const animationStoryboard = ref(null)
+const animationLoading = ref(false)
+const animationMessage = ref('')
 
 const likeCount = computed(() => diary.value.stats?.likes || 0)
 const bookmarkCount = computed(() => diary.value.bookmarkCount || 0)
@@ -147,6 +193,12 @@ const displayScore = computed(() => {
 const ratingCount = computed(() => diary.value.ratingCount || 0)
 const canSubmitReview = computed(() => {
   return isAuthenticated() && Number(diary.value.author?.id) === Number(authStore.user?.id)
+})
+const compressionText = computed(() => {
+  if (!compression.value) return '读取压缩统计中...'
+  const ratio = Number(compression.value.compressionRatio || 0).toFixed(2)
+  const status = compression.value.verified ? '解压校验通过' : '等待校验'
+  return `${compression.value.algorithm || 'huffman'} · 原始 ${compression.value.originalBytes || 0} bytes · 压缩 ${compression.value.compressedBytes || 0} bytes · 压缩比 ${ratio}% · ${status}`
 })
 
 function ensureAuth() {
@@ -300,6 +352,33 @@ function rateDiary(score) {
   tourismApi.rateDiary(props.id, score).catch(() => {})
 }
 
+async function loadCompression() {
+  try {
+    compression.value = await tourismApi.diaryCompression(props.id)
+  } catch {
+    compression.value = {
+      algorithm: 'huffman',
+      originalBytes: 0,
+      compressedBytes: 0,
+      compressionRatio: 0,
+      verified: false
+    }
+  }
+}
+
+async function generateAnimation() {
+  animationLoading.value = true
+  animationMessage.value = ''
+  try {
+    animationStoryboard.value = await tourismApi.generateDiaryAnimation(props.id)
+    animationMessage.value = '分镜已生成，可以播放预览'
+  } catch (error) {
+    animationMessage.value = error.response?.data?.message || '生成失败，请检查 AI 配置'
+  } finally {
+    animationLoading.value = false
+  }
+}
+
 async function submitAchievementReview() {
   if (!ensureAuth()) return
   reviewSubmitting.value = true
@@ -338,5 +417,6 @@ function formatTime(time) {
 onMounted(() => {
   loadDiary()
   loadComments()
+  loadCompression()
 })
 </script>
