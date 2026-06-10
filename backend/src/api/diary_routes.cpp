@@ -7,6 +7,8 @@
 #include "services/index_manager.h"
 #include "support/api_helpers.h"
 
+#include <map>
+
 namespace tourism::api {
 namespace {
 
@@ -493,6 +495,124 @@ void register_diary_routes(TourismApp& app) {
             data["migrated"] = migrated;
             data["skipped"] = skipped;
             data["algorithm"] = "huffman";
+            return crow::response(ok(std::move(data)));
+        } catch (const std::exception& error) {
+            return json_error(500, error.what());
+        }
+    });
+
+    // 日记→路线复刻：提取日记关联/提及的景点，按叙述顺序输出，供路线规划页一键重走
+    CROW_ROUTE(app, "/api/v1/diaries/<int>/replay-route")([](int id) -> crow::response {
+        try {
+            PgConnection db;
+            auto diary_rows = exec_params(db, R"SQL(
+                SELECT d.id::text, d.title, COALESCE(d.content, '') AS content,
+                       COALESCE(ENCODE(d.content_compressed, 'hex'), '') AS content_compressed_hex,
+                       COALESCE(array_to_string(d.tags, ' '), '') AS tags_text,
+                       COALESCE(array_to_string(d.scenic_spot_ids, ','), '') AS spot_ids
+                FROM travel_diaries d
+                WHERE d.id = $1 AND d.status <> 2
+            )SQL", {std::to_string(id)});
+            if (diary_rows.rows() == 0) return json_error(404, "Diary not found");
+
+            std::string title = diary_rows.value(0, "title");
+            std::string content = diary_content_from_row(diary_rows, 0);
+            std::string spot_ids = diary_rows.value(0, "spot_ids");
+
+            struct Stop {
+                int id;
+                std::string name;
+                std::string city;
+                double longitude;
+                double latitude;
+            };
+            std::vector<Stop> stops;
+            std::string source;
+
+            if (!spot_ids.empty()) {
+                // 优先使用日记显式关联的景点，保持数组原始顺序
+                source = "spot-ids";
+                auto rows = exec_params(db, R"SQL(
+                    SELECT s.id::text, s.name, COALESCE(s.city, '') AS city,
+                           ST_X(s.location::geometry)::text AS longitude,
+                           ST_Y(s.location::geometry)::text AS latitude
+                    FROM unnest(string_to_array($1, ',')::int[]) WITH ORDINALITY AS ids(spot_id, ord)
+                    JOIN scenic_spots s ON s.id = ids.spot_id
+                    WHERE s.status = 1
+                    ORDER BY ids.ord
+                )SQL", {spot_ids});
+                for (int row = 0; row < rows.rows(); ++row) {
+                    stops.push_back({to_int(rows.value(row, "id")), rows.value(row, "name"),
+                                     rows.value(row, "city"),
+                                     to_double(rows.value(row, "longitude")),
+                                     to_double(rows.value(row, "latitude"))});
+                }
+            }
+
+            if (stops.size() < 2) {
+                // 回退：按景点名在标题+正文+标签中首次出现的位置提取（叙述顺序）
+                source = "narrative-extraction";
+                stops.clear();
+                std::string text = title + " " + content + " " + diary_rows.value(0, "tags_text");
+                auto rows = exec_params(db, R"SQL(
+                    SELECT s.id::text, s.name, COALESCE(s.city, '') AS city,
+                           ST_X(s.location::geometry)::text AS longitude,
+                           ST_Y(s.location::geometry)::text AS latitude,
+                           STRPOS($1, s.name) AS pos
+                    FROM scenic_spots s
+                    WHERE s.status = 1
+                      AND LENGTH(s.name) >= 2
+                      AND STRPOS($1, s.name) > 0
+                    ORDER BY STRPOS($1, s.name), LENGTH(s.name) DESC
+                    LIMIT 30
+                )SQL", {text});
+                for (int row = 0; row < rows.rows() && stops.size() < 8; ++row) {
+                    std::string name = rows.value(row, "name");
+                    // 同名位置去重："故宫"是已收录"故宫博物院"的子串时跳过
+                    bool duplicate = false;
+                    for (const auto& accepted : stops) {
+                        if (accepted.name.find(name) != std::string::npos ||
+                            name.find(accepted.name) != std::string::npos) {
+                            duplicate = true;
+                            break;
+                        }
+                    }
+                    if (duplicate) continue;
+                    stops.push_back({to_int(rows.value(row, "id")), name,
+                                     rows.value(row, "city"),
+                                     to_double(rows.value(row, "longitude")),
+                                     to_double(rows.value(row, "latitude"))});
+                }
+            }
+
+            // 城市：取站点中出现最多的非空城市，默认北京
+            std::map<std::string, int> city_votes;
+            for (const auto& stop : stops) {
+                if (!stop.city.empty()) city_votes[stop.city]++;
+            }
+            std::string city = "北京";
+            int best_votes = 0;
+            for (const auto& [name, votes] : city_votes) {
+                if (votes > best_votes) { best_votes = votes; city = name; }
+            }
+
+            crow::json::wvalue::list items;
+            for (const auto& stop : stops) {
+                crow::json::wvalue item;
+                item["id"] = stop.id;
+                item["name"] = stop.name;
+                item["longitude"] = stop.longitude;
+                item["latitude"] = stop.latitude;
+                items.push_back(std::move(item));
+            }
+
+            crow::json::wvalue data;
+            data["diaryId"] = id;
+            data["title"] = title;
+            data["city"] = city;
+            data["total"] = static_cast<int>(items.size());
+            data["stops"] = std::move(items);
+            data["source"] = source;
             return crow::response(ok(std::move(data)));
         } catch (const std::exception& error) {
             return json_error(500, error.what());

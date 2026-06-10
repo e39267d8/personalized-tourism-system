@@ -9,6 +9,16 @@
           <span class="rounded-md bg-teal-50 px-3 py-1 text-sm font-semibold text-teal-800">智能规划</span>
         </div>
 
+        <!-- 日记复刻模式横幅 -->
+        <div v-if="replayInfo" class="mt-4 flex items-start gap-2.5 rounded-md border border-teal-200 bg-teal-50 px-4 py-3">
+          <svg class="mt-0.5 w-4 h-4 flex-none text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"/></svg>
+          <div class="min-w-0 text-sm text-teal-800">
+            <span class="font-semibold">正在重走日记路线</span>
+            <template v-if="replayInfo.title">：《{{ replayInfo.title }}》</template>
+            <div class="mt-0.5 text-xs text-teal-600">已按日记叙述顺序填入途经点，可自行调整后重新生成</div>
+          </div>
+        </div>
+
         <form class="mt-6 space-y-5" @submit.prevent="planRoute">
           <div>
             <label class="text-sm font-semibold text-slate-700">城市</label>
@@ -215,9 +225,11 @@
 
 <script setup>
 import { computed, nextTick, onMounted, reactive, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import L from 'leaflet'
 import { tourismApi } from '@/services/tourismApi'
 
+const pageRoute = useRoute()
 const mapContainer = ref(null)
 const route = ref(null)
 const loading = ref(false)
@@ -227,6 +239,8 @@ const waypoints = ref([])
 const tourMode = ref(false)
 const useCongestion = ref(false)
 const timeOfDay = ref(12)
+// 日记复刻模式：从日记详情页「重走这条路线」跳转而来
+const replayInfo = ref(null)
 
 const timeOptions = [
   { value: 7, label: '早高峰 (7:00)' },
@@ -310,6 +324,23 @@ onMounted(async () => {
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: 'OpenStreetMap'
   }).addTo(map)
+
+  // 日记复刻模式：用日记景点预填表单并自动规划
+  const stopsParam = typeof pageRoute.query.stops === 'string' ? pageRoute.query.stops : ''
+  const stops = stopsParam.split('|').map(name => name.trim()).filter(Boolean)
+  if (stops.length >= 2) {
+    replayInfo.value = {
+      diaryId: pageRoute.query.replayDiary || '',
+      title: typeof pageRoute.query.replayTitle === 'string' ? pageRoute.query.replayTitle : ''
+    }
+    if (typeof pageRoute.query.city === 'string' && pageRoute.query.city) {
+      form.city = pageRoute.query.city
+    }
+    form.startText = stops[0]
+    form.endText = stops[stops.length - 1]
+    waypoints.value = stops.slice(1, -1).map((name, index) => ({ id: Date.now() + index, name }))
+    planRoute()
+  }
 })
 
 const addWaypoint = () => {

@@ -74,6 +74,7 @@ export const tourismApi = {
   diaryCompression: (id) => client.get(`/diaries/${id}/compression`).then(unwrap),
   diaryCompressionStats: () => client.get('/diaries/compression/stats').then(unwrap),
   migrateDiaryCompression: () => client.post('/diaries/compression/migrate').then(unwrap),
+  diaryReplayRoute: (id) => client.get(`/diaries/${id}/replay-route`).then(unwrap),
   generateDiaryAnimation: (id) => client.post(`/diaries/${id}/animation`).then(unwrap),
   likeDiary: (id) => client.post(`/diaries/${id}/like`).then(unwrap),
   unlikeDiary: (id) => client.delete(`/diaries/${id}/like`).then(unwrap),

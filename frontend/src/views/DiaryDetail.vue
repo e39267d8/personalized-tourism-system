@@ -40,6 +40,18 @@
         >已压缩存储 · 省 {{ diary.spaceSavedPercent }}%</span>
       </div>
 
+      <!-- 重走这条路线：提取日记景点，跳转路线规划自动生成 -->
+      <div class="flex items-center gap-3">
+        <button
+          @click="replayRoute"
+          :disabled="replayLoading"
+          class="inline-flex items-center gap-1.5 rounded-lg bg-teal-700 px-3.5 py-2 text-sm font-semibold text-white hover:bg-teal-800 disabled:bg-slate-300 disabled:cursor-not-allowed transition"
+          title="提取这篇日记走过的景点，一键生成可导航路线"
+        >
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"/></svg>
+          {{ replayLoading ? '提取景点中...' : '重走这条路线' }}
+        </button>
+
       <!-- Rating -->
       <div class="flex items-center gap-2">
         <span class="text-xs text-slate-500">评分</span>
@@ -56,6 +68,12 @@
         <span class="text-sm font-medium text-amber-600">{{ displayScore }}</span>
         <span class="text-xs text-slate-400">({{ ratingCount }}人)</span>
       </div>
+      </div>
+    </div>
+
+    <!-- 路线复刻提示（识别景点不足时） -->
+    <div v-if="replayMessage" class="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-700">
+      {{ replayMessage }}
     </div>
 
     <div v-if="canSubmitReview" class="mt-4 rounded-xl border border-amber-100 bg-amber-50 px-5 py-4">
@@ -189,6 +207,35 @@ const compression = ref(null)
 const animationStoryboard = ref(null)
 const animationLoading = ref(false)
 const animationMessage = ref('')
+const replayLoading = ref(false)
+const replayMessage = ref('')
+
+// 日记→路线复刻：提取日记景点（按叙述顺序），跳转路线规划页自动生成路线
+const replayRoute = async () => {
+  replayMessage.value = ''
+  replayLoading.value = true
+  try {
+    const data = await tourismApi.diaryReplayRoute(props.id)
+    const stops = data.stops || []
+    if (stops.length < 2) {
+      replayMessage.value = '这篇日记中未能识别出足够的景点（至少需要 2 个），暂时无法复刻路线。'
+      return
+    }
+    router.push({
+      path: '/route',
+      query: {
+        replayDiary: String(props.id),
+        replayTitle: data.title || diary.value.title || '',
+        city: data.city || '北京',
+        stops: stops.map(stop => stop.name).join('|')
+      }
+    })
+  } catch {
+    replayMessage.value = '路线提取失败，请稍后重试。'
+  } finally {
+    replayLoading.value = false
+  }
+}
 
 const likeCount = computed(() => diary.value.stats?.likes || 0)
 const bookmarkCount = computed(() => diary.value.bookmarkCount || 0)
