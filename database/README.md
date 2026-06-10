@@ -12,6 +12,8 @@
 - `imports/internal_navigation_pku.sql`：北京大学校园内部道路图，使用现有 `graph_nodes`、`graph_edges`、`facilities`，不新建第二套校园图表。
 - `indoor_navigation_schema.sql`：室内导航领域表结构，包含 `indoor_buildings`、`indoor_floors`、`indoor_features`、`indoor_edges` 和 `indoor_route_audit`。
 - `seed_indoor_navigation.sql`：北大红楼首批正式室内图数据，使用 `local_indoor_graph` provider，不是独立数据库，也不是前端假 Demo。
+- `diary_compression_schema.sql`：旅行日记 Huffman 压缩存储迁移，`travel_diaries` 增加 `content_compressed` 和 `content_original_bytes` 列。
+- `cross_layer_navigation_schema.sql`：室内外跨层导航迁移，`indoor_buildings` 增加 `outdoor_node_id` 室外路网锚点并按名称自动绑定。
 - `seed_demo.sql`：基础演示关系数据，不再插入景点；它会按名称从 `scenic_spots` 动态查找景点 id，再插入路线、游记、评论、收藏和成就数据。
 - `verify_demo.sql`：初始化后检查核心表数据量。
 - `migration.sql`：旧数据库升级参考；全新建库通常不需要执行。
@@ -29,6 +31,7 @@ psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seed_campus_sp
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\imports\internal_navigation_pku.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\indoor_navigation_schema.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\diary_compression_schema.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\cross_layer_navigation_schema.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seed_demo.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seed_indoor_navigation.sql
 psql -U postgres -d tourism_system -f database\maintenance\repair_data_quality.sql
@@ -48,6 +51,13 @@ psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\imports\intern
 ```bat
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\indoor_navigation_schema.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seed_indoor_navigation.sql
+```
+
+已有数据库只补日记压缩存储和室内外跨层导航（两个迁移都幂等，可放心重复执行）：
+
+```bat
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\diary_compression_schema.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\cross_layer_navigation_schema.sql
 ```
 
 补完后验证室内导航数据：
