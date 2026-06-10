@@ -60,6 +60,32 @@
 - `facilities` 表总计 567 条是因为建筑节点也会以 `building` 类型同步到设施表；课程设计口径下，“其它服务设施”按 `type <> 'building'` 统计。
 - 课程设计口径下，校园内部道路图满足边数不少于 200、建筑不少于 20、其它服务设施不少于 50 且服务设施类型不少于 10 的要求。
 
+## 2026-06-11 / feature-lxd-search / 拥挤度数据闭环（行为画像 + 热门时段）
+
+类型：拥挤度算法、行为数据聚合、后端新接口、前端可视化。
+
+背景：此前拥挤度完全来自时段模拟函数（早晚高峰写死），与系统真实使用情况无关。本次把系统自有的三类用户行为数据接入拥挤度体系，形成"用户用得越多、画像越准"的数据闭环（类似 Google Maps 热门时段机制）。
+
+行为信号与权重：
+
+- 打卡（`user_scenic_checkins`，权重 3）：用户实际到场，最强信号。
+- 路线规划（`route_plans` 中起点/途经/终点节点所属景点，权重 2）：出行意图。
+- 游记（`travel_diaries.scenic_spot_ids`，权重 1）：回顾性信号。
+
+变更：
+
+- 新增 `GET /api/v1/scenic-spots/<id>/popular-times`：单景点 24 小时人气画像。行为样本 ≥5 时按 60/40 与典型游客曲线混合（`source: "behavior+model"`），样本不足时回退纯模型曲线（`source: "model"`），保证图表始终可渲染；响应含各小时 level（0-100）、peakHours 与样本计数。
+- `POST /api/v1/routes/plan/congestion` 接入行为画像：规划前按所选时段（±1 小时窗口）聚合各景点活跃度因子（按最大值归一化），活跃度 ≥0.66 的景点内部边拥挤度 +2、≥0.33 的 +1（上限 4），Dijkstra 自然倾向绕开热门区域；响应新增 `congestionSource`（`behavior+time` / `time-model`）与 `behaviorBoostedEdges`（被修正的边数）。
+- 前端景点详情页新增「热门时段」卡片：6:00-22:00 柱状图，当前小时高亮，标注数据来源（用户行为数据 / 典型模型）与样本数。
+- 前端路线规划页拥挤度模式下，若本次规划被行为画像修正，显示"已结合用户行为画像，共修正 N 条路段"提示。
+
+验证口径：
+
+- 后端 `tourism_server` 与前端生产构建均通过。
+- `GET /api/v1/scenic-spots/<id>/popular-times` 对无行为数据的景点返回 `source: "model"` 的典型曲线；对有打卡/游记关联的景点（如 seed 演示景点）返回 `behavior+model` 并附样本计数。
+- 拥挤度规划：在有打卡记录的时段调用 `/routes/plan/congestion`，响应 `behaviorBoostedEdges > 0` 且 `congestionSource: "behavior+time"`；删除行为数据后退化为 `time-model`，规划仍正常。
+- 行为聚合 SQL 失败或无数据时，拥挤度规划完整回退原时段模拟逻辑，不影响可用性。
+
 ## 2026-06-11 / feature-lxd-search / 三项算法与体验优化（时间衰减热度、增量倒排索引、入口等时圈）
 
 类型：排序算法、索引维护策略、前端可视化。

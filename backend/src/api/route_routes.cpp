@@ -7,6 +7,9 @@
 #include "support/api_helpers.h"
 
 #include <algorithm>
+#include <unordered_map>
+#include <utility>
+#include <vector>
 
 namespace tourism::api {
 namespace {
@@ -33,6 +36,54 @@ using tourism::support::json_string_array;
 using tourism::support::ok;
 using tourism::support::trim_text;
 using tourism::support::query_int;
+using tourism::support::to_double;
+using tourism::support::to_int;
+
+// 拥挤度数据闭环：从系统自有行为数据（打卡/路线规划/游记）聚合
+// 指定小时（±1h 窗口）各景点的活跃度因子（0..1，按最大值归一化）。
+// 数据飞轮：用户用得越多，拥挤度画像越贴近真实。
+std::unordered_map<int, double> load_spot_activity(PgConnection& db, int hour) {
+    std::unordered_map<int, double> factors;
+    const int prev = (hour + 23) % 24;
+    const int next = (hour + 1) % 24;
+    auto rows = tourism::db::exec_params(db, R"SQL(
+        WITH signals AS (
+            SELECT c.scenic_spot_id AS spot_id, 3.0 AS weight
+            FROM user_scenic_checkins c
+            WHERE EXTRACT(HOUR FROM c.created_at)::int IN ($1::int, $2::int, $3::int)
+            UNION ALL
+            SELECT gn.scenic_spot_id, 2.0
+            FROM route_plans rp
+            JOIN graph_nodes gn ON gn.id = ANY(array_cat(ARRAY[rp.start_node_id, rp.end_node_id],
+                                                         COALESCE(rp.waypoint_node_ids, ARRAY[]::integer[])))
+            WHERE gn.scenic_spot_id IS NOT NULL
+              AND EXTRACT(HOUR FROM rp.created_at)::int IN ($1::int, $2::int, $3::int)
+            UNION ALL
+            SELECT unnest(d.scenic_spot_ids), 1.0
+            FROM travel_diaries d
+            WHERE d.status = 1
+              AND EXTRACT(HOUR FROM d.created_at)::int IN ($1::int, $2::int, $3::int)
+        )
+        SELECT spot_id::text, SUM(weight)::text AS score
+        FROM signals
+        WHERE spot_id IS NOT NULL
+        GROUP BY spot_id
+    )SQL", {std::to_string(hour), std::to_string(prev), std::to_string(next)});
+
+    double max_score = 0;
+    std::vector<std::pair<int, double>> scores;
+    for (int row = 0; row < rows.rows(); ++row) {
+        int spot_id = to_int(rows.value(row, "spot_id"));
+        double score = to_double(rows.value(row, "score"));
+        if (spot_id > 0 && score > 0) {
+            scores.push_back({spot_id, score});
+            max_score = std::max(max_score, score);
+        }
+    }
+    if (max_score <= 0) return factors;
+    for (const auto& [spot_id, score] : scores) factors[spot_id] = score / max_score;
+    return factors;
+}
 
 } // namespace
 
@@ -233,6 +284,34 @@ void register_route_routes(TourismApp& app) {
             PgConnection db;
             auto graph = load_route_graph(db, 0);
 
+            // 行为画像修正：该时段活跃度高的景点，其内部边拥挤度上调，
+            // Dijkstra 自然倾向绕开热门区域（数据来自系统自有打卡/规划/游记）
+            auto spot_activity = load_spot_activity(db, hour);
+            int boosted_edges = 0;
+            if (!spot_activity.empty()) {
+                for (auto& [from_id, edge_list] : graph.edges) {
+                    (void)from_id;
+                    for (auto& edge : edge_list) {
+                        double factor = 0;
+                        auto from_node = graph.nodes.find(edge.from);
+                        auto to_node = graph.nodes.find(edge.to);
+                        if (from_node != graph.nodes.end()) {
+                            auto it = spot_activity.find(from_node->second.scenic_spot_id);
+                            if (it != spot_activity.end()) factor = std::max(factor, it->second);
+                        }
+                        if (to_node != graph.nodes.end()) {
+                            auto it = spot_activity.find(to_node->second.scenic_spot_id);
+                            if (it != spot_activity.end()) factor = std::max(factor, it->second);
+                        }
+                        int bump = factor >= 0.66 ? 2 : factor >= 0.33 ? 1 : 0;
+                        if (bump > 0 && edge.congestion < 4) {
+                            edge.congestion = std::min(4, edge.congestion + bump);
+                            boosted_edges++;
+                        }
+                    }
+                }
+            }
+
             // Compute time-of-day crowd_tolerance: lower = more tolerance for crowds
             // During peak hours, tolerance is low (crowds matter more)
             int crowd_tolerance = 3;
@@ -249,6 +328,8 @@ void register_route_routes(TourismApp& app) {
             crow::json::wvalue data = computed_route_json(graph, result, "congestion", transport);
             data["hour"] = hour;
             data["crowd_tolerance"] = crowd_tolerance;
+            data["congestionSource"] = boosted_edges > 0 ? "behavior+time" : "time-model";
+            data["behaviorBoostedEdges"] = boosted_edges;
             static const char* labels[] = {"极度敏感", "敏感", "中等", "宽松", "非常宽松"};
             data["crowd_label"] = labels[std::max(0, std::min(4, crowd_tolerance))];
 

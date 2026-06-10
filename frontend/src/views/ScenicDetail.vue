@@ -240,11 +240,49 @@
     <IndoorNavigationPanel :scenic-spot-id="props.id" />
 
     <section class="grid gap-6 lg:grid-cols-[0.75fr_1.25fr]">
-      <div class="rounded-md border border-slate-200 bg-white p-5">
-        <h2 class="text-lg font-semibold">位置信息</h2>
-        <div class="mt-3 text-sm leading-7 text-slate-600">
-          <div>城市：{{ spot.district || '北京' }}</div>
-          <div>地址：{{ spot.address || '暂无详细地址' }}</div>
+      <div class="space-y-6">
+        <div class="rounded-md border border-slate-200 bg-white p-5">
+          <h2 class="text-lg font-semibold">位置信息</h2>
+          <div class="mt-3 text-sm leading-7 text-slate-600">
+            <div>城市：{{ spot.district || '北京' }}</div>
+            <div>地址：{{ spot.address || '暂无详细地址' }}</div>
+          </div>
+        </div>
+
+        <!-- 热门时段：系统自有行为数据（打卡/路线规划/游记）聚合的人气画像 -->
+        <div v-if="popularTimes" class="rounded-md border border-slate-200 bg-white p-5">
+          <div class="flex items-center justify-between gap-2">
+            <h2 class="text-lg font-semibold">热门时段</h2>
+            <span
+              class="rounded-md px-2 py-0.5 text-xs font-semibold"
+              :class="popularTimes.source === 'behavior+model' ? 'bg-teal-50 text-teal-700' : 'bg-slate-100 text-slate-500'"
+            >{{ popularTimes.source === 'behavior+model' ? '用户行为数据' : '典型模型' }}</span>
+          </div>
+          <div class="mt-4 flex items-end gap-[3px]" style="height: 72px">
+            <div
+              v-for="item in visiblePopularHours"
+              :key="item.hour"
+              class="group relative flex-1 rounded-t"
+              :class="item.hour === currentHour ? 'bg-teal-600' : item.level >= 80 ? 'bg-teal-400' : 'bg-slate-200'"
+              :style="{ height: Math.max(4, item.level * 0.72) + 'px' }"
+              :title="`${item.hour}:00 人气 ${item.level}%`"
+            ></div>
+          </div>
+          <div class="mt-1.5 flex justify-between text-[10px] text-slate-400">
+            <span>6:00</span><span>10:00</span><span>14:00</span><span>18:00</span><span>22:00</span>
+          </div>
+          <p class="mt-3 text-xs text-slate-500">
+            <template v-if="popularTimes.source === 'behavior+model'">
+              基于本系统 {{ popularTimes.samples?.checkins || 0 }} 次打卡、{{ popularTimes.samples?.diaries || 0 }} 篇游记等行为数据，
+              数据越多画像越准。
+            </template>
+            <template v-else>
+              当前行为数据较少，展示典型游客曲线；随着打卡和路线规划增多会自动切换为真实画像。
+            </template>
+            <template v-if="(popularTimes.peakHours || []).length">
+              高峰：{{ popularTimes.peakHours.map(h => h + ':00').join('、') }}
+            </template>
+          </p>
         </div>
       </div>
 
@@ -295,6 +333,11 @@ const reviews = ref([])
 const facilities = ref([])
 const facilityTypes = ref([])
 const facilitySortedByWalk = ref(false)  // 是否按实际步行距离（Dijkstra）排序
+const popularTimes = ref(null)  // 热门时段画像（行为数据/模型）
+const currentHour = new Date().getHours()
+// 图表只展示 6:00-22:00（夜间小时无信息量）
+const visiblePopularHours = computed(() =>
+  (popularTimes.value?.hours || []).filter(item => item.hour >= 6 && item.hour <= 22))
 const internalMap = ref({ nodes: [], edges: [] })
 const internalRoute = ref(null)
 const internalError = ref('')
@@ -485,7 +528,17 @@ const loadDetail = async () => {
     spot.value = { ...local, tags: local.tags || [] }
     reviews.value = []
   }
+  loadPopularTimes()
   await loadInternalNavigation()
+}
+
+// 热门时段画像（独立加载，失败时隐藏卡片）
+const loadPopularTimes = async () => {
+  try {
+    popularTimes.value = await tourismApi.scenicPopularTimes(props.id)
+  } catch {
+    popularTimes.value = null
+  }
 }
 
 function browserLocation() {

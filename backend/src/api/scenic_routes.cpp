@@ -898,6 +898,97 @@ void register_scenic_routes(TourismApp& app) {
         }
     });
 
+    // 热门时段：基于系统自有用户行为（打卡/路线规划/游记）聚合的小时级人气画像。
+    // 行为数据稀疏时回退到典型游客曲线模型，保证图表始终可用。
+    CROW_ROUTE(app, "/api/v1/scenic-spots/<int>/popular-times")([](int id) -> crow::response {
+        try {
+            PgConnection db;
+
+            // 三类行为信号按小时聚合：打卡（在场，权重3）> 路线规划（意图，权重2）> 游记（回顾，权重1）
+            auto rows = exec_params(db, R"SQL(
+                WITH signals AS (
+                    SELECT EXTRACT(HOUR FROM c.created_at)::int AS hour, 3.0 AS weight
+                    FROM user_scenic_checkins c
+                    WHERE c.scenic_spot_id = $1
+                    UNION ALL
+                    SELECT EXTRACT(HOUR FROM rp.created_at)::int, 2.0
+                    FROM route_plans rp
+                    WHERE EXISTS (
+                        SELECT 1 FROM graph_nodes gn
+                        LEFT JOIN facilities f ON f.id = gn.facility_id
+                        WHERE gn.id = ANY(array_cat(ARRAY[rp.start_node_id, rp.end_node_id],
+                                                    COALESCE(rp.waypoint_node_ids, ARRAY[]::integer[])))
+                          AND (gn.scenic_spot_id = $1 OR f.scenic_spot_id = $1)
+                    )
+                    UNION ALL
+                    SELECT EXTRACT(HOUR FROM d.created_at)::int, 1.0
+                    FROM travel_diaries d
+                    WHERE d.status = 1 AND $1 = ANY(d.scenic_spot_ids)
+                )
+                SELECT hour::text, SUM(weight)::text AS score, COUNT(*)::text AS samples
+                FROM signals
+                GROUP BY hour
+            )SQL", {std::to_string(id)});
+
+            double behavior[24] = {0};
+            int total_samples = 0;
+            for (int row = 0; row < rows.rows(); ++row) {
+                int hour = to_int(rows.value(row, "hour"));
+                if (hour >= 0 && hour < 24) {
+                    behavior[hour] = to_double(rows.value(row, "score"));
+                    total_samples += to_int(rows.value(row, "samples"));
+                }
+            }
+
+            // 典型游客一日曲线（百分比），作为基线/回退模型
+            static const int kTemplate[24] = {0, 0, 0, 0, 0, 0, 5, 15, 35, 60, 85, 90,
+                                              75, 70, 85, 90, 80, 60, 40, 30, 20, 10, 5, 0};
+
+            double max_behavior = 0;
+            for (double value : behavior) max_behavior = std::max(max_behavior, value);
+
+            // 样本充足时行为数据主导（60/40 混合），不足时纯模型
+            const bool use_behavior = total_samples >= 5 && max_behavior > 0;
+            int levels[24];
+            for (int hour = 0; hour < 24; ++hour) {
+                if (use_behavior) {
+                    double behavior_norm = behavior[hour] / max_behavior * 100.0;
+                    levels[hour] = static_cast<int>(std::round(behavior_norm * 0.6 + kTemplate[hour] * 0.4));
+                } else {
+                    levels[hour] = kTemplate[hour];
+                }
+            }
+
+            auto counts = exec_params(db, R"SQL(
+                SELECT
+                    (SELECT COUNT(*) FROM user_scenic_checkins WHERE scenic_spot_id = $1)::text AS checkins,
+                    (SELECT COUNT(*) FROM travel_diaries WHERE status = 1 AND $1 = ANY(scenic_spot_ids))::text AS diaries
+            )SQL", {std::to_string(id)});
+
+            crow::json::wvalue::list hours;
+            crow::json::wvalue::list peak_hours;
+            for (int hour = 0; hour < 24; ++hour) {
+                crow::json::wvalue item;
+                item["hour"] = hour;
+                item["level"] = levels[hour];
+                hours.push_back(std::move(item));
+                if (levels[hour] >= 80) peak_hours.push_back(hour);
+            }
+
+            crow::json::wvalue data;
+            data["spotId"] = id;
+            data["hours"] = std::move(hours);
+            data["peakHours"] = std::move(peak_hours);
+            data["source"] = use_behavior ? "behavior+model" : "model";
+            data["samples"]["total"] = total_samples;
+            data["samples"]["checkins"] = to_int(counts.value(0, "checkins"));
+            data["samples"]["diaries"] = to_int(counts.value(0, "diaries"));
+            return crow::response(ok(std::move(data)));
+        } catch (const std::exception& error) {
+            return json_error(500, error.what());
+        }
+    });
+
     CROW_ROUTE(app, "/api/v1/scenic-spots/<int>/indoor-buildings")([](int id) -> crow::response {
         try {
             PgConnection db;

@@ -55,6 +55,7 @@ export const tourismApi = {
   scenicSpot: (id) => client.get(`/scenic-spots/${id}`).then(unwrap),
   scenicSpotReviews: (id) => client.get(`/scenic-spots/${id}/reviews`).then(unwrap),
   scenicFacilities: (id, params) => client.get(`/scenic-spots/${id}/facilities`, { params }).then(unwrap),
+  scenicPopularTimes: (id) => client.get(`/scenic-spots/${id}/popular-times`).then(unwrap),
   indoorBuildings: (id) => client.get(`/scenic-spots/${id}/indoor-buildings`).then(unwrap),
   indoorFeatures: (id, params) => client.get(`/indoor-buildings/${id}/features`, { params }).then(unwrap),
   planIndoorRoute: (id, payload) => client.post(`/indoor-buildings/${id}/routes/plan`, payload).then(unwrap),

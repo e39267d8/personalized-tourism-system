@@ -96,6 +96,23 @@ tourismApi.scenicSpots(params)
 
 景点详情页的评价列表。
 
+### `GET /api/v1/scenic-spots/<id>/popular-times`
+
+景点 24 小时人气画像（热门时段）。数据来自系统自有用户行为：
+打卡（权重 3）、路线规划（权重 2）、游记（权重 1）按小时聚合。
+
+- 行为样本 ≥5：与典型游客曲线按 60/40 混合，`source: "behavior+model"`。
+- 样本不足：回退纯模型曲线，`source: "model"`，保证图表始终可渲染。
+
+响应核心字段：`hours[]`（`{hour, level}`，level 0-100）、`peakHours[]`（level ≥80 的小时）、
+`samples`（`total` / `checkins` / `diaries`）。
+
+同一套行为画像也用于 `POST /api/v1/routes/plan/congestion`：规划前按所选时段
+（±1 小时窗口）计算各景点活跃度因子，活跃度高的景点内部边拥挤度上调
+（≥0.66 加 2 级、≥0.33 加 1 级，上限 4），使 Dijkstra 倾向绕开热门区域。
+该接口响应附 `congestionSource`（`behavior+time` / `time-model`）与
+`behaviorBoostedEdges`（被修正的边数）。
+
 ### 室内导航
 
 | 方法 | 路径 | 用途 |

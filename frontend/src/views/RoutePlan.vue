@@ -133,6 +133,10 @@
               </div>
             </div>
           </div>
+          <!-- 行为画像来源提示：拥挤度由系统自有用户行为数据修正 -->
+          <div v-if="useCongestion && route?.congestionSource === 'behavior+time'" class="rounded-md bg-teal-50 px-3 py-2 text-xs text-teal-700">
+            本次拥挤度已结合系统内用户行为画像（打卡 / 路线规划 / 游记的时段分布），共修正 {{ route.behaviorBoostedEdges }} 条路段
+          </div>
 
           <button class="w-full rounded-md bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400" :disabled="loading">
             {{ loading ? '规划中...' : '生成路线' }}
