@@ -698,9 +698,16 @@ void register_scenic_routes(TourismApp& app) {
                     UNION
                     SELECT unnest(tags) AS keyword, 3 AS rank FROM scenic_spots WHERE status = 1
                 ) source
-                WHERE $1 = '' OR lower(keyword) LIKE '%' || lower($1) || '%'
+                WHERE $1 = ''
+                   OR lower(keyword) LIKE '%' || lower($1) || '%'
+                   -- 简称连字匹配（与景点搜索同规则）："国博" 可命中 "中国国家博物馆"
+                   OR (char_length($1) >= 2 AND lower(keyword) LIKE '%' || regexp_replace(lower($1), '(.)', '\1%', 'g'))
                 GROUP BY keyword
-                ORDER BY MIN(rank), keyword
+                -- 包含匹配优先于简称匹配；短名称优先（简称查询的意图通常是核心地标）
+                ORDER BY MIN(rank),
+                         (lower(keyword) LIKE '%' || lower($1) || '%') DESC,
+                         char_length(keyword),
+                         keyword
                 LIMIT 8
             )SQL", {query});
 

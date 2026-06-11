@@ -6,6 +6,7 @@
 
 - `schema.sql`：完整建表脚本，包含景点、路线、游记、评论、收藏、评分、成就等结构。
 - `imports/amap_pois.sql`：唯一正式景点来源，负责导入高德 POI 景点数据和可用图片。
+- `imports/amap_pois_supplement.sql`：高德 POI 补充导入，补主导入缺失的北京核心地标（中国国家博物馆、军事博物馆、颐和园），幂等可重复执行。
 - `internal_navigation_schema.sql`：景区内部设施、道路和路网表结构。
 - `imports/internal_navigation.sql`：故宫、北海、奥林匹克森林公园等景区内部导航数据。
 - `seed_campus_spots.sql`：北京大学校园主对象 seed，用于把校园作为 `scenic_spots` 中的正式对象接入系统。
@@ -26,6 +27,7 @@
 ```bat
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\schema.sql
 psql -U postgres -d tourism_system -f database\imports\amap_pois.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\imports\amap_pois_supplement.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\internal_navigation_schema.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\imports\internal_navigation.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seed_campus_spots.sql

@@ -35,6 +35,12 @@ const std::string kScenicSelectSql = R"SQL(
                    CASE WHEN $2 = '' THEN 0 WHEN lower(s.name) = lower($2) THEN 120 ELSE 0 END +
                    CASE WHEN $2 = '' THEN 0 WHEN lower(s.name) LIKE lower($2) || '%' THEN 80 ELSE 0 END +
                    CASE WHEN $2 = '' THEN 0 WHEN lower(s.name) LIKE '%' || lower($2) || '%' THEN 60 ELSE 0 END +
+                   -- 简称连字匹配：查询逐字按序出现在名称中即可命中（"国博"→"中国国家博物馆"）。
+                   -- 仅在常规包含未命中时计分避免重复；要求至少 2 个字防止单字过宽。
+                   CASE WHEN $2 = '' OR char_length($2) < 2 THEN 0
+                        WHEN lower(s.name) LIKE '%' || lower($2) || '%' THEN 0
+                        WHEN lower(s.name) LIKE '%' || regexp_replace(lower($2), '(.)', '\1%', 'g') THEN 40
+                        ELSE 0 END +
                    CASE WHEN $2 = '' THEN 0 WHEN lower(COALESCE(c.name, '')) LIKE '%' || lower($2) || '%' THEN 42 ELSE 0 END +
                    CASE WHEN $2 = '' THEN 0 WHEN lower(COALESCE(array_to_string(s.tags, ' '), '')) LIKE '%' || lower($2) || '%' THEN 48 ELSE 0 END +
                    CASE WHEN $2 = '' THEN 0 WHEN lower(COALESCE(s.description, '')) LIKE '%' || lower($2) || '%' THEN 18 ELSE 0 END +
@@ -47,6 +53,7 @@ const std::string kScenicSelectSql = R"SQL(
                    WHEN lower(s.name) = lower($2) THEN '名称精确匹配'
                    WHEN lower(s.name) LIKE lower($2) || '%' THEN '名称前缀匹配'
                    WHEN lower(s.name) LIKE '%' || lower($2) || '%' THEN '名称包含关键词'
+                   WHEN char_length($2) >= 2 AND lower(s.name) LIKE '%' || regexp_replace(lower($2), '(.)', '\1%', 'g') THEN '名称简称匹配'
                    WHEN lower(COALESCE(array_to_string(s.tags, ' '), '')) LIKE '%' || lower($2) || '%' THEN '标签匹配'
                    WHEN lower(COALESCE(c.name, '')) LIKE '%' || lower($2) || '%' THEN '类型匹配'
                    ELSE '描述内容匹配'
@@ -62,6 +69,7 @@ const std::string kScenicSelectSql = R"SQL(
           AND (
               $2 = ''
               OR lower(s.name) LIKE '%' || lower($2) || '%'
+              OR (char_length($2) >= 2 AND lower(s.name) LIKE '%' || regexp_replace(lower($2), '(.)', '\1%', 'g'))
               OR lower(COALESCE(c.name, '')) LIKE '%' || lower($2) || '%'
               OR lower(COALESCE(array_to_string(s.tags, ' '), '')) LIKE '%' || lower($2) || '%'
               OR (

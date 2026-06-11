@@ -29,6 +29,7 @@ C:\Users\seele\Desktop\code\personalized-tourism-system
 createdb -U postgres tourism_system
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\schema.sql
 psql -U postgres -d tourism_system -f database\imports\amap_pois.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\imports\amap_pois_supplement.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\internal_navigation_schema.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\imports\internal_navigation.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seed_campus_spots.sql

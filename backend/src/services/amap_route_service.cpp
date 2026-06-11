@@ -149,6 +149,19 @@ std::string json_value_string(const crow::json::rvalue& value, const std::string
     }
 }
 
+// 异常安全的数字字段读取。高德响应里"缺失"字段经常以空数组 [] 出现
+// （如公交换乘步行 step 的 duration/road），对容器做 string 转换会抛
+// "json type container"，曾导致整段步行解析被外层 catch 静默吞掉。
+std::string json_number_string(const crow::json::rvalue& value, const std::string& fallback = "0") {
+    try {
+        if (!value) return fallback;
+        if (value.t() == crow::json::type::Object || value.t() == crow::json::type::List) return fallback;
+        return static_cast<std::string>(value);
+    } catch (...) {
+        return fallback;
+    }
+}
+
 bool retryable_amap_error(const std::string& info) {
     return info.find("QPS") != std::string::npos ||
            info.find("RATE") != std::string::npos ||
@@ -303,8 +316,8 @@ void append_amap_steps(const crow::json::rvalue& path, const std::string& transp
             segment.instruction = step.has("instruction") ? json_value_string(step["instruction"]) : "";
             segment.road = step.has("road") ? json_value_string(step["road"]) : "";
             segment.transport = transport;
-            segment.distance = step.has("distance") ? to_double(static_cast<std::string>(step["distance"])) : 0.0;
-            segment.duration = step.has("duration") ? to_int(static_cast<std::string>(step["duration"])) : 0;
+            segment.distance = step.has("distance") ? to_double(json_number_string(step["distance"])) : 0.0;
+            segment.duration = step.has("duration") ? to_int(json_number_string(step["duration"])) : 0;
             segment.polyline = step.has("polyline") ? json_value_string(step["polyline"]) : "";
             if (!segment.instruction.empty() || !segment.polyline.empty()) plan.segments.push_back(segment);
         }
@@ -320,8 +333,8 @@ void append_transit_walk_steps(const crow::json::rvalue& walking, AmapRoutePlan&
             segment.instruction = step.has("instruction") ? json_value_string(step["instruction"]) : "步行";
             segment.road = step.has("road") ? json_value_string(step["road"]) : "";
             segment.transport = "步行";
-            segment.distance = step.has("distance") ? to_double(static_cast<std::string>(step["distance"])) : 0.0;
-            segment.duration = step.has("duration") ? to_int(static_cast<std::string>(step["duration"])) : 0;
+            segment.distance = step.has("distance") ? to_double(json_number_string(step["distance"])) : 0.0;
+            segment.duration = step.has("duration") ? to_int(json_number_string(step["duration"])) : 0;
             segment.polyline = step.has("polyline") ? json_value_string(step["polyline"]) : "";
             if (!segment.instruction.empty() || !segment.polyline.empty()) plan.segments.push_back(segment);
         }
@@ -343,8 +356,8 @@ void append_transit_buslines(const crow::json::rvalue& bus, AmapRoutePlan& plan)
                 : "乘坐 " + line_name + "，从 " + departure + " 到 " + arrival;
             segment.road = line_name;
             segment.transport = "地铁公交";
-            segment.distance = line.has("distance") ? to_double(static_cast<std::string>(line["distance"])) : 0.0;
-            segment.duration = line.has("duration") ? to_int(static_cast<std::string>(line["duration"])) : 0;
+            segment.distance = line.has("distance") ? to_double(json_number_string(line["distance"])) : 0.0;
+            segment.duration = line.has("duration") ? to_int(json_number_string(line["duration"])) : 0;
             segment.polyline = line.has("polyline") ? json_value_string(line["polyline"]) : "";
             plan.segments.push_back(segment);
         }
@@ -399,8 +412,8 @@ AmapRoutePlan plan_amap_route(const std::string& key,
 
             if (travel_mode == "transit" || travel_mode == "bus" || travel_mode == "subway") {
                 auto transit = first_transit_from_amap_payload(payload);
-                double distance = transit.has("distance") ? to_double(static_cast<std::string>(transit["distance"])) : 0.0;
-                int duration = transit.has("duration") ? to_int(static_cast<std::string>(transit["duration"])) : 0;
+                double distance = transit.has("distance") ? to_double(json_number_string(transit["distance"])) : 0.0;
+                int duration = transit.has("duration") ? to_int(json_number_string(transit["duration"])) : 0;
                 plan.total_distance += distance;
                 plan.total_duration += duration;
                 append_transit_segments(transit, plan);
@@ -408,8 +421,8 @@ AmapRoutePlan plan_amap_route(const std::string& key,
             }
 
             auto route_path = first_path_from_amap_payload(payload);
-            double distance = route_path.has("distance") ? to_double(static_cast<std::string>(route_path["distance"])) : 0.0;
-            int duration = route_path.has("duration") ? to_int(static_cast<std::string>(route_path["duration"])) : 0;
+            double distance = route_path.has("distance") ? to_double(json_number_string(route_path["distance"])) : 0.0;
+            int duration = route_path.has("duration") ? to_int(json_number_string(route_path["duration"])) : 0;
             plan.total_distance += distance;
             plan.total_duration += duration;
             append_amap_steps(route_path, transport, plan);
