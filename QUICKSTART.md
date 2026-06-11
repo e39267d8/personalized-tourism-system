@@ -36,6 +36,7 @@ psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\imports\intern
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\indoor_navigation_schema.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\diary_compression_schema.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\cross_layer_navigation_schema.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\diary_location_cover_schema.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seed_demo.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seed_indoor_navigation.sql
 psql -U postgres -d tourism_system -f database\maintenance\repair_data_quality.sql
@@ -61,6 +62,12 @@ psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seed_indoor_na
 
 ```powershell
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\diary_compression_schema.sql
+```
+
+已有数据库只补日记地点与封面（新增 `cover_image`、`location_*` 六列，存量日记封面自动回填）：
+
+```powershell
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\diary_location_cover_schema.sql
 ```
 
 已有数据库只补室内外跨层导航（`indoor_buildings` 新增 `outdoor_node_id` 室外锚点绑定，需先导入内部路网和室内导航数据）：
