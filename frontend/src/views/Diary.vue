@@ -213,7 +213,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { tourismApi } from '@/services/tourismApi'
 import { diaries as demoDiaries } from '@/data/demoData'
 import { diaryStore } from '@/stores/diaryStore'
@@ -222,12 +222,13 @@ import { isAuthenticated } from '@/stores/auth'
 
 const PAGE_SIZE = 6
 const router = useRouter()
+const route = useRoute()
 
 const diaries = ref([])
 const query = ref('')
 const sort = ref(localStorage.getItem('diary_sort') || 'popular')
-const viewMode = ref('public')
-const mineStatus = ref('all')
+const viewMode = ref(route.query.view === 'mine' ? 'mine' : 'public')
+const mineStatus = ref(['all', 'published', 'draft'].includes(route.query.status) ? route.query.status : 'all')
 const currentPage = ref(1)
 const pinJustPublished = ref(!!diaryStore.justPublished)
 const searchMode = ref('fulltext')
@@ -317,22 +318,32 @@ function isJustPublished(diary) {
 }
 
 const sortedDiaries = computed(() => {
+  const seen = new Set()
   let list = [...diaries.value]
+    .filter(diary => viewMode.value === 'mine' || diary.status !== 0)
+    .filter(diary => {
+      const key = diary.id || `${diary.title}|${diary.author?.id || diary.author?.nickname}|${diary.date}|${diary.status}`
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
 
   // Separate justPublished from the list for pinning
   let pinned = null
   if (pinJustPublished.value && diaryStore.justPublished) {
     const idx = list.findIndex(d => d.id === diaryStore.justPublished.id)
     if (idx >= 0) {
+      const serverDiary = list[idx]
       list.splice(idx, 1)
-      pinned = diaryStore.justPublished
+      pinned = { ...diaryStore.justPublished, ...serverDiary, author: serverDiary.author || diaryStore.justPublished.author }
     } else {
       pinned = diaryStore.justPublished
     }
   } else if (diaryStore.justPublished) {
     const idx = list.findIndex(d => d.id === diaryStore.justPublished.id)
     if (idx >= 0) {
-      list[idx] = { ...list[idx], ...diaryStore.justPublished }
+      const serverDiary = list[idx]
+      list[idx] = { ...diaryStore.justPublished, ...serverDiary, author: serverDiary.author || diaryStore.justPublished.author }
     } else {
       list.push(diaryStore.justPublished)
     }
@@ -424,6 +435,7 @@ function switchView(mode) {
   query.value = ''
   searchAlgo.value = ''
   searchTotal.value = 0
+  router.replace({ path: '/diary', query: mode === 'mine' ? { view: 'mine' } : {} })
   loadAllDiaries()
 }
 
@@ -491,6 +503,10 @@ function diaryCardImage(diary) {
 }
 
 async function loadAllDiaries() {
+  if (viewMode.value === 'mine' && !isAuthenticated()) {
+    router.push({ path: '/login', query: { redirect: '/diary?view=mine' } })
+    return
+  }
   try {
     const data = viewMode.value === 'mine'
       ? await tourismApi.myDiaries({ sort: sort.value, status: mineStatus.value })
@@ -505,11 +521,13 @@ async function loadAllDiaries() {
 }
 
 async function deleteMineDiary(diary) {
+  const title = diary?.title ? `《${diary.title}》` : '这篇日记'
+  if (!window.confirm(`确定删除${title}吗？删除后不可恢复。`)) return
   try {
     await tourismApi.deleteDiary(diary.id)
     diaries.value = diaries.value.filter(item => item.id !== diary.id)
   } catch {
-    diaries.value = diaries.value.filter(item => item.id !== diary.id)
+    window.alert('删除失败，请稍后再试。')
   }
 }
 

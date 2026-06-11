@@ -22,6 +22,7 @@ using tourism::services::submit_achievement_review;
 using tourism::support::distance_number;
 using tourism::support::first_nonempty;
 using tourism::support::json_error;
+using tourism::support::json_int_array;
 using tourism::support::json_string;
 using tourism::support::json_tags;
 using tourism::support::ok;
@@ -40,6 +41,13 @@ const std::string kDiarySelectSql = R"SQL(
            COALESCE(d.content_original_bytes, 0)::text AS content_original_bytes,
            COALESCE(OCTET_LENGTH(d.content_compressed), 0)::text AS content_compressed_bytes,
            COALESCE(array_to_string(d.images, '|'), '') AS images,
+           COALESCE(d.cover_image, '') AS cover_image,
+           COALESCE(d.location_name, '') AS location_name,
+           COALESCE(d.location_address, '') AS location_address,
+           COALESCE(d.location_latitude::text, '') AS location_latitude,
+           COALESCE(d.location_longitude::text, '') AS location_longitude,
+           COALESCE(d.location_poi_id, '') AS location_poi_id,
+           COALESCE(array_to_string(d.scenic_spot_ids, '|'), '') AS scenic_spot_ids,
            COALESCE(array_to_string(d.tags, '|'), '') AS tags,
            d.view_count::text, d.like_count::text, d.comment_count::text,
            d.status::text,
@@ -70,7 +78,7 @@ const char* kPopularAlgorithmLabel = "时间衰减热度（重力公式 t^1.5）
 crow::json::wvalue diary_json(const PgResult& rows, int row) {
     std::string images_raw = rows.value(row, "images");
     auto image_list = split_pipe(images_raw);
-    std::string cover = image_list.empty() ? "" : image_list[0];
+    std::string cover = first_nonempty({rows.value(row, "cover_image"), image_list.empty() ? "" : image_list[0]});
     std::string content = diary_content_from_row(rows, row);
 
     crow::json::wvalue item;
@@ -80,7 +88,15 @@ crow::json::wvalue diary_json(const PgResult& rows, int row) {
     item["distance"] = first_nonempty({rows.value(row, "total_distance_km")}, "0") + " km";
     item["mood"] = "已记录";
     item["cover"] = cover;
+    item["coverImage"] = cover;
+    item["location"] = rows.value(row, "location_name");
+    item["locationDetail"]["name"] = rows.value(row, "location_name");
+    item["locationDetail"]["address"] = rows.value(row, "location_address");
+    item["locationDetail"]["latitude"] = to_double(rows.value(row, "location_latitude"));
+    item["locationDetail"]["longitude"] = to_double(rows.value(row, "location_longitude"));
+    item["locationDetail"]["poiId"] = rows.value(row, "location_poi_id");
     item["tags"] = string_list(split_pipe(rows.value(row, "tags")));
+    item["scenicSpotIds"] = string_list(split_pipe(rows.value(row, "scenic_spot_ids")));
     item["excerpt"] = first_nonempty({rows.value(row, "summary"), content});
     item["content"] = content;
     item["status"] = to_int(rows.value(row, "status"), 1);
@@ -128,6 +144,43 @@ std::vector<std::string> body_images(const crow::json::rvalue& body) {
         if (!cover.empty()) img_list.push_back(cover);
     }
     return img_list;
+}
+
+std::string body_cover_image(const crow::json::rvalue& body, const std::vector<std::string>& images) {
+    std::string cover = first_nonempty({
+        json_string(body, "coverImage", ""),
+        json_string(body, "cover", "")
+    });
+    if (!cover.empty()) return cover;
+    return images.empty() ? "" : images[0];
+}
+
+double json_double_value(const crow::json::rvalue& body, const std::string& key, double fallback = 0.0) {
+    if (!body || !body.has(key)) return fallback;
+    try {
+        return body[key].d();
+    } catch (...) {
+        try {
+            return to_double(static_cast<std::string>(body[key].s()), fallback);
+        } catch (...) {
+        }
+    }
+    return fallback;
+}
+
+std::string nullable_numeric(double value) {
+    if (value == 0.0) return "";
+    return std::to_string(value);
+}
+
+std::string pg_int_array(const std::vector<int>& values) {
+    std::string result = "{";
+    for (size_t i = 0; i < values.size(); ++i) {
+        if (i) result += ",";
+        result += std::to_string(values[i]);
+    }
+    result += "}";
+    return result;
 }
 
 void refresh_diary_count(PgConnection& db, const std::string& id, const char* table, const char* column) {
@@ -227,6 +280,7 @@ void register_diary_routes(TourismApp& app) {
 
             PgConnection db;
             auto rows = exec_params(db, kDiarySelectSql + R"SQL(
+                AND d.status = 1
                 AND ($1 = '' OR lower(d.title || ' ' || COALESCE(d.summary, '') || ' ' || d.content) LIKE '%' || lower($1) || '%')
             )SQL" + order_clause + " LIMIT " + limit, {query});
 
@@ -248,6 +302,7 @@ void register_diary_routes(TourismApp& app) {
             std::string query = req.url_params.get("q") ? req.url_params.get("q") : "";
             PgConnection db;
             auto rows = exec_params(db, kDiarySelectSql + R"SQL(
+                AND d.status = 1
                 AND ($1 = '' OR lower(d.title || ' ' || COALESCE(d.summary, '') || ' ' || d.content) LIKE '%' || lower($1) || '%')
                 ORDER BY d.created_at DESC, d.id DESC
                 LIMIT 30
@@ -415,6 +470,7 @@ void register_diary_routes(TourismApp& app) {
             if (!user) return json_error(401, "请先登录");
 
             std::string sort = req.url_params.get("sort") ? req.url_params.get("sort") : "latest";
+            std::string status = req.url_params.get("status") ? req.url_params.get("status") : "all";
             std::string limit = std::to_string(query_int(req, "limit", 50, 1, 100));
 
             std::string order_clause;
@@ -422,10 +478,12 @@ void register_diary_routes(TourismApp& app) {
             else if (sort == "popular") order_clause = kPopularOrderClause;
             else                    order_clause = " ORDER BY d.created_at DESC, d.id DESC";
 
-            // kDiarySelectSql 已包含 WHERE d.status <> 2（排除已删除）
-            // 额外加 AND d.user_id = $1 使只返回本人日记（含草稿 status=0）
+            std::string status_clause;
+            if (status == "published") status_clause = " AND d.status = 1";
+            else if (status == "draft") status_clause = " AND d.status = 0";
+
             auto rows = exec_params(db,
-                kDiarySelectSql + " AND d.user_id = $1" + order_clause + " LIMIT " + limit,
+                kDiarySelectSql + " AND d.user_id = $1" + status_clause + order_clause + " LIMIT " + limit,
                 {std::to_string(user->id)});
 
             crow::json::wvalue::list items;
@@ -688,9 +746,17 @@ void register_diary_routes(TourismApp& app) {
             std::string content = first_nonempty({json_string(body, "content"), json_string(body, "excerpt")}, "");
             std::string date = first_nonempty({json_string(body, "date"), json_string(body, "start_date")}, today());
             std::string tags = pg_text_array(json_tags(body));
+            std::string scenic_spot_ids = pg_int_array(json_int_array(body, "scenicSpotIds"));
             std::string distance = std::to_string(distance_number(json_string(body, "distance", "0")));
             int status = body.has("status") ? static_cast<int>(body["status"].i()) : 1;
-            std::string images_pg = pg_text_array(body_images(body));
+            auto images = body_images(body);
+            std::string images_pg = pg_text_array(images);
+            std::string cover = body_cover_image(body, images);
+            std::string location_name = first_nonempty({json_string(body, "location"), json_string(body, "locationName")});
+            std::string location_address = json_string(body, "locationAddress");
+            std::string location_poi_id = json_string(body, "locationPoiId");
+            std::string location_latitude = nullable_numeric(json_double_value(body, "locationLatitude"));
+            std::string location_longitude = nullable_numeric(json_double_value(body, "locationLongitude"));
 
             PgConnection db;
             auto user = current_user(db, req);
@@ -703,17 +769,29 @@ void register_diary_routes(TourismApp& app) {
                 INSERT INTO travel_diaries
                     (user_id, title, summary, content, content_compressed, content_original_bytes,
                      status, start_date, end_date, total_distance_km,
-                     images, tags, view_count, like_count, comment_count)
+                     images, cover_image, location_name, location_address, location_latitude,
+                     location_longitude, location_poi_id, scenic_spot_ids,
+                     tags, view_count, like_count, comment_count)
                 VALUES
                     ($9::bigint, $1, $2, $3,
                      CASE WHEN $10 = '' THEN NULL ELSE decode($10, 'hex') END,
                      $11::int,
-                     $4::int, $5::date, $5::date, $6::numeric, $7::text[], $8::text[], 0, 0, 0)
+                     $4::int, $5::date, $5::date, $6::numeric, $7::text[],
+                     $12, $13, $14, NULLIF($15, '')::double precision,
+                     NULLIF($16, '')::double precision, $17, $18::int[],
+                     $8::text[], 0, 0, 0)
                 RETURNING id, title, summary, content, start_date::text, total_distance_km::text,
                           COALESCE(ENCODE(content_compressed, 'hex'), '') AS content_compressed_hex,
                           COALESCE(content_original_bytes, 0)::text AS content_original_bytes,
                           COALESCE(OCTET_LENGTH(content_compressed), 0)::text AS content_compressed_bytes,
                           COALESCE(array_to_string(images, '|'), '') AS images,
+                          COALESCE(cover_image, '') AS cover_image,
+                          COALESCE(location_name, '') AS location_name,
+                          COALESCE(location_address, '') AS location_address,
+                          COALESCE(location_latitude::text, '') AS location_latitude,
+                          COALESCE(location_longitude::text, '') AS location_longitude,
+                          COALESCE(location_poi_id, '') AS location_poi_id,
+                          COALESCE(array_to_string(scenic_spot_ids, '|'), '') AS scenic_spot_ids,
                           COALESCE(array_to_string(tags, '|'), '') AS tags,
                           view_count::text, like_count::text, comment_count::text,
                           status::text,
@@ -722,12 +800,16 @@ void register_diary_routes(TourismApp& app) {
                           '' AS author_nickname, '' AS author_avatar
             )SQL", {title, summary_from(content), packed.stored_text, std::to_string(status), date, distance,
                     images_pg, tags, std::to_string(user->id),
-                    packed.hex, std::to_string(packed.original_bytes)});
+                    packed.hex, std::to_string(packed.original_bytes), cover, location_name,
+                    location_address, location_latitude, location_longitude, location_poi_id,
+                    scenic_spot_ids});
 
+            int diary_id = to_int(rows.value(0, "id"));
             evaluate_user_achievements(db, user->id);
             // 倒排索引增量同步：新发布日记立即可被全文检索（O(单篇)，无需全量重建）
-            tourism::services::IndexManager::instance().sync_document(db, to_int(rows.value(0, "id")));
-            return crow::response(201, ok(diary_json(rows, 0)));
+            tourism::services::IndexManager::instance().sync_document(db, diary_id);
+            auto saved_rows = exec_params(db, kDiarySelectSql + " AND d.id = $1", {std::to_string(diary_id)});
+            return crow::response(201, ok(diary_json(saved_rows, 0)));
         } catch (const std::exception& error) {
             return json_error(500, error.what());
         }
@@ -742,9 +824,17 @@ void register_diary_routes(TourismApp& app) {
             std::string content = first_nonempty({json_string(body, "content"), json_string(body, "excerpt")}, "");
             std::string date = first_nonempty({json_string(body, "date"), json_string(body, "start_date")}, today());
             std::string tags = pg_text_array(json_tags(body));
+            std::string scenic_spot_ids = pg_int_array(json_int_array(body, "scenicSpotIds"));
             std::string distance = std::to_string(distance_number(json_string(body, "distance", "0")));
             int status = body.has("status") ? static_cast<int>(body["status"].i()) : 1;
-            std::string images_pg = pg_text_array(body_images(body));
+            auto images = body_images(body);
+            std::string images_pg = pg_text_array(images);
+            std::string cover = body_cover_image(body, images);
+            std::string location_name = first_nonempty({json_string(body, "location"), json_string(body, "locationName")});
+            std::string location_address = json_string(body, "locationAddress");
+            std::string location_poi_id = json_string(body, "locationPoiId");
+            std::string location_latitude = nullable_numeric(json_double_value(body, "locationLatitude"));
+            std::string location_longitude = nullable_numeric(json_double_value(body, "locationLongitude"));
 
             PgConnection db;
             auto user = current_user(db, req);
@@ -760,7 +850,15 @@ void register_diary_routes(TourismApp& app) {
                     content_original_bytes = $12::int,
                     status = $4::int,
                     start_date = $5::date, end_date = $5::date,
-                    total_distance_km = $6::numeric, images = $7::text[], tags = $8::text[],
+                    total_distance_km = $6::numeric, images = $7::text[],
+                    cover_image = $13,
+                    location_name = $14,
+                    location_address = $15,
+                    location_latitude = NULLIF($16, '')::double precision,
+                    location_longitude = NULLIF($17, '')::double precision,
+                    location_poi_id = $18,
+                    scenic_spot_ids = $19::int[],
+                    tags = $8::text[],
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = $9 AND user_id = $10 AND status <> 2
                 RETURNING id, title, summary, content, start_date::text, total_distance_km::text,
@@ -768,6 +866,13 @@ void register_diary_routes(TourismApp& app) {
                           COALESCE(content_original_bytes, 0)::text AS content_original_bytes,
                           COALESCE(OCTET_LENGTH(content_compressed), 0)::text AS content_compressed_bytes,
                           COALESCE(array_to_string(images, '|'), '') AS images,
+                          COALESCE(cover_image, '') AS cover_image,
+                          COALESCE(location_name, '') AS location_name,
+                          COALESCE(location_address, '') AS location_address,
+                          COALESCE(location_latitude::text, '') AS location_latitude,
+                          COALESCE(location_longitude::text, '') AS location_longitude,
+                          COALESCE(location_poi_id, '') AS location_poi_id,
+                          COALESCE(array_to_string(scenic_spot_ids, '|'), '') AS scenic_spot_ids,
                           COALESCE(array_to_string(tags, '|'), '') AS tags,
                           view_count::text, like_count::text, comment_count::text,
                           status::text,
@@ -778,13 +883,17 @@ void register_diary_routes(TourismApp& app) {
                           '' AS author_nickname, '' AS author_avatar
             )SQL", {title, summary_from(content), packed.stored_text, std::to_string(status), date, distance,
                     images_pg, tags, std::to_string(id), std::to_string(user->id),
-                    packed.hex, std::to_string(packed.original_bytes)});
+                    packed.hex, std::to_string(packed.original_bytes), cover, location_name,
+                    location_address, location_latitude, location_longitude, location_poi_id,
+                    scenic_spot_ids});
 
             if (rows.rows() == 0) return json_error(404, "Diary not found");
+            int diary_id = to_int(rows.value(0, "id"));
             evaluate_user_achievements(db, user->id);
             // 倒排索引增量同步：内容/状态变化即时反映到全文检索（转草稿则移出索引）
             tourism::services::IndexManager::instance().sync_document(db, id);
-            return crow::response(ok(diary_json(rows, 0)));
+            auto saved_rows = exec_params(db, kDiarySelectSql + " AND d.id = $1", {std::to_string(diary_id)});
+            return crow::response(ok(diary_json(saved_rows, 0)));
         } catch (const std::exception& error) {
             return json_error(500, error.what());
         }

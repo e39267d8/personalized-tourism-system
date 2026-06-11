@@ -294,11 +294,45 @@ std::string polish_diary_text(const std::string& content) {
     try {
         TravelChatRequest req;
         req.style = "balanced";
-        req.message = "请润色以下旅行日记文本，保持原意、使语言更流畅有感染力、控制在相似长度。只输出润色后的文本，不要加任何解释：\n" + content;
+        req.message = "请把以下内容润色成可以直接发布的旅行日记成稿。保持第一人称和原意，语言自然、有画面感，控制在相似长度。只输出正式日记正文，不要出现提示词、解释、标题、摘要、系统建议或项目符号：\n" + content;
         auto resp = chat_with_travel_agent(req);
         return resp.reply.empty() ? content : resp.reply;
     } catch (const std::exception&) {
-        return content + "\n\n[系统建议] 补充路线顺序、预算感受和最推荐的停留点，会让游记更适合分享。";
+        return content;
+    }
+}
+
+std::string generate_diary_title_text(const std::string& content) {
+    std::string cleaned = trim_text(content);
+    if (cleaned.empty()) return "";
+    try {
+        TravelChatRequest req;
+        req.style = "balanced";
+        req.message = "请根据下面的旅行日记正文生成一个适合直接发布的中文标题。要求：12到20个字，具体、有画面感，不要引号，不要解释，不要出现“标题：”。正文：\n" +
+                      cleaned.substr(0, std::min<size_t>(cleaned.size(), 900));
+        auto resp = chat_with_travel_agent(req);
+        std::string title = trim_text(resp.reply);
+        const std::vector<std::string> wrappers = {"标题：", "标题:", "《", "》", "“", "”", "\"", "'"};
+        bool changed = true;
+        while (changed && !title.empty()) {
+            changed = false;
+            for (const auto& token : wrappers) {
+                if (title.rfind(token, 0) == 0) {
+                    title = trim_text(title.substr(token.size()));
+                    changed = true;
+                }
+                if (title.size() >= token.size() &&
+                    title.compare(title.size() - token.size(), token.size(), token) == 0) {
+                    title = trim_text(title.substr(0, title.size() - token.size()));
+                    changed = true;
+                }
+            }
+        }
+        if (title.size() > 80) title = title.substr(0, 80);
+        return title;
+    } catch (const std::exception&) {
+        std::string fallback = cleaned.substr(0, std::min<size_t>(cleaned.size(), 24));
+        return fallback.empty() ? "" : fallback;
     }
 }
 

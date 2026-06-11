@@ -13,8 +13,8 @@
       <!-- Left: Image upload area (visual/photo side) -->
       <div class="relative lg:w-[42%] bg-gradient-to-br from-slate-50 to-stone-50 p-5 lg:p-6 flex flex-col">
         <!-- Cover image preview -->
-        <div v-if="form.images.length" class="relative rounded-xl overflow-hidden aspect-[4/3] mb-4 shadow-inner">
-          <img :src="form.images[currentPreviewIdx]" class="w-full h-full object-cover" />
+        <div v-if="form.images.length" class="relative rounded-xl overflow-hidden mb-3 bg-white shadow-inner">
+          <img :src="form.images[currentPreviewIdx]" class="mx-auto block max-h-[28rem] max-w-full object-contain bg-white" />
           <template v-if="form.images.length > 1">
             <button @click="prevPreview" class="absolute left-2 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-white/80 backdrop-blur flex items-center justify-center shadow-sm">
               <svg class="w-3.5 h-3.5 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
@@ -26,26 +26,51 @@
           <div class="absolute bottom-2 right-2 px-2 py-0.5 rounded-full bg-black/40 text-white text-xs">
             {{ currentPreviewIdx + 1 }}/{{ form.images.length }}
           </div>
+          <div v-if="currentPreviewIdx === coverIndex" class="absolute left-2 top-2 rounded-full bg-teal-600 px-2.5 py-1 text-xs font-medium text-white">
+            封面
+          </div>
+          <button
+            v-else
+            class="absolute left-2 top-2 rounded-full bg-white/85 px-2.5 py-1 text-xs font-medium text-slate-700 shadow-sm hover:bg-white"
+            @click="setCover(currentPreviewIdx)"
+          >
+            设为封面
+          </button>
         </div>
 
-        <!-- Image thumbnails grid -->
-        <div class="grid grid-cols-4 gap-2">
+        <!-- Apple Photos style filmstrip -->
+        <div v-if="form.images.length" class="-mx-1 flex items-center gap-2 overflow-x-auto px-1 pb-2">
           <div
             v-for="(img, idx) in form.images"
             :key="idx"
-            class="relative aspect-square rounded-lg overflow-hidden border-2 cursor-pointer transition-all"
-            :class="idx === currentPreviewIdx ? 'border-teal-500 shadow-md' : 'border-transparent opacity-75 hover:opacity-100'"
-            @click="currentPreviewIdx = idx"
+            role="button"
+            tabindex="0"
+            :data-image-idx="idx"
+            class="group relative h-16 w-16 flex-shrink-0 cursor-grab select-none overflow-hidden rounded-md border-2 bg-white transition-all active:cursor-grabbing"
+            :class="[
+              idx === currentPreviewIdx ? 'border-teal-500 shadow-sm' : 'border-transparent hover:border-slate-300',
+              idx === draggedImageIdx && imageDragActive ? 'scale-105 opacity-75 ring-2 ring-teal-300' : '',
+              idx === dragOverImageIdx && imageDragActive ? 'border-teal-500 ring-2 ring-teal-200' : ''
+            ]"
+            @pointerdown="startImageDrag(idx, $event)"
+            @pointermove="moveImageDrag"
+            @pointerup="finishImageDrag($event)"
+            @pointercancel="cancelImageDrag"
+            @keydown.enter.prevent="currentPreviewIdx = idx"
+            @keydown.space.prevent="currentPreviewIdx = idx"
+            title="长按拖动调整顺序"
           >
             <img :src="img" class="w-full h-full object-cover" />
+            <span v-if="idx === coverIndex" class="absolute left-1 top-1 rounded bg-teal-600 px-1.5 py-0.5 text-[10px] font-medium text-white">封面</span>
             <button
+              @pointerdown.stop
               @click.stop="removeImage(idx)"
-              class="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-rose-500 text-white flex items-center justify-center opacity-0 hover:opacity-100 transition text-xs"
+              class="absolute right-1 top-1 w-4 h-4 rounded-full bg-black/55 text-white flex items-center justify-center opacity-0 transition text-xs hover:opacity-100 group-hover:opacity-100 focus:opacity-100"
             >&times;</button>
           </div>
           <label
             v-if="form.images.length < 9"
-            class="aspect-square rounded-lg border-2 border-dashed border-slate-200 flex flex-col items-center justify-center cursor-pointer hover:border-teal-400 hover:bg-teal-50/50 transition"
+            class="flex h-16 w-16 flex-shrink-0 cursor-pointer flex-col items-center justify-center rounded-md border-2 border-dashed border-slate-200 bg-white/70 transition hover:border-teal-400 hover:bg-teal-50/50"
           >
             <svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
             <span class="text-[10px] text-slate-400 mt-0.5">{{ form.images.length }}/9</span>
@@ -64,16 +89,22 @@
               <svg class="w-7 h-7 text-slate-400 group-hover:text-teal-500 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
             </div>
             <span class="text-sm text-slate-500 group-hover:text-teal-600 transition">添加旅行照片</span>
-            <span class="text-xs text-slate-400 mt-1">支持多张上传，第一张为封面</span>
+            <span class="text-xs text-slate-400 mt-1">支持多张上传，可单独设置封面</span>
             <input type="file" accept="image/*" multiple class="hidden" @change="handleImageUpload" />
           </label>
         </div>
 
-        <!-- Location & Mood (bottom of photo side) -->
+        <!-- Scenic spots & Mood (bottom of photo side) -->
         <div class="mt-auto pt-4 flex items-center gap-2">
-          <div class="flex-1 flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white/80 border border-slate-150">
-            <svg class="w-4 h-4 text-teal-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-            <input v-model="form.location" type="text" placeholder="添加地点" class="flex-1 text-sm bg-transparent outline-none text-slate-700 placeholder:text-slate-400" />
+          <div class="flex flex-1 items-center gap-1.5 rounded-lg border border-slate-150 bg-white/80 px-3 py-2">
+            <svg class="h-4 w-4 flex-shrink-0 text-teal-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"/></svg>
+            <span class="flex-shrink-0 text-xs text-slate-400">景点ID</span>
+            <input
+              v-model="scenicSpotInput"
+              type="text"
+              placeholder="多个 ID 用逗号分隔"
+              class="min-w-0 flex-1 bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400"
+            />
           </div>
           <!-- Mood selector -->
           <div class="relative">
@@ -141,16 +172,6 @@
           <input v-model="form.date" type="date" class="bg-transparent border-none outline-none text-xs text-slate-500 cursor-pointer" />
         </div>
 
-        <div class="mb-4 flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2">
-          <span class="text-xs text-slate-400">景点ID</span>
-          <input
-            v-model="scenicSpotInput"
-            type="text"
-            placeholder="多个 ID 用逗号分隔，用于目的地检索"
-            class="min-w-0 flex-1 bg-transparent text-sm text-slate-600 outline-none placeholder:text-slate-300"
-          />
-        </div>
-
         <!-- Tiptap Editor (iPhone Notes style) -->
         <div class="flex-1 flex flex-col">
           <!-- iPhone Notes style toolbar -->
@@ -178,15 +199,19 @@
             <div class="flex items-center gap-1">
               <button @click="editor.chain().focus().toggleBold().run()" :class="inlineBtnClass(editor.isActive('bold'))" title="加粗">
                 <span class="font-bold">B</span>
+                <span v-if="editor.isActive('bold')" class="absolute bottom-1 right-1 h-1.5 w-1.5 rounded-[2px] bg-teal-600" />
               </button>
               <button @click="editor.chain().focus().toggleItalic().run()" :class="inlineBtnClass(editor.isActive('italic'))" title="斜体">
                 <span class="italic">I</span>
+                <span v-if="editor.isActive('italic')" class="absolute bottom-1 right-1 h-1.5 w-1.5 rounded-[2px] bg-teal-600" />
               </button>
               <button @click="editor.chain().focus().toggleUnderline().run()" :class="inlineBtnClass(editor.isActive('underline'))" title="下划线">
                 <span class="underline">U</span>
+                <span v-if="editor.isActive('underline')" class="absolute bottom-1 right-1 h-1.5 w-1.5 rounded-[2px] bg-teal-600" />
               </button>
               <button @click="editor.chain().focus().toggleStrike().run()" :class="inlineBtnClass(editor.isActive('strike'))" title="删除线">
                 <span class="line-through">S</span>
+                <span v-if="editor.isActive('strike')" class="absolute bottom-1 right-1 h-1.5 w-1.5 rounded-[2px] bg-teal-600" />
               </button>
               <span class="w-px h-5 bg-slate-200 mx-1" />
               <button @click="editor.chain().focus().toggleBulletList().run()" :class="inlineBtnClass(editor.isActive('bulletList'))" title="无序列表">
@@ -226,7 +251,7 @@
               <button @click="aiPolish" :disabled="aiBusy" class="w-7 h-7 rounded-lg flex items-center justify-center text-amber-500 hover:text-amber-600 hover:bg-amber-50 transition" title="AI 润色">
                 <span class="text-xs font-bold">{{ aiBusy ? '...' : 'AI' }}</span>
               </button>
-              <button @click="aiSummarize" :disabled="aiBusy" class="w-7 h-7 rounded-lg flex items-center justify-center text-purple-500 hover:text-purple-600 hover:bg-purple-50 transition" title="AI 摘要">
+              <button @click="aiGenerateTitle" :disabled="aiBusy" class="w-7 h-7 rounded-lg flex items-center justify-center text-purple-500 hover:text-purple-600 hover:bg-purple-50 transition" title="AI 标题文案">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
               </button>
               <button @click="aiImagePrompt" :disabled="aiBusy" class="w-7 h-7 rounded-lg flex items-center justify-center text-teal-500 hover:text-teal-600 hover:bg-teal-50 transition" title="AI 配图建议">
@@ -250,6 +275,8 @@
               contenteditable="true"
               data-placeholder="开始写你的旅行故事..."
               @input="syncEditorContent"
+              @keyup="updateActiveFormats"
+              @mouseup="updateActiveFormats"
               @blur="syncEditorContent"
             />
           </div>
@@ -335,12 +362,13 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, reactive } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import DiaryPostcard from '@/components/DiaryPostcard.vue'
 import { tourismApi } from '@/services/tourismApi'
 import { diaries as demoDiaries } from '@/data/demoData'
 import { diaryStore, setJustPublished } from '@/stores/diaryStore'
+import { authStore } from '@/stores/auth'
 import { normalizeDiaryImages } from '@/utils/images'
 
 const props = defineProps({
@@ -359,6 +387,7 @@ const form = ref({
   title: '',
   date: new Date().toISOString().slice(0, 10),
   location: '',
+  locationDetail: null,
   mood: '',
   moodLabel: '',
   images: [],
@@ -374,10 +403,27 @@ const showPreview = ref(false)
 const showMoodPicker = ref(false)
 const showEmojiPicker = ref(false)
 const currentPreviewIdx = ref(0)
+const coverIndex = ref(0)
 const editorEl = ref(null)
 const editorHtml = ref('')
+const editorPlainText = ref('')
 const aiBusy = ref(false)
 const aiMessage = ref(null) // { type: 'loading'|'success', text: string }
+const draftDiaryId = ref(props.id || 0)
+const draggedImageIdx = ref(-1)
+const dragOverImageIdx = ref(-1)
+const imageDragActive = ref(false)
+let imageDragTimer = null
+const activeFormats = reactive({
+  block: 'paragraph',
+  bold: false,
+  italic: false,
+  underline: false,
+  strike: false,
+  bulletList: false,
+  orderedList: false,
+  blockquote: false
+})
 
 // Mood options
 const moodOptions = [
@@ -426,14 +472,14 @@ const parsedScenicSpotIds = computed(() =>
     .filter(id => Number.isInteger(id) && id > 0)
 )
 
+const selectedCover = computed(() => form.value.images[coverIndex.value] || form.value.images[0] || '')
+
 const contentLength = computed(() => {
-  const text = editor.value?.getText() || ''
-  return text.length
+  return editorPlainText.value.replace(/\s/g, '').length
 })
 
 const normalizedFormImages = computed(() => normalizeDiaryImages({
-  ...form.value,
-  cover: form.value.images[0],
+  images: form.value.images,
   tags: parsedTags.value
 }))
 
@@ -443,11 +489,12 @@ const previewDiary = computed(() => {
     title: form.value.title || '未命名日记',
     content: editor.value?.getHTML() || '',
     images,
-    cover: images[0] || '',
+    cover: selectedCover.value || images[0] || '',
     videos: form.value.videos,
     scenicSpotIds: parsedScenicSpotIds.value,
     date: form.value.date,
-    location: form.value.location,
+    location: '',
+    locationDetail: {},
     mood: form.value.mood,
     tags: parsedTags.value,
     author: { nickname: diaryStore.user.nickname, avatar: '' },
@@ -472,6 +519,7 @@ function _refreshHuffmanStats() {
 
 function syncEditorContent() {
   editorHtml.value = editorEl.value?.innerHTML || ''
+  editorPlainText.value = editorEl.value?.innerText || ''
   _refreshHuffmanStats()
 }
 
@@ -480,10 +528,54 @@ function setEditorContent(html = '') {
   if (editorEl.value) {
     editorEl.value.innerHTML = html
   }
+  editorPlainText.value = editorEl.value?.innerText || html.replace(/<[^>]*>/g, '')
+  window.setTimeout(updateActiveFormats, 0)
 }
 
 function focusEditor() {
   editorEl.value?.focus()
+}
+
+function escapeHtml(value = '') {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function textToParagraphHtml(value = '') {
+  const blocks = String(value)
+    .split(/\n{2,}/)
+    .map(block => block.trim())
+    .filter(Boolean)
+  if (!blocks.length) return ''
+  return blocks
+    .map(block => `<p>${escapeHtml(block).replace(/\n/g, '<br>')}</p>`)
+    .join('')
+}
+
+function cleanAiDiaryText(value = '') {
+  let text = String(value || '').replace(/\r/g, '').trim()
+  text = text.replace(/^```[a-z]*\s*/i, '').replace(/```$/i, '').trim()
+  text = text.replace(/^(润色后的?(正文|文本|版本)?|正式日记正文|以下是.*?日记.*?|成品日记)[：:]\s*/i, '').trim()
+  const blockedLine = /^(提示词|摘要|标题|系统建议|修改说明|润色说明|以下是|当然[，,]|好的[，,])/
+  return text
+    .split('\n')
+    .map(line => line.trim())
+    .filter(line => line && !blockedLine.test(line))
+    .join('\n')
+    .trim()
+}
+
+function cleanAiTitle(value = '') {
+  return String(value || '')
+    .replace(/\r?\n/g, ' ')
+    .replace(/^(标题|题目|标题文案)[：:]\s*/i, '')
+    .replace(/[《》"'“”]/g, '')
+    .trim()
+    .slice(0, 40)
 }
 
 // AI tools
@@ -494,8 +586,8 @@ async function aiPolish() {
   aiMessage.value = { type: 'loading', text: 'AI 正在润色...' }
   try {
     const data = await tourismApi.polishDiary({ content: text })
-    const polished = data.polished || text
-    setEditorContent(polished)
+    const polished = cleanAiDiaryText(data.polished || text) || text
+    setEditorContent(textToParagraphHtml(polished))
     aiMessage.value = { type: 'success', text: 'AI 润色完成' }
     setTimeout(() => { aiMessage.value = null }, 3000)
   } catch {
@@ -504,17 +596,16 @@ async function aiPolish() {
   } finally { aiBusy.value = false }
 }
 
-async function aiSummarize() {
+async function aiGenerateTitle() {
   const text = editorEl.value?.textContent || ''
   if (!text.trim()) { aiMessage.value = { type: 'success', text: '请先输入内容' }; return }
   aiBusy.value = true
-  aiMessage.value = { type: 'loading', text: 'AI 正在生成摘要...' }
+  aiMessage.value = { type: 'loading', text: 'AI 正在生成标题...' }
   try {
-    const data = await tourismApi.summarizeDiary({ title: form.value.title, content: text })
-    const summary = data.summary || '这是一篇旅行记录'
-    const current = editorEl.value?.innerHTML || ''
-    setEditorContent('<p><em>' + summary + '</em></p><p></p>' + current)
-    aiMessage.value = { type: 'success', text: 'AI 摘要已生成' }
+    const data = await tourismApi.generateDiaryTitle({ content: text })
+    const title = cleanAiTitle(data.title)
+    if (title) form.value.title = title
+    aiMessage.value = { type: 'success', text: title ? '标题已写入' : '没有生成可用标题' }
     setTimeout(() => { aiMessage.value = null }, 3000)
   } catch {
     aiMessage.value = { type: 'success', text: 'AI 暂不可用' }
@@ -544,6 +635,41 @@ function execEditorCommand(command, value = null) {
   focusEditor()
   document.execCommand(command, false, value)
   syncEditorContent()
+  window.setTimeout(updateActiveFormats, 0)
+}
+
+function updateActiveFormats() {
+  activeFormats.bold = document.queryCommandState('bold')
+  activeFormats.italic = document.queryCommandState('italic')
+  activeFormats.underline = document.queryCommandState('underline')
+  activeFormats.strike = document.queryCommandState('strikeThrough')
+  activeFormats.bulletList = document.queryCommandState('insertUnorderedList')
+  activeFormats.orderedList = document.queryCommandState('insertOrderedList')
+
+  const selection = window.getSelection()
+  let node = selection?.anchorNode || null
+  if (node && node.nodeType === Node.TEXT_NODE) node = node.parentElement
+  const element = node instanceof Element ? node : null
+  const block = element?.closest?.('h1,h2,h3,blockquote,p,li,div')
+  const tag = block?.tagName?.toLowerCase() || ''
+  activeFormats.blockquote = tag === 'blockquote' || Boolean(element?.closest?.('blockquote'))
+  if (tag === 'h1') activeFormats.block = 'heading1'
+  else if (tag === 'h2') activeFormats.block = 'heading2'
+  else if (tag === 'h3') activeFormats.block = 'heading3'
+  else activeFormats.block = activeFormats.blockquote ? 'blockquote' : 'paragraph'
+}
+
+function editorIsActive(type, attrs = {}) {
+  if (type === 'heading') return activeFormats.block === `heading${attrs.level || 1}`
+  if (type === 'paragraph') return activeFormats.block === 'paragraph'
+  if (type === 'blockquote') return activeFormats.blockquote
+  if (type === 'bold') return activeFormats.bold
+  if (type === 'italic') return activeFormats.italic
+  if (type === 'underline') return activeFormats.underline
+  if (type === 'strike') return activeFormats.strike
+  if (type === 'bulletList') return activeFormats.bulletList
+  if (type === 'orderedList') return activeFormats.orderedList
+  return false
 }
 
 function createEditorChain() {
@@ -620,9 +746,7 @@ const editor = ref({
   getText() {
     return editorEl.value?.innerText || editorHtml.value.replace(/<[^>]*>/g, '')
   },
-  isActive() {
-    return false
-  }
+  isActive: editorIsActive
 })
 
 function formatBtnClass(active) {
@@ -634,7 +758,7 @@ function formatBtnClass(active) {
 
 function inlineBtnClass(active) {
   return [
-    'w-7 h-7 rounded-lg flex items-center justify-center text-sm transition',
+    'relative w-7 h-7 rounded-lg flex items-center justify-center text-sm transition',
     active ? 'bg-slate-200 text-slate-900' : 'text-slate-500 hover:bg-slate-100'
   ]
 }
@@ -689,10 +813,15 @@ async function compressDiaryImage(file) {
 
 function diaryImagePayload() {
   return normalizeDiaryImages({
-    ...form.value,
-    cover: form.value.images[0],
+    images: form.value.images,
     tags: parsedTags.value
   }).slice(0, MAX_DIARY_IMAGES)
+}
+
+function setCover(idx) {
+  if (idx < 0 || idx >= form.value.images.length) return
+  coverIndex.value = idx
+  currentPreviewIdx.value = idx
 }
 
 async function handleImageUpload(event) {
@@ -713,6 +842,7 @@ async function handleImageUpload(event) {
       const compressed = await compressDiaryImage(file)
       form.value.images.push(compressed)
     }
+    if (form.value.images.length && coverIndex.value >= form.value.images.length) coverIndex.value = 0
     if (files.length > remaining) {
       imageUploadError.value = `最多只能上传 ${MAX_DIARY_IMAGES} 张图片，已自动忽略多余图片。`
     }
@@ -727,9 +857,76 @@ async function handleImageUpload(event) {
 function removeImage(idx) {
   form.value.images.splice(idx, 1)
   imageUploadError.value = ''
+  if (idx === coverIndex.value) {
+    coverIndex.value = 0
+  } else if (idx < coverIndex.value) {
+    coverIndex.value -= 1
+  }
   if (currentPreviewIdx.value >= form.value.images.length) {
     currentPreviewIdx.value = Math.max(0, form.value.images.length - 1)
   }
+  if (coverIndex.value >= form.value.images.length) {
+    coverIndex.value = Math.max(0, form.value.images.length - 1)
+  }
+}
+
+function remapIndexAfterMove(index, from, to) {
+  if (index === from) return to
+  if (from < to && index > from && index <= to) return index - 1
+  if (from > to && index >= to && index < from) return index + 1
+  return index
+}
+
+function moveImage(from, to) {
+  if (from === to || from < 0 || to < 0 || from >= form.value.images.length || to >= form.value.images.length) return
+  const next = [...form.value.images]
+  const [item] = next.splice(from, 1)
+  next.splice(to, 0, item)
+  form.value.images = next
+  coverIndex.value = remapIndexAfterMove(coverIndex.value, from, to)
+  currentPreviewIdx.value = remapIndexAfterMove(currentPreviewIdx.value, from, to)
+}
+
+function startImageDrag(idx, event) {
+  if (event.button !== undefined && event.button !== 0) return
+  clearTimeout(imageDragTimer)
+  draggedImageIdx.value = idx
+  dragOverImageIdx.value = idx
+  imageDragActive.value = false
+  event.currentTarget?.setPointerCapture?.(event.pointerId)
+  imageDragTimer = window.setTimeout(() => {
+    imageDragActive.value = true
+  }, 260)
+}
+
+function moveImageDrag(event) {
+  if (draggedImageIdx.value < 0) return
+  if (!imageDragActive.value) return
+  event.preventDefault()
+  const target = document.elementFromPoint(event.clientX, event.clientY)?.closest?.('[data-image-idx]')
+  const idx = Number(target?.dataset?.imageIdx)
+  if (Number.isInteger(idx) && idx >= 0 && idx < form.value.images.length) {
+    dragOverImageIdx.value = idx
+  }
+}
+
+function finishImageDrag(event) {
+  clearTimeout(imageDragTimer)
+  if (draggedImageIdx.value < 0) return
+  if (imageDragActive.value) {
+    event.preventDefault()
+    moveImage(draggedImageIdx.value, dragOverImageIdx.value)
+  } else {
+    currentPreviewIdx.value = draggedImageIdx.value
+  }
+  cancelImageDrag()
+}
+
+function cancelImageDrag() {
+  clearTimeout(imageDragTimer)
+  draggedImageIdx.value = -1
+  dragOverImageIdx.value = -1
+  imageDragActive.value = false
 }
 
 function addVideoUrl() {
@@ -760,6 +957,64 @@ function closePreview() {
   showPreview.value = false
 }
 
+function buildDiaryPayload(status) {
+  const images = diaryImagePayload()
+  return {
+    title: form.value.title,
+    content: editor.value?.getHTML() || '',
+    date: form.value.date,
+    location: '',
+    locationName: '',
+    locationAddress: '',
+    locationLatitude: 0,
+    locationLongitude: 0,
+    locationPoiId: '',
+    coverImage: selectedCover.value || images[0] || '',
+    cover: selectedCover.value || images[0] || '',
+    images,
+    videos: form.value.videos,
+    scenicSpotIds: parsedScenicSpotIds.value,
+    tags: parsedTags.value,
+    status
+  }
+}
+
+function localDiaryFromPayload(saved, payload) {
+  const currentUser = authStore.user || {}
+  const savedAuthor = saved?.author || {}
+  const author = {
+    id: savedAuthor.id || currentUser.id || 0,
+    nickname: savedAuthor.nickname || currentUser.nickname || currentUser.username || diaryStore.user.nickname || '旅行者',
+    avatar: savedAuthor.avatar || currentUser.avatarUrl || ''
+  }
+  const diary = {
+    id: saved?.id || draftDiaryId.value || Date.now(),
+    title: payload.title,
+    date: payload.date,
+    location: '',
+    locationDetail: {},
+    mood: form.value.moodLabel || '',
+    cover: payload.coverImage,
+    coverImage: payload.coverImage,
+    images: payload.images,
+    videos: payload.videos,
+    scenicSpotIds: payload.scenicSpotIds,
+    tags: payload.tags,
+    excerpt: (editor.value?.getText() || '').slice(0, 80) + '...',
+    content: payload.content,
+    status: payload.status,
+    author,
+    stats: { views: 0, likes: 0, comments: 0 },
+    ratingScore: 0,
+    ratingCount: 0,
+    bookmarkCount: 0,
+    disableLocalImageFallback: true,
+    ...(saved || {})
+  }
+  diary.author = author
+  return diary
+}
+
 // Save & Publish
 async function saveDraft() {
   await saveDiaryWithStatus(0)
@@ -769,61 +1024,8 @@ async function publishDiary() {
   if (!form.value.title.trim()) {
     form.value.title = '未命名日记'
   }
-  saving.value = true
-  const images = diaryImagePayload()
-
-  const payload = {
-    title: form.value.title,
-    content: editor.value?.getHTML() || '',
-    date: form.value.date,
-    location: form.value.location,
-    images,
-    videos: form.value.videos,
-    scenicSpotIds: parsedScenicSpotIds.value,
-    tags: parsedTags.value,
-    status: 1
-  }
-
-  // Build the diary object for plaza display
-  const publishedDiary = {
-    id: Date.now(),
-    title: form.value.title,
-    date: form.value.date,
-    location: form.value.location,
-    mood: form.value.moodLabel || '',
-    cover: images[0] || '',
-    images,
-    videos: form.value.videos,
-    scenicSpotIds: parsedScenicSpotIds.value,
-    tags: parsedTags.value,
-    excerpt: (editor.value?.getText() || '').slice(0, 80) + '...',
-    content: editor.value?.getHTML() || '',
-    author: { nickname: diaryStore.user.nickname, avatar: '' },
-    stats: { views: 0, likes: 0, comments: 0 },
-    ratingScore: 0,
-    ratingCount: 0,
-    bookmarkCount: 0,
-    disableLocalImageFallback: true
-  }
-
-  // Try API
-  try {
-    if (props.id) {
-      await tourismApi.updateDiary(props.id, payload)
-      publishedDiary.id = props.id
-    } else {
-      const res = await tourismApi.createDiary(payload)
-      if (res?.id) publishedDiary.id = res.id
-    }
-  } catch {
-    // API failed (demo mode) - still show locally
-  }
-
-  // Set as justPublished so plaza shows it first
+  const publishedDiary = await saveDiaryWithStatus(1)
   setJustPublished(publishedDiary)
-  saving.value = false
-
-  // Navigate to plaza
   router.push('/diary')
 }
 
@@ -832,30 +1034,23 @@ async function saveDiaryWithStatus(status) {
     form.value.title = '未命名日记'
   }
   saving.value = true
-  const images = diaryImagePayload()
-  const payload = {
-    title: form.value.title,
-    content: editor.value?.getHTML() || '',
-    date: form.value.date,
-    location: form.value.location,
-    images,
-    videos: form.value.videos,
-    scenicSpotIds: parsedScenicSpotIds.value,
-    tags: parsedTags.value,
-    status
-  }
-
+  const payload = buildDiaryPayload(status)
+  let saved = null
   try {
-    if (props.id) {
-      await tourismApi.updateDiary(props.id, payload)
+    const targetId = draftDiaryId.value || props.id
+    if (targetId) {
+      saved = await tourismApi.updateDiary(targetId, payload)
+      draftDiaryId.value = saved?.id || targetId
     } else {
-      await tourismApi.createDiary(payload)
+      saved = await tourismApi.createDiary(payload)
+      if (saved?.id) draftDiaryId.value = saved.id
     }
   } catch {
     // Demo mode
   } finally {
     saving.value = false
   }
+  return localDiaryFromPayload(saved, payload)
 }
 
 // Load existing diary for edit mode
@@ -865,9 +1060,13 @@ async function loadExistingDiary() {
     const data = await tourismApi.diaryDetail(props.id)
     form.value.title = data.title || ''
     form.value.date = data.date || ''
-    form.value.location = data.location || ''
+    form.value.location = ''
+    form.value.locationDetail = null
     form.value.mood = data.mood || ''
     form.value.images = normalizeDiaryImages(data).slice(0, MAX_DIARY_IMAGES)
+    coverIndex.value = Math.max(0, form.value.images.findIndex(img => img === (data.coverImage || data.cover)))
+    if (coverIndex.value < 0) coverIndex.value = 0
+    currentPreviewIdx.value = coverIndex.value
     form.value.videos = data.videos || []
     scenicSpotInput.value = (data.scenicSpotIds || []).join(', ')
     tagInput.value = (data.tags || []).join(', ')
@@ -879,9 +1078,13 @@ async function loadExistingDiary() {
     if (demo) {
       form.value.title = demo.title
       form.value.date = demo.date
-      form.value.location = demo.location || ''
+      form.value.location = ''
+      form.value.locationDetail = null
       form.value.mood = demo.mood || ''
       form.value.images = normalizeDiaryImages(demo).slice(0, MAX_DIARY_IMAGES)
+      coverIndex.value = Math.max(0, form.value.images.findIndex(img => img === (demo.coverImage || demo.cover)))
+      if (coverIndex.value < 0) coverIndex.value = 0
+      currentPreviewIdx.value = coverIndex.value
       form.value.videos = demo.videos || []
       scenicSpotInput.value = (demo.scenicSpotIds || []).join(', ')
       tagInput.value = (demo.tags || []).join(', ')
@@ -892,7 +1095,15 @@ async function loadExistingDiary() {
   }
 }
 
-onMounted(loadExistingDiary)
+onMounted(async () => {
+  document.addEventListener('selectionchange', updateActiveFormats)
+  await loadExistingDiary()
+  updateActiveFormats()
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('selectionchange', updateActiveFormats)
+})
 </script>
 
 <style scoped>

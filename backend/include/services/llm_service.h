@@ -40,6 +40,9 @@ std::string summarize_diary_text(const std::string& title, const std::string& co
 // Polish/improve travel diary content
 std::string polish_diary_text(const std::string& content);
 
+// Generate a publish-ready diary title from content
+std::string generate_diary_title_text(const std::string& content);
+
 // Generate stable-diffusion-compatible image prompt from diary title + content
 ImagePromptResponse generate_image_prompt(const std::string& title, const std::string& content);
 

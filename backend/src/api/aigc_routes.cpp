@@ -4,6 +4,7 @@
 #include "support/api_helpers.h"
 
 #include <algorithm>
+#include <vector>
 
 namespace tourism::api {
 namespace {
@@ -87,6 +88,15 @@ void register_aigc_routes(TourismApp& app) {
         std::string polished = tourism::services::polish_diary_text(content);
         crow::json::wvalue data;
         data["polished"] = polished;
+        return ok(std::move(data));
+    });
+
+    CROW_ROUTE(app, "/api/v1/aigc/diary-title").methods("POST"_method)([](const crow::request& req) {
+        auto body = crow::json::load(req.body);
+        std::string content = json_string(body, "content", "");
+        std::string title = tourism::services::generate_diary_title_text(content);
+        crow::json::wvalue data;
+        data["title"] = title;
         return ok(std::move(data));
     });
 

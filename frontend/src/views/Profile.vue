@@ -161,7 +161,7 @@
       <div class="rounded-md border border-slate-200 bg-white p-5">
         <div class="flex items-center justify-between">
           <h2 class="text-lg font-semibold">最近日记</h2>
-          <router-link to="/diary" class="text-sm font-semibold text-teal-700 hover:text-teal-900">管理日记</router-link>
+          <router-link :to="{ path: '/diary', query: { view: 'mine' } }" class="text-sm font-semibold text-teal-700 hover:text-teal-900">管理日记</router-link>
         </div>
         <div class="mt-4 space-y-3">
           <article v-for="diary in diaries.slice(0, 3)" :key="diary.id" class="rounded-md border border-slate-200 p-4">
@@ -198,7 +198,7 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
-import { achievements as fallbackAchievements, diaries as fallbackDiaries } from '@/data/demoData'
+import { achievements as fallbackAchievements } from '@/data/demoData'
 import { tourismApi } from '@/services/tourismApi'
 import { changePassword } from '@/stores/auth'
 import {
@@ -224,7 +224,7 @@ const profile = ref({
   stats: { diaries: 0, achievements: 0, favorites: 0 }
 })
 const form = reactive(defaultForm())
-const diaries = ref(fallbackDiaries)
+const diaries = ref([])
 const achievements = ref(fallbackAchievements)
 const saveMessage = ref('')
 const passwordForm = reactive({
@@ -316,7 +316,7 @@ onMounted(async () => {
     const [profileData, preferenceData, diaryData, achievementData] = await Promise.all([
       tourismApi.profile(),
       tourismApi.getProfilePreferences(),
-      tourismApi.diaries(),
+      tourismApi.myDiaries({ sort: 'latest', status: 'all', limit: 3 }),
       tourismApi.achievements()
     ])
     profile.value = {
@@ -327,10 +327,10 @@ onMounted(async () => {
       applyPreferences(preferenceData.profile)
       writeStoredProfile(preferenceData.profile)
     }
-    diaries.value = diaryData.items?.length ? diaryData.items : fallbackDiaries
+    diaries.value = diaryData.items || diaryData || []
     achievements.value = achievementData.items?.length ? achievementData.items : fallbackAchievements
   } catch (error) {
-    diaries.value = fallbackDiaries
+    diaries.value = []
     achievements.value = fallbackAchievements
   }
 })

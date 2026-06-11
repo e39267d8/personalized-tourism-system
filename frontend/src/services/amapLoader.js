@@ -1,6 +1,9 @@
 const AMAP_LOADER_URL = 'https://webapi.amap.com/loader.js'
 const AMAP_VERSION = '2.0'
-const AMAP_PLUGINS = ['AMap.Scale', 'AMap.ToolBar']
+const AMAP_PLUGINS = [
+  'AMap.Scale',
+  'AMap.ToolBar'
+]
 const DEFAULT_AMAP_JS_KEY = 'b28f4cae3c38fd619a41f994a20e4c9e'
 
 let loaderScriptPromise

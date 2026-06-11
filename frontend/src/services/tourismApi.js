@@ -102,6 +102,7 @@ export const tourismApi = {
   deleteProfilePreferences: () => client.delete('/profile/preferences').then(unwrap),
   summarizeDiary: (payload) => client.post('/aigc/diary-summary', payload).then(unwrap),
   polishDiary: (payload) => client.post('/aigc/polish', payload).then(unwrap),
+  generateDiaryTitle: (payload) => client.post('/aigc/diary-title', payload).then(unwrap),
   imagePrompt: (payload) => client.post('/aigc/image-prompt', payload).then(unwrap),
   travelAgentChat: (payload) => client.post('/aigc/travel-chat', payload).then(unwrap),
 
