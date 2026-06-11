@@ -408,16 +408,26 @@ const planRoute = async () => {
         optimization: form.optimization
       })
 
-      // 后端返回真实图路径：coordinates/stops/segments/distance/time/visitOrder(名称) 直接展开使用
+      // 分层渲染：TSP 只决定访问顺序，真实道路折线交给高德按所选交通方式规划
+      // （本地图的边没有道路几何，直接画会穿楼；环游闭环 = 末尾补回起点）
+      const visitNames = tourResult.visitOrder || []
+      const loopStops = visitNames.length >= 2 ? [...visitNames, visitNames[0]] : visitNames
+      const amapRoute = await amapGeometryForStops(loopStops)
+
       route.value = {
-        ...tourResult,
+        ...(amapRoute || tourResult),
         title: 'TSP 环游路线',
+        algorithm: tourResult.algorithm || 'TSP',
+        visitOrder: visitNames,
         transport: modeLabel(),
-        requestedPlaces: resolved.map(item => ({
-          latitude: item.node.latitude,
-          longitude: item.node.longitude,
-          name: item.node.name
-        }))
+        usedTransportFallback: amapRoute ? false : tourResult.usedTransportFallback,
+        requestedPlaces: amapRoute?.requestedPlaces?.length
+          ? amapRoute.requestedPlaces
+          : resolved.map(item => ({
+              latitude: item.node.latitude,
+              longitude: item.node.longitude,
+              name: item.node.name
+            }))
       }
       drawRoute()
     } catch (requestError) {
@@ -447,16 +457,31 @@ const planRoute = async () => {
         hour: timeOfDay.value
       })
 
-      // 后端返回真实图路径与拥挤度信息（含 congestionSource/behaviorBoostedEdges），直接展开使用
+      // 分层渲染：拥挤度 Dijkstra 决定绕行经过哪些景点，真实道路折线交给高德。
+      // 取图路径中的 scenic 中间节点作为高德途经点（地名可被地理编码），
+      // 这样"避开热门区域"的绕行决策会体现在真实道路路线上。
+      const scenicNames = new Set(nodes.filter(node => node.type === 'scenic').map(node => node.name))
+      const viaStops = (congestionResult.stops || [])
+        .slice(1, -1)
+        .filter(name => scenicNames.has(name) && name !== startNode.name && name !== endNode.name)
+        .slice(0, 6)
+      const amapRoute = await amapGeometryForStops([startNode.name, ...viaStops, endNode.name])
+
       route.value = {
-        ...congestionResult,
+        ...(amapRoute || congestionResult),
         title: `拥挤度感知路线（${congestionResult.crowd_label || '中等'}敏感时段）`,
         algorithm: `拥挤度感知 Dijkstra · ${modeLabel()}`,
         transport: modeLabel(),
-        requestedPlaces: [
-          { latitude: startNode.latitude, longitude: startNode.longitude, name: startNode.name },
-          { latitude: endNode.latitude, longitude: endNode.longitude, name: endNode.name }
-        ]
+        // 拥挤度元数据始终来自拥挤度接口（行为画像提示依赖这两个字段）
+        congestionSource: congestionResult.congestionSource,
+        behaviorBoostedEdges: congestionResult.behaviorBoostedEdges,
+        usedTransportFallback: amapRoute ? false : congestionResult.usedTransportFallback,
+        requestedPlaces: amapRoute?.requestedPlaces?.length
+          ? amapRoute.requestedPlaces
+          : [
+              { latitude: startNode.latitude, longitude: startNode.longitude, name: startNode.name },
+              { latitude: endNode.latitude, longitude: endNode.longitude, name: endNode.name }
+            ]
       }
       drawRoute()
     } catch (requestError) {
@@ -541,6 +566,25 @@ const localGraphTravelMode = () => {
   if (form.travelMode === 'driving') return 'car'
   if (form.travelMode === 'transit') return 'subway'
   return form.travelMode
+}
+
+// 分层渲染的几何层：把算法层（TSP/拥挤度 Dijkstra）决定的停靠点序列
+// 交给高德按所选交通方式取真实道路折线。本地图的边只有节点连线、没有
+// 道路几何，直接画会穿过街区。高德不可用时返回 null，调用方回退图几何。
+const amapGeometryForStops = async (stopTexts) => {
+  if (!stopTexts || stopTexts.length < 2) return null
+  try {
+    return await tourismApi.planRoute({
+      city: form.city || '北京',
+      startText: stopTexts[0],
+      endText: stopTexts[stopTexts.length - 1],
+      waypointTexts: stopTexts.slice(1, -1),
+      travelMode: form.travelMode,
+      optimization: form.optimization
+    })
+  } catch {
+    return null
+  }
 }
 
 const coordinateForPlace = (name, index) => {
