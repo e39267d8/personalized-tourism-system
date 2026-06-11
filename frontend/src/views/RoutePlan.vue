@@ -386,108 +386,81 @@ const planRoute = async () => {
   loading.value = true
   error.value = ''
 
-  // TSP tour mode: send all points to /api/v1/routes/tour
+  // TSP 环游模式：把输入地点解析为本地路网节点，后端跑真实 TSP + Dijkstra
   if (tourMode.value) {
     try {
-      const allTexts = allStopTexts()
-      const allCoords = allTexts.map((name, i) => coordinateForPlace(name, i))
-      // Build nodeIds from known coordinates (approximate - use index as node ID)
-      const nodeIds = allTexts.map((_, i) => i + 1)
+      const texts = allStopTexts()
+      if (texts.length < 2) {
+        error.value = '环游模式至少需要两个地点。'
+        return
+      }
+      const nodes = await loadRouteNodes()
+      const resolved = texts.map(text => ({ text, node: resolveGraphNode(nodes, text) }))
+      const missing = resolved.filter(item => !item.node).map(item => item.text)
+      if (missing.length) {
+        error.value = graphNodeMissingMessage('环游模式', missing)
+        return
+      }
 
       const tourResult = await tourismApi.tourRoute({
-        nodeIds,
-        travelMode: form.travelMode,
+        nodeIds: resolved.map(item => item.node.id),
+        travelMode: localGraphTravelMode(),
         optimization: form.optimization
       })
 
-      const tourStops = tourResult.visitOrder
-        ? tourResult.visitOrder.map((idx) => allTexts[idx - 1] || `节点 ${idx}`)
-        : allTexts
-
-      const coords = tourResult.visitOrder
-        ? tourResult.visitOrder.map((idx) => allCoords[idx - 1] || [39.916, 116.397])
-        : allCoords
-
+      // 后端返回真实图路径：coordinates/stops/segments/distance/time/visitOrder(名称) 直接展开使用
       route.value = {
-        id: 0,
-        route_id: 'tsp-tour-route',
-        title: `TSP 环游路线`,
-        stops: tourStops,
-        requestedPlaces: coords.map((c, i) => ({ latitude: c[0], longitude: c[1], name: tourStops[i] || '' })),
-        coordinates: coords,
-        distance: `${(tourResult.tspDistance || 0 / 1000).toFixed(1)} km`,
-        time: `${Math.max(1, Math.round((tourResult.tspDuration || 0) / 60))} 分钟`,
-        cost: 0,
-        algorithm: tourResult.algorithm || 'TSP',
-        visitOrder: tourResult.visitOrder || [],
+        ...tourResult,
+        title: 'TSP 环游路线',
         transport: modeLabel(),
-        segments: []
+        requestedPlaces: resolved.map(item => ({
+          latitude: item.node.latitude,
+          longitude: item.node.longitude,
+          name: item.node.name
+        }))
       }
       drawRoute()
-    } catch {
-      error.value = 'TSP 环游规划暂不可用'
+    } catch (requestError) {
+      error.value = requestError.response?.data?.message || 'TSP 环游规划失败，请稍后重试'
     } finally {
       loading.value = false
     }
     return
   }
 
-  // Congestion-aware mode
+  // 拥挤度感知模式：解析起终点为本地路网节点，后端跑拥挤度加权 Dijkstra
   if (useCongestion.value) {
     try {
-      const nodeMap = {
-        '前门大街': 1, '故宫博物院': 2, '天安门广场': 3, '景山公园': 4,
-        '北海公园': 5, '天坛': 6, '颐和园': 7, '圆明园': 8
+      const nodes = await loadRouteNodes()
+      const startNode = resolveGraphNode(nodes, form.startText)
+      const endNode = resolveGraphNode(nodes, form.endText)
+      const missing = [!startNode && form.startText, !endNode && form.endText].filter(Boolean)
+      if (missing.length) {
+        error.value = graphNodeMissingMessage('拥挤度感知', missing)
+        return
       }
-      let startId = nodeMap[form.startText] || 1
-      let endId = nodeMap[form.endText] || 2
 
       const congestionResult = await tourismApi.congestionRoute({
-        start_id: startId,
-        end_id: endId,
-        travel_mode: form.travelMode === 'driving' ? 'car' : form.travelMode === 'transit' ? 'subway' : form.travelMode,
+        start_id: startNode.id,
+        end_id: endNode.id,
+        travel_mode: localGraphTravelMode(),
         hour: timeOfDay.value
       })
 
-      const coords = []
-      const stops = []
-      if (congestionResult.path) {
-        for (const pid of congestionResult.path) {
-          const key = Object.keys(placeCoordinates).find(k => {
-            for (const [nodeName, nodeId] of Object.entries(nodeMap)) {
-              if (nodeId === pid) return k.includes(nodeName) || nodeName.includes(k)
-            }
-            return false
-          })
-          if (key) {
-            coords.push(placeCoordinates[key])
-            stops.push(key)
-          }
-        }
-      }
-      if (!coords.length) coords.push([39.916, 116.397], [39.928, 116.403])
-      if (!stops.length) stops.push(form.startText, form.endText)
-
+      // 后端返回真实图路径与拥挤度信息（含 congestionSource/behaviorBoostedEdges），直接展开使用
       route.value = {
-        id: 0,
-        route_id: 'congestion-route',
-        title: `拥挤度感知路线 (${congestionResult.overall_congestion || '未知'})`,
-        stops,
-        coordinates: coords.length ? coords : [[39.916, 116.397], [39.928, 116.403]],
-        distance: `${(congestionResult.total_distance || 0 / 1000).toFixed(1)} km`,
-        time: `${Math.max(1, Math.round((congestionResult.total_duration || 0) / 60))} 分钟`,
-        cost: 0,
-        algorithm: `拥挤度感知 · ${modeLabel()}`,
+        ...congestionResult,
+        title: `拥挤度感知路线（${congestionResult.crowd_label || '中等'}敏感时段）`,
+        algorithm: `拥挤度感知 Dijkstra · ${modeLabel()}`,
         transport: modeLabel(),
-        segments: congestionResult.congestion_segments ? Object.values(congestionResult.congestion_segments).map(s => ({
-          title: `段${s.from}-${s.to}`,
-          congestion: s.congestion_label || '未知',
-          congestionColor: s.congestion_color || '#84cc16'
-        })) : []
+        requestedPlaces: [
+          { latitude: startNode.latitude, longitude: startNode.longitude, name: startNode.name },
+          { latitude: endNode.latitude, longitude: endNode.longitude, name: endNode.name }
+        ]
       }
       drawRoute()
-    } catch {
-      error.value = '拥挤度感知路由暂不可用'
+    } catch (requestError) {
+      error.value = requestError.response?.data?.message || '拥挤度感知路由失败，请稍后重试'
     } finally {
       loading.value = false
     }
@@ -519,6 +492,56 @@ const allStopTexts = () => [
   ...waypointTexts(),
   form.endText.trim()
 ].filter(Boolean)
+
+// ---- 本地路网节点解析（环游 / 拥挤度模式共用）----
+// 这两个模式跑在本地 graph_nodes/graph_edges 图上，必须把用户输入的地点
+// 解析成真实节点 ID，而不是凭空构造（否则后端按假 ID 计算或直接报错）。
+let routeNodesCache = null
+
+const loadRouteNodes = async () => {
+  if (routeNodesCache) return routeNodesCache
+  const data = await tourismApi.routeNodes()
+  routeNodesCache = (data.items || []).filter(node => node.name && node.type !== 'junction')
+  return routeNodesCache
+}
+
+const resolveGraphNode = (nodes, text) => {
+  const query = String(text || '').trim()
+  if (!query) return null
+  let best = null
+  let bestScore = 0
+  for (const node of nodes) {
+    let score = -1
+    if (node.name === query || node.nodeName === query) score = 100
+    else if (node.name.includes(query) || query.includes(node.name)) score = 60
+    else if (node.nodeName && (node.nodeName.includes(query) || query.includes(node.nodeName))) score = 50
+    if (score < 0) continue
+    if (node.type === 'scenic') score += 20
+    else if (node.type === 'entrance') score += 10
+    if (score > bestScore) {
+      best = node
+      bestScore = score
+    }
+  }
+  return best
+}
+
+const graphNodeMissingMessage = (modeName, missing) => {
+  const samples = (routeNodesCache || [])
+    .filter(node => node.type === 'scenic')
+    .slice(0, 8)
+    .map(node => node.name)
+    .join('、')
+  return `${modeName}基于本地路网计算，以下地点不在路网中：${missing.join('、')}。`
+    + (samples ? `可尝试路网内的地点，如：${samples}` : '')
+}
+
+// 本地图的交通方式取值与高德文本规划不同（driving→car、transit→subway）
+const localGraphTravelMode = () => {
+  if (form.travelMode === 'driving') return 'car'
+  if (form.travelMode === 'transit') return 'subway'
+  return form.travelMode
+}
 
 const coordinateForPlace = (name, index) => {
   const key = Object.keys(placeCoordinates).find(item => name.includes(item) || item.includes(name))

@@ -60,6 +60,49 @@
 - `facilities` 表总计 567 条是因为建筑节点也会以 `building` 类型同步到设施表；课程设计口径下，“其它服务设施”按 `type <> 'building'` 统计。
 - 课程设计口径下，校园内部道路图满足边数不少于 200、建筑不少于 20、其它服务设施不少于 50 且服务设施类型不少于 10 的要求。
 
+## 2026-06-11 / feature-yhm-graph / 修复：环游模式与拥挤度感知只画直线
+
+类型：重要缺陷修复（前端）。
+
+背景：路线规划页勾选「环游模式 (TSP)」或「拥挤度感知」后，地图只画出一条直线，不勾选则正常。排查结论：后端 `/routes/tour` 与 `/routes/plan/congestion` 一直返回基于本地路网的真实多节点路径，问题全在前端——这两个分支是占位级实现：环游模式把数组下标 `[1,2,3...]` 当节点 ID 发给后端；拥挤度模式用一张写死的 8 地名→ID 映射表（且 ID 与 seed 实际节点错位），坐标靠前端硬编码表拼凑，拼不出来就回退两个固定点连直线。后端返回的真实 `coordinates`/`stops`/`segments` 全被丢弃。
+
+修复：
+
+- 前端新增本地路网节点解析：按需调用 `GET /api/v1/route-nodes` 并缓存，把用户输入的地点文本按名称匹配（精确 > 包含，scenic 类型优先）解析为真实节点 ID；匹配不到时给出明确错误并列出路网内可用景点示例，不再静默回退。
+- 环游/拥挤度两个分支改为直接展开后端响应（`computed_route_json` 结构）：地图折线用真实图路径坐标，停靠点、导航步骤（segments）、距离/时长/费用、TSP 访问顺序（后端已返回名称）、拥挤度行为画像字段（`congestionSource`/`behaviorBoostedEdges`）全部来自后端，删除全部硬编码地名表与假坐标拼装。
+- 顺带修复旧代码中 `(x || 0 / 1000)` 的运算符优先级错误（距离恒显示原始米数）。
+- 交通方式映射集中为 `localGraphTravelMode()`（driving→car、transit→subway），环游与拥挤度共用。
+
+验证口径：
+
+- 前端生产构建通过；后端无改动。
+- 实测 `POST /routes/plan/congestion`（前门大街→北海公园，hour=10）：返回 7 站真实路径（经天安门广场、故宫、景山），4.3 km；前端按该坐标序列画折线，不再是直线。
+- 实测 `POST /routes/tour`（4 节点）：返回名称形式访问顺序与 14 点真实路径坐标，10.8 km，算法「枚举」。
+- 输入路网外地点（如"颐和园"不在演示路网时）应显示明确错误提示与可用地点示例，而不是画一条假直线。
+
+## 2026-06-11 / feature-zby-recommend / 日记位置与封面、AI 标题生成、日记广场强化
+
+类型：数据库迁移、后端 CRUD 扩展、前端编辑器重构、AI 新接口。
+
+变更：
+
+- 新增数据库迁移 `database/diary_location_cover_schema.sql`：`travel_diaries` 增加 `cover_image`（显式封面图）、`location_name`/`location_address`/`location_latitude`/`location_longitude`/`location_poi_id` 五个地点字段；存量日记的 `cover_image` 由迁移自动用 `images[1]` 填充。
+- 后端日记 CRUD（POST/PUT/GET）全面支持上述新字段，SELECT SQL 新增对应列，`diary_json()` 返回 `coverImage` 和 `locationDetail` 对象。`GET /api/v1/diaries/mine` 新增 `status` 查询参数（`all`/`published`/`draft`），支持按草稿/发布状态过滤。
+- 新增 `POST /api/v1/aigc/diary-title`：根据正文内容生成标题文案（调用 `generate_diary_title_text()`）。
+- 前端 DiaryEditor.vue：图片区改为胶卷带（filmstrip）横向排列，支持长按拖拽排序；图片可独立设置封面（原为"第一张自动为封面"）；AI 摘要按钮改为"AI 标题文案"（调用新接口）；景点 ID 输入移至图片区；格式工具栏激活状态增加指示点。
+- 前端 Diary.vue：视图模式和草稿状态与 URL 参数双向同步（`/diary?view=mine&status=draft`）；日记列表去重（防本地与服务端重复）；删除前加确认对话框；未登录访问我的日记自动跳转登录；`diaryStore.justPublished` 合并逻辑修正（优先使用服务端字段）。
+- 前端 Profile.vue：细节完善（未展开审核）。
+
+验证口径：
+
+- 前后端构建均通过（2026-06-11 合并 origin/feature/zby-recommend 后）。
+- 执行迁移后 `\d travel_diaries` 应含 `cover_image`、`location_name` 等新列，存量日记的 `cover_image` 不为 NULL。
+- 新建日记时上传多张图片，可点"设为封面"切换，保存后 API 返回 `coverImage` 为指定图片。
+- `/diaries/mine?status=draft` 只返回草稿；`/diaries/mine?status=published` 只返回已发布。
+- 点击"AI 标题文案"按钮，后端 `POST /aigc/diary-title` 正常返回标题建议。
+
+注：本次变更未同步更新 `docs/engineering_log.md`、`QUICKSTART.md`、`database/README.md`，由本轮补录，后续 zby 应遵循文档规范在每次提交后自行更新。
+
 ## 2026-06-11 / feature-lxd-search / 室内外跨层导航
 
 类型：跨层路径规划、数据库迁移、后端新接口、前端交互。
