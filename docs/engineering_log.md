@@ -281,6 +281,51 @@
 - 新增 `GET /api/v1/diaries/<id>/compression`，补齐日记详情页单篇压缩信息卡片所需接口，避免前端请求 404 后只能回退为 `0 bytes / 等待校验` 的占位展示。
 - 同步修正 `frontend/src/tests/tourismApi.test.js` 的 Huffman 测试契约：请求字段改为 `content` / `compressed`，响应字段改为 `originalBytes`、`compressedBytes`、`compressionRatio`、`content`。
 
+## 2026-06-12 / feature-lxd-search / 路线规划剩余问题收尾
+
+类型：路线规划、前后端联动、数据库 seed、开发脚本。
+
+背景：此前路线页还残留 3 类问题。第一，拥挤度模式里早高峰/深夜、时间优先/距离优先看起来完全一样；第二，拥挤度模式在 7:00 一类高峰时段会画成节点直连折线；第三，队友拉到修复代码后如果本地数据库没同步 `seed_demo.sql`，页面仍可能继续显示旧的直线演示图。另有一个工程层面的隐患：开发启动脚本固定指向旧构建目录，容易出现“代码已改但实际跑的是旧后端”。
+
+变更：
+
+- 前端 `RoutePlan.vue` 的拥挤度模式不再把本地 Dijkstra 结果交给高德二次重算，而是直接使用后端返回的 `coordinates / pathEdges / requestedPlaces`。
+  - 这样入口、换乘点等非 scenic 中间节点不会再被高德重投影吞掉。
+  - 结果是“时间优先高峰绕行 / 距离优先直走 / 深夜恢复直走”的差异终于能在地图上真实显示出来。
+- 后端 `computed_route_json()` 追加 `requestedPlaces`，把本地路网每个停靠点的真实坐标一并返回，前端画点不再退回到折线首尾猜测。
+- `database/seed_demo.sql` 为演示 `graph_edges` 补齐正式 `geometry`，包括：
+  - `天安门广场 -> 故宫博物院` 主通道；
+  - `天安门广场 -> 故宫北门换乘点 -> 故宫博物院` 绕行通道；
+  - 其余北海/鼓楼/国博/前门/王府井等演示边。
+  这样拥挤度模式即使完全不调用高德，也会画出道路形态，而不是只剩节点直连线。
+- 标准文本地点路线规划把 `optimization` 继续下传到高德服务层：
+  - 驾车/公交会带上策略参数；
+  - 同时不再盲取第一个候选，而是按 `duration` 或 `distance` 从高德返回候选里选最优方案；
+  - 响应新增 `optimization`，`bestFor` 改为中文“时间优先 / 距离优先 / 均衡 · 高德路线规划”。
+- `seed_demo.sql` 的成就、用户成就、数字藏品 seed 改成按 `code` 关联与 upsert，重跑不再因为 `achievements.code` 唯一键冲突而整段回滚。
+- `scripts/run_backend_dev.cmd` / `scripts/run_backend_dev.ps1` 改为优先启动 `backend/build-mingw/bin/tourism_server.exe`，找不到时再回退旧目录，避免开发环境继续误跑过期后端。
+
+验证口径：
+
+- 重新执行 `database/seed_demo.sql` 后，以下 2 条边应有真实 `LINESTRING`：
+  - `graph_edges(2 -> 1, walk)`；
+  - `graph_edges(2 -> 104, walk)`。
+- 拥挤度接口：
+  - `POST /api/v1/routes/plan/congestion`，`start_id=2,end_id=1,travel_mode=walk,optimization=distance,hour=7` 应返回直达 `天安门广场 -> 故宫博物院`。
+  - 同一请求改为 `optimization=time,hour=7` 应返回 `天安门广场 -> 故宫北门换乘点 -> 故宫博物院`。
+  - 同一请求改为 `optimization=time,hour=23` 应恢复直达。
+- 实测本地结果：
+  - 高峰 `distance@7`：1.1 km / 15 分钟，主通道直达；
+  - 高峰 `time@7`：2.2 km / 25 分钟，经“故宫北门换乘点”绕行；
+  - 深夜 `time@23`：回到 1.1 km / 15 分钟直达。
+- 普通文本地点路线规划：
+  - 优化目标现在已经真实传给高德，部分点对可出现差异，例如本地实测 `中国国家博物馆 -> 圆明园` 驾车 `time=21.4 km / 37 分钟`，`distance=20.8 km / 36 分钟`；
+  - 但对少数点对，高德本身仍可能返回同一路径，这是上游提供者的候选结果限制，不再是我们前后端把优化目标静默丢失。
+
+补记：
+
+- 如果队友 `git pull` 后路线页仍显示旧的直线演示图，优先检查是否已重跑 `database/seed_demo.sql`；这次路线修复有一部分落在正式 seed 数据里，不只是前后端代码。
+
 ## 2026-06-09 / feature-yhm-graph / 室内导航中文化
 
 类型：室内导航、数据 seed、后端响应、前端文案、文档规范。

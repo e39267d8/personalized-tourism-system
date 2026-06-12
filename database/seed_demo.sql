@@ -192,45 +192,51 @@ ON CONFLICT (id) DO UPDATE SET
 
 -- 路线规划演示用图边
 INSERT INTO graph_edges
-    (from_node, to_node, distance, travel_mode, travel_time, base_weight, congestion_level)
+    (from_node, to_node, distance, travel_mode, travel_time, base_weight, congestion_level, geometry)
 VALUES
-    (2, 1, 1050, 'walk', 900, 10.50, 3),
-    (1, 2, 1050, 'walk', 900, 10.50, 3),
-    (1, 104, 650, 'walk', 560, 6.50, 3),
-    (104, 1, 650, 'walk', 560, 6.50, 3),
-    (104, 3, 520, 'walk', 450, 5.20, 2),
-    (3, 104, 520, 'walk', 450, 5.20, 2),
-    (3, 4, 900, 'walk', 780, 9.00, 2),
-    (4, 3, 900, 'walk', 780, 9.00, 2),
-    (4, 103, 980, 'walk', 840, 9.80, 2),
-    (103, 4, 980, 'walk', 840, 9.80, 2),
-    (103, 8, 1150, 'bike', 420, 8.00, 2),
-    (8, 103, 1150, 'bike', 420, 8.00, 2),
-    (2, 5, 620, 'walk', 530, 6.20, 3),
-    (5, 2, 620, 'walk', 530, 6.20, 3),
-    (5, 101, 380, 'walk', 320, 3.80, 2),
-    (101, 5, 380, 'walk', 320, 3.80, 2),
-    (2, 102, 980, 'walk', 820, 9.80, 3),
-    (102, 2, 980, 'walk', 820, 9.80, 3),
-    (102, 6, 240, 'walk', 210, 2.40, 2),
-    (6, 102, 240, 'walk', 210, 2.40, 2),
-    (6, 105, 120, 'walk', 120, 1.20, 2),
-    (105, 6, 120, 'walk', 120, 1.20, 2),
-    (1, 7, 1700, 'bike', 620, 11.00, 3),
-    (7, 1, 1700, 'bike', 620, 11.00, 3),
-    (7, 106, 300, 'walk', 260, 3.00, 3),
-    (106, 7, 300, 'walk', 260, 3.00, 3),
-    (8, 107, 450, 'walk', 390, 4.50, 2),
-    (107, 8, 450, 'walk', 390, 4.50, 2),
-    (101, 102, 1200, 'subway', 180, 4.50, 2),
-    (102, 101, 1200, 'subway', 180, 4.50, 2),
-    (101, 7, 1250, 'bike', 460, 8.50, 3),
-    (7, 101, 1250, 'bike', 460, 8.50, 3)
+    -- 天安门→午门主通道：人流巅峰，拥挤度 4（高峰时段算法应倾向绕行）
+    (2, 1, 1050, 'walk', 900, 10.50, 4, 'SRID=4326;LINESTRING(116.397477 39.908692, 116.397420 39.911540, 116.397240 39.914540, 116.397026 39.918058)'),
+    (1, 2, 1050, 'walk', 900, 10.50, 4, 'SRID=4326;LINESTRING(116.397026 39.918058, 116.397240 39.914540, 116.397420 39.911540, 116.397477 39.908692)'),
+    -- 故宫北门换乘点↔故宫：北门人流稀少，拥挤度 1
+    (1, 104, 650, 'walk', 560, 6.50, 1, 'SRID=4326;LINESTRING(116.397026 39.918058, 116.397090 39.919640, 116.397210 39.921520, 116.397712 39.923724)'),
+    (104, 1, 650, 'walk', 560, 6.50, 1, 'SRID=4326;LINESTRING(116.397712 39.923724, 116.397210 39.921520, 116.397090 39.919640, 116.397026 39.918058)'),
+    -- 天安门↔故宫北门换乘点：沿筒子河绕行，距离长但畅通（高峰绕行备选）
+    (2, 104, 1600, 'walk', 950, 16.00, 1, 'SRID=4326;LINESTRING(116.397477 39.908692, 116.401216 39.909120, 116.401560 39.915860, 116.399880 39.921820, 116.397712 39.923724)'),
+    (104, 2, 1600, 'walk', 950, 16.00, 1, 'SRID=4326;LINESTRING(116.397712 39.923724, 116.399880 39.921820, 116.401560 39.915860, 116.401216 39.909120, 116.397477 39.908692)'),
+    (104, 3, 520, 'walk', 450, 5.20, 2, 'SRID=4326;LINESTRING(116.397712 39.923724, 116.397580 39.924320, 116.397180 39.924760, 116.396621 39.925048)'),
+    (3, 104, 520, 'walk', 450, 5.20, 2, 'SRID=4326;LINESTRING(116.396621 39.925048, 116.397180 39.924760, 116.397580 39.924320, 116.397712 39.923724)'),
+    (3, 4, 900, 'walk', 780, 9.00, 2, 'SRID=4326;LINESTRING(116.396621 39.925048, 116.394780 39.925180, 116.392260 39.925300, 116.389535 39.925455)'),
+    (4, 3, 900, 'walk', 780, 9.00, 2, 'SRID=4326;LINESTRING(116.389535 39.925455, 116.392260 39.925300, 116.394780 39.925180, 116.396621 39.925048)'),
+    (4, 103, 980, 'walk', 840, 9.80, 2, 'SRID=4326;LINESTRING(116.389535 39.925455, 116.388260 39.927860, 116.387520 39.930520, 116.386829 39.933247)'),
+    (103, 4, 980, 'walk', 840, 9.80, 2, 'SRID=4326;LINESTRING(116.386829 39.933247, 116.387520 39.930520, 116.388260 39.927860, 116.389535 39.925455)'),
+    (103, 8, 1150, 'bike', 420, 8.00, 2, 'SRID=4326;LINESTRING(116.386829 39.933247, 116.388640 39.936020, 116.391120 39.938460, 116.393776 39.940269)'),
+    (8, 103, 1150, 'bike', 420, 8.00, 2, 'SRID=4326;LINESTRING(116.393776 39.940269, 116.391120 39.938460, 116.388640 39.936020, 116.386829 39.933247)'),
+    (2, 5, 620, 'walk', 530, 6.20, 3, 'SRID=4326;LINESTRING(116.397477 39.908692, 116.398600 39.907760, 116.399760 39.906220, 116.401015 39.905103)'),
+    (5, 2, 620, 'walk', 530, 6.20, 3, 'SRID=4326;LINESTRING(116.401015 39.905103, 116.399760 39.906220, 116.398600 39.907760, 116.397477 39.908692)'),
+    (5, 101, 380, 'walk', 320, 3.80, 2, 'SRID=4326;LINESTRING(116.401015 39.905103, 116.401120 39.906120, 116.401180 39.907360, 116.401216 39.908780)'),
+    (101, 5, 380, 'walk', 320, 3.80, 2, 'SRID=4326;LINESTRING(116.401216 39.908780, 116.401180 39.907360, 116.401120 39.906120, 116.401015 39.905103)'),
+    (2, 102, 980, 'walk', 820, 9.80, 3, 'SRID=4326;LINESTRING(116.397477 39.908692, 116.397620 39.906160, 116.397780 39.903320, 116.397937 39.900192)'),
+    (102, 2, 980, 'walk', 820, 9.80, 3, 'SRID=4326;LINESTRING(116.397937 39.900192, 116.397780 39.903320, 116.397620 39.906160, 116.397477 39.908692)'),
+    (102, 6, 240, 'walk', 210, 2.40, 2, 'SRID=4326;LINESTRING(116.397937 39.900192, 116.397948 39.899860, 116.397957 39.899318)'),
+    (6, 102, 240, 'walk', 210, 2.40, 2, 'SRID=4326;LINESTRING(116.397957 39.899318, 116.397948 39.899860, 116.397937 39.900192)'),
+    (6, 105, 120, 'walk', 120, 1.20, 2, 'SRID=4326;LINESTRING(116.397957 39.899318, 116.397720 39.899180, 116.397371 39.899049)'),
+    (105, 6, 120, 'walk', 120, 1.20, 2, 'SRID=4326;LINESTRING(116.397371 39.899049, 116.397720 39.899180, 116.397957 39.899318)'),
+    (1, 7, 1700, 'bike', 620, 11.00, 3, 'SRID=4326;LINESTRING(116.397026 39.918058, 116.401180 39.917420, 116.406280 39.915980, 116.411013 39.912657)'),
+    (7, 1, 1700, 'bike', 620, 11.00, 3, 'SRID=4326;LINESTRING(116.411013 39.912657, 116.406280 39.915980, 116.401180 39.917420, 116.397026 39.918058)'),
+    (7, 106, 300, 'walk', 260, 3.00, 3, 'SRID=4326;LINESTRING(116.411013 39.912657, 116.410980 39.913520, 116.410946 39.914742)'),
+    (106, 7, 300, 'walk', 260, 3.00, 3, 'SRID=4326;LINESTRING(116.410946 39.914742, 116.410980 39.913520, 116.411013 39.912657)'),
+    (8, 107, 450, 'walk', 390, 4.50, 2, 'SRID=4326;LINESTRING(116.393776 39.940269, 116.392860 39.939360, 116.391920 39.938420, 116.390855 39.937661)'),
+    (107, 8, 450, 'walk', 390, 4.50, 2, 'SRID=4326;LINESTRING(116.390855 39.937661, 116.391920 39.938420, 116.392860 39.939360, 116.393776 39.940269)'),
+    (101, 102, 1200, 'subway', 180, 4.50, 2, 'SRID=4326;LINESTRING(116.401216 39.908780, 116.400100 39.906320, 116.399200 39.903520, 116.397937 39.900192)'),
+    (102, 101, 1200, 'subway', 180, 4.50, 2, 'SRID=4326;LINESTRING(116.397937 39.900192, 116.399200 39.903520, 116.400100 39.906320, 116.401216 39.908780)'),
+    (101, 7, 1250, 'bike', 460, 8.50, 3, 'SRID=4326;LINESTRING(116.401216 39.908780, 116.404240 39.910680, 116.407720 39.911860, 116.411013 39.912657)'),
+    (7, 101, 1250, 'bike', 460, 8.50, 3, 'SRID=4326;LINESTRING(116.411013 39.912657, 116.407720 39.911860, 116.404240 39.910680, 116.401216 39.908780)')
 ON CONFLICT (from_node, to_node, travel_mode) DO UPDATE SET
     distance = EXCLUDED.distance,
     travel_time = EXCLUDED.travel_time,
     base_weight = EXCLUDED.base_weight,
-    congestion_level = EXCLUDED.congestion_level;
+    congestion_level = EXCLUDED.congestion_level,
+    geometry = EXCLUDED.geometry;
 
 -- 收藏和评价：按景点 key 动态关联导入后的真实景点 id。
 INSERT INTO user_favorites (user_id, scenic_spot_id)
@@ -348,20 +354,19 @@ ON CONFLICT (id) DO UPDATE SET
 
 -- 成就和数字藏品
 INSERT INTO achievements
-    (id, code, name, description, icon_url, level, type, tier, display_order, requirement, reward, is_active)
+    (code, name, description, icon_url, level, type, tier, display_order, requirement, reward, is_active)
 VALUES
-    (1, 'passport-first-stamp', '北京旅行第一章', '完成任意一个景点打卡，开启你的 TourPilot 旅行护照。', '', 1, 'exploration', 1, 10, '{"kind":"checkin_count","target":1}', '{"points":30,"digitalCollectible":true}', TRUE),
-    (2, 'stamp-gugong', '故宫印章', '到访故宫并完成打卡，收集一枚经典地标印章。', '', 1, 'exploration', 1, 20, '{"kind":"spot","spot":"故宫"}', '{"points":40,"digitalCollectible":true}', TRUE),
-    (3, 'theme-axis', '中轴线集章者', '集齐前门、天安门、故宫、景山，完成北京中轴线主题探索。', '', 2, 'theme', 2, 30, '{"kind":"theme","spots":["前门","天安门","故宫","景山"]}', '{"points":120,"digitalCollectible":true,"physicalBadge":true}', TRUE),
-    (4, 'theme-museum', '博物馆漫游家', '完成国家博物馆与故宫相关打卡，解锁文化探索主题章。', '', 2, 'theme', 2, 40, '{"kind":"theme","spots":["国家博物馆","故宫"]}', '{"points":100,"digitalCollectible":true,"physicalBadge":true}', TRUE),
-    (5, 'theme-old-citywalk', '老城漫步达人', '集齐鼓楼、什刹海、北海、景山，完成老城 citywalk 主题。', '', 2, 'theme', 2, 50, '{"kind":"theme","spots":["鼓楼","什刹海","北海","景山"]}', '{"points":140,"digitalCollectible":true,"physicalBadge":true}', TRUE),
-    (6, 'theme-royal-gardens', '皇家园林收藏家', '打卡颐和园、圆明园、北海，收集皇家园林主题印章。', '', 2, 'theme', 2, 60, '{"kind":"theme","spots":["颐和园","圆明园","北海"]}', '{"points":140,"digitalCollectible":true,"physicalBadge":true}', TRUE),
-    (7, 'theme-night-food', '夜游美食探索者', '打卡王府井与三里屯，记录城市夜色和美食记忆。', '', 2, 'theme', 2, 70, '{"kind":"theme","spots":["王府井","三里屯"]}', '{"points":100,"digitalCollectible":true,"physicalBadge":true}', TRUE),
-    (8, 'theme-family-nature', '亲子自然观察员', '打卡奥林匹克森林公园与北海，完成轻松自然主题。', '', 2, 'theme', 2, 80, '{"kind":"theme","spots":["奥林匹克森林公园","北海"]}', '{"points":100,"digitalCollectible":true,"physicalBadge":true}', TRUE),
-    (9, 'diary-memory-maker', '旅行记忆创作者', '发布包含景点、图片和完整体验记录的旅行日记。', '', 3, 'diary', 3, 90, '{"kind":"diary","min_words":120,"min_images":1,"min_spots":1}', '{"points":180,"digitalCollectible":true,"creatorBadge":true}', TRUE),
-    (10, 'master-travel-writer', '大师级旅行记录者', '优质旅行日记通过人工评审，获得最高级纪念奖励。', '', 4, 'diary_review', 4, 100, '{"kind":"master_review","status":"approved"}', '{"points":300,"digitalCollectible":true,"physicalBadge":true,"premium":true}', TRUE)
-ON CONFLICT (id) DO UPDATE SET
-    code = EXCLUDED.code,
+    ('passport-first-stamp', '北京旅行第一章', '完成任意一个景点打卡，开启你的 TourPilot 旅行护照。', '', 1, 'exploration', 1, 10, '{"kind":"checkin_count","target":1}', '{"points":30,"digitalCollectible":true}', TRUE),
+    ('stamp-gugong', '故宫印章', '到访故宫并完成打卡，收集一枚经典地标印章。', '', 1, 'exploration', 1, 20, '{"kind":"spot","spot":"故宫"}', '{"points":40,"digitalCollectible":true}', TRUE),
+    ('theme-axis', '中轴线集章者', '集齐前门、天安门、故宫、景山，完成北京中轴线主题探索。', '', 2, 'theme', 2, 30, '{"kind":"theme","spots":["前门","天安门","故宫","景山"]}', '{"points":120,"digitalCollectible":true,"physicalBadge":true}', TRUE),
+    ('theme-museum', '博物馆漫游家', '完成国家博物馆与故宫相关打卡，解锁文化探索主题章。', '', 2, 'theme', 2, 40, '{"kind":"theme","spots":["国家博物馆","故宫"]}', '{"points":100,"digitalCollectible":true,"physicalBadge":true}', TRUE),
+    ('theme-old-citywalk', '老城漫步达人', '集齐鼓楼、什刹海、北海、景山，完成老城 citywalk 主题。', '', 2, 'theme', 2, 50, '{"kind":"theme","spots":["鼓楼","什刹海","北海","景山"]}', '{"points":140,"digitalCollectible":true,"physicalBadge":true}', TRUE),
+    ('theme-royal-gardens', '皇家园林收藏家', '打卡颐和园、圆明园、北海，收集皇家园林主题印章。', '', 2, 'theme', 2, 60, '{"kind":"theme","spots":["颐和园","圆明园","北海"]}', '{"points":140,"digitalCollectible":true,"physicalBadge":true}', TRUE),
+    ('theme-night-food', '夜游美食探索者', '打卡王府井与三里屯，记录城市夜色和美食记忆。', '', 2, 'theme', 2, 70, '{"kind":"theme","spots":["王府井","三里屯"]}', '{"points":100,"digitalCollectible":true,"physicalBadge":true}', TRUE),
+    ('theme-family-nature', '亲子自然观察员', '打卡奥林匹克森林公园与北海，完成轻松自然主题。', '', 2, 'theme', 2, 80, '{"kind":"theme","spots":["奥林匹克森林公园","北海"]}', '{"points":100,"digitalCollectible":true,"physicalBadge":true}', TRUE),
+    ('diary-memory-maker', '旅行记忆创作者', '发布包含景点、图片和完整体验记录的旅行日记。', '', 3, 'diary', 3, 90, '{"kind":"diary","min_words":120,"min_images":1,"min_spots":1}', '{"points":180,"digitalCollectible":true,"creatorBadge":true}', TRUE),
+    ('master-travel-writer', '大师级旅行记录者', '优质旅行日记通过人工评审，获得最高级纪念奖励。', '', 4, 'diary_review', 4, 100, '{"kind":"master_review","status":"approved"}', '{"points":300,"digitalCollectible":true,"physicalBadge":true,"premium":true}', TRUE)
+ON CONFLICT (code) DO UPDATE SET
     name = EXCLUDED.name,
     description = EXCLUDED.description,
     icon_url = EXCLUDED.icon_url,
@@ -375,10 +380,13 @@ ON CONFLICT (id) DO UPDATE SET
 
 INSERT INTO user_achievements
     (user_id, achievement_id, progress, status, unlocked_at)
-VALUES
-    (1, 1, '{"completed":true}', 'unlocked', CURRENT_TIMESTAMP),
-    (2, 2, '{"review_count":1}', 'unlocked', CURRENT_TIMESTAMP),
-    (3, 3, '{"distance_km":3.8}', 'unlocked', CURRENT_TIMESTAMP)
+SELECT demo.user_id, a.id, demo.progress, demo.status, demo.unlocked_at
+FROM (VALUES
+    (1, 'passport-first-stamp', '{"completed":true}'::jsonb, 'unlocked', CURRENT_TIMESTAMP),
+    (2, 'stamp-gugong', '{"review_count":1}'::jsonb, 'unlocked', CURRENT_TIMESTAMP),
+    (3, 'theme-axis', '{"distance_km":3.8}'::jsonb, 'unlocked', CURRENT_TIMESTAMP)
+) AS demo(user_id, achievement_code, progress, status, unlocked_at)
+JOIN achievements a ON a.code = demo.achievement_code
 ON CONFLICT (user_id, achievement_id) DO UPDATE SET
     progress = EXCLUDED.progress,
     status = EXCLUDED.status,
@@ -386,9 +394,12 @@ ON CONFLICT (user_id, achievement_id) DO UPDATE SET
 
 INSERT INTO digital_collectibles
     (id, user_id, achievement_id, diary_id, token_id, name, description, image_url, metadata, blockchain_hash, minted_at)
-VALUES
-    (1, 1, 1, 1, 'DEMO-PASSPORT-001', '北京旅行第一章数字纪念凭证', '开启 TourPilot 旅行护照后获得的模拟数字纪念凭证。', '', '{"demo":true,"chainMode":"simulated"}', 'demo-hash-passport-001', CURRENT_TIMESTAMP),
-    (2, 3, 3, 3, 'DEMO-AXIS-001', '中轴线集章者数字纪念凭证', '完成北京中轴线主题探索后获得的模拟数字纪念凭证。', '', '{"demo":true,"theme":"axis","chainMode":"simulated"}', 'demo-hash-axis-001', CURRENT_TIMESTAMP)
+SELECT demo.id, demo.user_id, a.id, demo.diary_id, demo.token_id, demo.name, demo.description, demo.image_url, demo.metadata, demo.blockchain_hash, demo.minted_at
+FROM (VALUES
+    (1, 1, 'passport-first-stamp', 1, 'DEMO-PASSPORT-001', '北京旅行第一章数字纪念凭证', '开启 TourPilot 旅行护照后获得的模拟数字纪念凭证。', '', '{"demo":true,"chainMode":"simulated"}'::jsonb, 'demo-hash-passport-001', CURRENT_TIMESTAMP),
+    (2, 3, 'theme-axis', 3, 'DEMO-AXIS-001', '中轴线集章者数字纪念凭证', '完成北京中轴线主题探索后获得的模拟数字纪念凭证。', '', '{"demo":true,"theme":"axis","chainMode":"simulated"}'::jsonb, 'demo-hash-axis-001', CURRENT_TIMESTAMP)
+) AS demo(id, user_id, achievement_code, diary_id, token_id, name, description, image_url, metadata, blockchain_hash, minted_at)
+LEFT JOIN achievements a ON a.code = demo.achievement_code
 ON CONFLICT (id) DO UPDATE SET
     user_id = EXCLUDED.user_id,
     achievement_id = EXCLUDED.achievement_id,

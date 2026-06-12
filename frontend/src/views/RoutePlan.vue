@@ -419,7 +419,7 @@ const planRoute = async () => {
         title: 'TSP 环游路线',
         algorithm: tourResult.algorithm || 'TSP',
         visitOrder: visitNames,
-        transport: modeLabel(),
+        transport: amapRoute?.transport || tourResult.transport || modeLabel(),
         usedTransportFallback: amapRoute ? false : tourResult.usedTransportFallback,
         requestedPlaces: amapRoute?.requestedPlaces?.length
           ? amapRoute.requestedPlaces
@@ -454,34 +454,21 @@ const planRoute = async () => {
         start_id: startNode.id,
         end_id: endNode.id,
         travel_mode: localGraphTravelMode(),
+        optimization: form.optimization,
         hour: timeOfDay.value
       })
 
-      // 分层渲染：拥挤度 Dijkstra 决定绕行经过哪些景点，真实道路折线交给高德。
-      // 取图路径中的 scenic 中间节点作为高德途经点（地名可被地理编码），
-      // 这样"避开热门区域"的绕行决策会体现在真实道路路线上。
-      const scenicNames = new Set(nodes.filter(node => node.type === 'scenic').map(node => node.name))
-      const viaStops = (congestionResult.stops || [])
-        .slice(1, -1)
-        .filter(name => scenicNames.has(name) && name !== startNode.name && name !== endNode.name)
-        .slice(0, 6)
-      const amapRoute = await amapGeometryForStops([startNode.name, ...viaStops, endNode.name])
-
       route.value = {
-        ...(amapRoute || congestionResult),
+        ...congestionResult,
         title: `拥挤度感知路线（${congestionResult.crowd_label || '中等'}敏感时段）`,
         algorithm: `拥挤度感知 Dijkstra · ${modeLabel()}`,
-        transport: modeLabel(),
-        // 拥挤度元数据始终来自拥挤度接口（行为画像提示依赖这两个字段）
+        transport: congestionResult.transport || modeLabel(),
+        // 拥挤度模式直接展示本地图算法选中的路径；如果再把中间节点交给高德
+        // 二次重算，入口/换乘点这类非 scenic 节点会被抹掉，视觉上就像
+        // “不同时间段/不同优化目标完全一样”。
         congestionSource: congestionResult.congestionSource,
         behaviorBoostedEdges: congestionResult.behaviorBoostedEdges,
-        usedTransportFallback: amapRoute ? false : congestionResult.usedTransportFallback,
-        requestedPlaces: amapRoute?.requestedPlaces?.length
-          ? amapRoute.requestedPlaces
-          : [
-              { latitude: startNode.latitude, longitude: startNode.longitude, name: startNode.name },
-              { latitude: endNode.latitude, longitude: endNode.longitude, name: endNode.name }
-            ]
+        usedTransportFallback: congestionResult.usedTransportFallback
       }
       drawRoute()
     } catch (requestError) {
@@ -561,29 +548,41 @@ const graphNodeMissingMessage = (modeName, missing) => {
     + (samples ? `可尝试路网内的地点，如：${samples}` : '')
 }
 
-// 本地图的交通方式取值与高德文本规划不同（driving→car、transit→subway）
+// 本地图的交通方式映射。演示路网以步行边为主（地铁/骑行边零星），
+// transit/driving 在算法层直接用混合模式（空串=不过滤），避免"无可达
+// 路线已回退"的误报横幅；几何层仍按用户所选模式向高德取真实路线。
 const localGraphTravelMode = () => {
-  if (form.travelMode === 'driving') return 'car'
-  if (form.travelMode === 'transit') return 'subway'
+  if (form.travelMode === 'driving' || form.travelMode === 'transit') return ''
   return form.travelMode
 }
 
 // 分层渲染的几何层：把算法层（TSP/拥挤度 Dijkstra）决定的停靠点序列
 // 交给高德按所选交通方式取真实道路折线。本地图的边只有节点连线、没有
 // 道路几何，直接画会穿过街区。高德不可用时返回 null，调用方回退图几何。
+// 地铁公交模式特殊处理：公交方案由线路决定，"途经点"语义不成立且
+// 相邻停靠点太近时高德 transit 无方案直接报错——只用起终点直达；
+// 仍失败（如起终点过近无公交方案）则降级用步行取街道几何兜底。
 const amapGeometryForStops = async (stopTexts) => {
   if (!stopTexts || stopTexts.length < 2) return null
+  const isTransit = form.travelMode === 'transit'
+  const stops = isTransit ? [stopTexts[0], stopTexts[stopTexts.length - 1]] : stopTexts
+  const request = (travelMode) => tourismApi.planRoute({
+    city: form.city || '北京',
+    startText: stops[0],
+    endText: stops[stops.length - 1],
+    waypointTexts: stops.slice(1, -1),
+    travelMode,
+    optimization: form.optimization
+  })
   try {
-    return await tourismApi.planRoute({
-      city: form.city || '北京',
-      startText: stopTexts[0],
-      endText: stopTexts[stopTexts.length - 1],
-      waypointTexts: stopTexts.slice(1, -1),
-      travelMode: form.travelMode,
-      optimization: form.optimization
-    })
+    return await request(form.travelMode)
   } catch {
-    return null
+    if (!isTransit) return null
+    try {
+      return await request('walk')
+    } catch {
+      return null
+    }
   }
 }
 

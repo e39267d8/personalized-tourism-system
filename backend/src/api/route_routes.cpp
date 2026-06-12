@@ -186,7 +186,9 @@ void register_route_routes(TourismApp& app) {
                                         raw_transport == "bike" ? "bike" :
                                         raw_transport == "transit" || raw_transport == "bus" || raw_transport == "subway" ? raw_transport :
                                         "walk";
-                return crow::response(ok(tourism::services::plan_amap_route_json(key, city, amap_mode, place_texts)));
+                return crow::response(ok(tourism::services::plan_amap_route_json(
+                    key, city, amap_mode, optimization, place_texts
+                )));
             }
 
             if (start_node_id <= 0 || end_node_id <= 0) {
@@ -304,7 +306,10 @@ void register_route_routes(TourismApp& app) {
                             if (it != spot_activity.end()) factor = std::max(factor, it->second);
                         }
                         int bump = factor >= 0.66 ? 2 : factor >= 0.33 ? 1 : 0;
-                        if (bump > 0 && edge.congestion < 4) {
+                        // 只抬升本就拥挤的主通道边（≥3）：热门时段人流挤在主通道，
+                        // 僻静绕行路径依然僻静。若把景点周边所有边一起抬升，
+                        // 会抹平主路与绕行路的相对差异，绕行决策反而失效。
+                        if (bump > 0 && edge.congestion >= 3 && edge.congestion < 4) {
                             edge.congestion = std::min(4, edge.congestion + bump);
                             boosted_edges++;
                         }
@@ -320,13 +325,17 @@ void register_route_routes(TourismApp& app) {
             else if (hour >= 9 && hour <= 11) crowd_tolerance = 2;
             else if (hour >= 22 || hour <= 5) crowd_tolerance = 4; // off-peak: not sensitive
 
+            // 优化目标跟随请求（时间/距离/均衡的拥挤敏感度不同），不再写死 balanced
+            std::string optimization = normalize_optimization(json_string(body, "optimization", "balanced"));
+
             std::vector<int> points = {start_id, end_id};
-            auto result = plan_route_with_waypoints(graph, points, transport, "balanced", crowd_tolerance);
+            auto result = plan_route_with_waypoints(graph, points, transport, optimization, crowd_tolerance);
 
             if (!result.success) return json_error(422, result.error);
 
-            crow::json::wvalue data = computed_route_json(graph, result, "congestion", transport);
+            crow::json::wvalue data = computed_route_json(graph, result, optimization, transport);
             data["hour"] = hour;
+            data["optimization"] = optimization;
             data["crowd_tolerance"] = crowd_tolerance;
             data["congestionSource"] = boosted_edges > 0 ? "behavior+time" : "time-model";
             data["behaviorBoostedEdges"] = boosted_edges;

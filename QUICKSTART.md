@@ -21,7 +21,7 @@ C:\Users\seele\Desktop\code\personalized-tourism-system
 
 ## 2. 初始化数据库
 
-`git pull` 只会更新代码和 SQL 文件，不会自动更新本机 PostgreSQL。景区/校园内部道路图、室内导航和日记压缩都需要同步执行对应 SQL 迁移和 seed；如果没有执行对应 SQL，页面会显示“未接入”或查不到新增数据。
+`git pull` 只会更新代码和 SQL 文件，不会自动更新本机 PostgreSQL。景区/校园内部道路图、室内导航、路线规划演示路网和日记压缩都需要同步执行对应 SQL 迁移和 seed；如果没有执行对应 SQL，页面会显示“未接入”、查不到新增数据，或继续画旧的演示直线。
 
 全新数据库初始化顺序：
 
@@ -70,6 +70,17 @@ psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\diary_compress
 ```powershell
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\diary_location_cover_schema.sql
 ```
+
+已有数据库只补路线规划演示路网 / 成就 seed（推荐在拉到路线规划相关修复后重跑一次）：
+
+```powershell
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seed_demo.sql
+```
+
+说明：
+
+- `seed_demo.sql` 现在支持幂等重跑。
+- 如果路线规划页在“拥挤度感知”模式下仍然只画节点直线，先重跑这条 SQL，再刷新页面验证。
 
 已有数据库只补室内外跨层导航（`indoor_buildings` 新增 `outdoor_node_id` 室外锚点绑定，需先导入内部路网和室内导航数据）：
 
@@ -135,7 +146,7 @@ $env:PATH="C:\Program Files\PostgreSQL\15\bin;$env:PATH"
 ## 5. 启动后端
 
 ```powershell
-backend\build-codex-verify-mingw\bin\tourism_server.exe --host 127.0.0.1 --port 8080
+backend\build-mingw\bin\tourism_server.exe --host 127.0.0.1 --port 8080
 ```
 
 正常情况下，这个窗口会一直被后端服务占用，不会立刻回到 PowerShell 提示符。
@@ -272,7 +283,7 @@ Invoke-WebRequest `
 检查退出码：
 
 ```powershell
-backend\build-codex-verify-mingw\bin\tourism_server.exe --help
+backend\build-mingw\bin\tourism_server.exe --help
 $LASTEXITCODE
 ```
 

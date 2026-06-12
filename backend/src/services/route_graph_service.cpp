@@ -20,15 +20,18 @@ using tourism::support::to_double;
 using tourism::support::to_int;
 using tourism::support::transport_label;
 
+// 拥挤惩罚用乘法因子：拥挤的本质是让这条边"通行变慢"，惩罚应与边的
+// 体量成正比（原先固定加法对长边九牛一毛，时段变化永远不会触发绕行）。
+// 时间优先对拥挤最敏感（0.4/级），距离优先最不敏感（0.15/级，"我就要最短路程"）。
 double route_edge_weight(const RouteEdge& edge, const std::string& optimization, int crowd_tolerance) {
     double crowd_penalty = std::max(0, edge.congestion - crowd_tolerance);
-    if (optimization == "distance") return edge.distance + crowd_penalty * 300.0;
-    if (optimization == "time") return edge.duration + crowd_penalty * 180.0;
+    if (optimization == "distance") return edge.distance * (1.0 + crowd_penalty * 0.15);
+    if (optimization == "time") return edge.duration * (1.0 + crowd_penalty * 0.4);
     if (optimization == "budget") {
         double mode_cost = edge.mode == "walk" ? 0.0 : edge.mode == "bike" ? 3.0 : edge.mode == "subway" ? 5.0 : 15.0;
-        return edge.distance / 120.0 + edge.duration / 60.0 + mode_cost * 20.0 + crowd_penalty * 10.0;
+        return (edge.distance / 120.0 + edge.duration / 60.0) * (1.0 + crowd_penalty * 0.2) + mode_cost * 20.0;
     }
-    return edge.distance / 90.0 + edge.duration / 45.0 + edge.base_weight + crowd_penalty * 12.0;
+    return (edge.distance / 90.0 + edge.duration / 45.0 + edge.base_weight) * (1.0 + crowd_penalty * 0.3);
 }
 
 RouteSearchResult dijkstra_route(const RouteGraphData& graph,
@@ -340,6 +343,7 @@ crow::json::wvalue computed_route_json(const RouteGraphData& graph,
                                        const std::string& optimization,
                                        const std::string& requested_transport) {
     crow::json::wvalue::list stops;
+    crow::json::wvalue::list requested_places;
     std::string first_stop;
     std::string last_stop;
     for (int node_id : route.nodes) {
@@ -348,6 +352,12 @@ crow::json::wvalue computed_route_json(const RouteGraphData& graph,
         if (first_stop.empty()) first_stop = stop_name;
         last_stop = stop_name;
         stops.push_back(stop_name);
+
+        crow::json::wvalue place;
+        place["name"] = stop_name;
+        place["latitude"] = node.latitude;
+        place["longitude"] = node.longitude;
+        requested_places.push_back(std::move(place));
     }
 
     crow::json::wvalue::list segments;
@@ -399,6 +409,7 @@ crow::json::wvalue computed_route_json(const RouteGraphData& graph,
     item["route_id"] = "live-route";
     item["title"] = !first_stop.empty() && !last_stop.empty() ? first_stop + " 到 " + last_stop : "实时规划路线";
     item["stops"] = std::move(stops);
+    item["requestedPlaces"] = std::move(requested_places);
     item["segments"] = std::move(segments);
     item["pathEdges"] = std::move(path_edges);
     item["coordinates"] = std::move(coordinates);

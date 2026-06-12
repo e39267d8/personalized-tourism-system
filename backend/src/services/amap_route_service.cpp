@@ -282,19 +282,71 @@ std::string amap_direction_transport(const std::string& travel_mode) {
     return "步行";
 }
 
-crow::json::rvalue first_path_from_amap_payload(const crow::json::rvalue& payload) {
+std::string amap_strategy_for_mode(const std::string& travel_mode, const std::string& optimization) {
+    if (travel_mode == "driving" || travel_mode == "car") {
+        if (optimization == "distance") return "2";
+        if (optimization == "budget") return "1";
+        return "0";
+    }
+    if (travel_mode == "transit" || travel_mode == "bus") {
+        if (optimization == "distance") return "3";
+        if (optimization == "budget") return "1";
+        return "0";
+    }
+    if (travel_mode == "subway") return "5";
+    return "";
+}
+
+std::string optimization_label(const std::string& optimization) {
+    if (optimization == "time") return "时间优先";
+    if (optimization == "distance") return "距离优先";
+    if (optimization == "budget") return "预算优先";
+    return "均衡";
+}
+
+double amap_candidate_score(const crow::json::rvalue& item, const std::string& optimization) {
+    double distance = item.has("distance") ? to_double(json_number_string(item["distance"])) : 0.0;
+    int duration = item.has("duration") ? to_int(json_number_string(item["duration"])) : 0;
+    if (optimization == "distance") {
+        if (distance > 0.0) return distance;
+        return duration > 0 ? duration * 15.0 : 1e18;
+    }
+    if (optimization == "time") {
+        if (duration > 0) return static_cast<double>(duration);
+        return distance > 0.0 ? distance / 1.2 : 1e18;
+    }
+    return 0.0;
+}
+
+crow::json::rvalue best_candidate_from_array(const crow::json::rvalue& items, const std::string& optimization) {
+    if (items.size() == 0) throw std::runtime_error("高德没有返回可用候选路线");
+    if (optimization != "distance" && optimization != "time") return items[0];
+
+    size_t best_index = 0;
+    double best_score = amap_candidate_score(items[0], optimization);
+    for (size_t index = 1; index < items.size(); ++index) {
+        double score = amap_candidate_score(items[index], optimization);
+        if (score < best_score) {
+            best_score = score;
+            best_index = index;
+        }
+    }
+    return items[best_index];
+}
+
+crow::json::rvalue best_path_from_amap_payload(const crow::json::rvalue& payload, const std::string& optimization) {
     if (payload.has("route") && payload["route"].has("paths") && payload["route"]["paths"].size() > 0) {
-        return payload["route"]["paths"][0];
+        return best_candidate_from_array(payload["route"]["paths"], optimization);
     }
     if (payload.has("data") && payload["data"].has("paths") && payload["data"]["paths"].size() > 0) {
-        return payload["data"]["paths"][0];
+        return best_candidate_from_array(payload["data"]["paths"], optimization);
     }
     throw std::runtime_error("高德没有返回可用路线");
 }
 
-crow::json::rvalue first_transit_from_amap_payload(const crow::json::rvalue& payload) {
+crow::json::rvalue best_transit_from_amap_payload(const crow::json::rvalue& payload, const std::string& optimization) {
     if (payload.has("route") && payload["route"].has("transits") && payload["route"]["transits"].size() > 0) {
-        return payload["route"]["transits"][0];
+        return best_candidate_from_array(payload["route"]["transits"], optimization);
     }
     throw std::runtime_error("高德没有返回可用公交/地铁路线");
 }
@@ -379,6 +431,7 @@ void append_transit_segments(const crow::json::rvalue& transit, AmapRoutePlan& p
 AmapRoutePlan plan_amap_route(const std::string& key,
                               const std::string& city,
                               const std::string& travel_mode,
+                              const std::string& optimization,
                               const std::vector<std::string>& place_texts) {
     if (place_texts.size() < 2) throw std::runtime_error("请选择起点和终点");
 
@@ -403,15 +456,17 @@ AmapRoutePlan plan_amap_route(const std::string& key,
         if (travel_mode == "transit" || travel_mode == "bus" || travel_mode == "subway") {
             params.push_back({"city", first_nonempty({plan.places[i].city, city}, "北京")});
             params.push_back({"cityd", first_nonempty({plan.places[i + 1].city, city}, "北京")});
-            params.push_back({"strategy", travel_mode == "subway" ? "5" : "0"});
+            params.push_back({"strategy", amap_strategy_for_mode(travel_mode, optimization)});
             params.push_back({"nightflag", "0"});
+        } else if (travel_mode == "driving" || travel_mode == "car") {
+            params.push_back({"strategy", amap_strategy_for_mode(travel_mode, optimization)});
         }
 
         try {
             auto payload = amap_request_json(path, params);
 
             if (travel_mode == "transit" || travel_mode == "bus" || travel_mode == "subway") {
-                auto transit = first_transit_from_amap_payload(payload);
+                auto transit = best_transit_from_amap_payload(payload, optimization);
                 double distance = transit.has("distance") ? to_double(json_number_string(transit["distance"])) : 0.0;
                 int duration = transit.has("duration") ? to_int(json_number_string(transit["duration"])) : 0;
                 plan.total_distance += distance;
@@ -420,7 +475,7 @@ AmapRoutePlan plan_amap_route(const std::string& key,
                 continue;
             }
 
-            auto route_path = first_path_from_amap_payload(payload);
+            auto route_path = best_path_from_amap_payload(payload, optimization);
             double distance = route_path.has("distance") ? to_double(json_number_string(route_path["distance"])) : 0.0;
             int duration = route_path.has("duration") ? to_int(json_number_string(route_path["duration"])) : 0;
             plan.total_distance += distance;
@@ -437,7 +492,9 @@ AmapRoutePlan plan_amap_route(const std::string& key,
     return plan;
 }
 
-crow::json::wvalue amap_route_json(const AmapRoutePlan& plan, const std::string& travel_mode) {
+crow::json::wvalue amap_route_json(const AmapRoutePlan& plan,
+                                   const std::string& travel_mode,
+                                   const std::string& optimization) {
     crow::json::wvalue::list stops;
     crow::json::wvalue::list requested_places;
     for (const auto& place : plan.places) {
@@ -491,11 +548,12 @@ crow::json::wvalue amap_route_json(const AmapRoutePlan& plan, const std::string&
     data["cost"] = travel_mode == "walk" ? 0 : std::max(3, static_cast<int>(plan.total_distance / 1000.0 * 2));
     data["intensity"] = plan.total_distance > 3500 ? "中等" : "轻松";
     data["transport"] = amap_direction_transport(travel_mode);
-    data["bestFor"] = "高德路线规划";
+    data["bestFor"] = optimization_label(optimization) + " · 高德路线规划";
     data["total_distance_meters"] = static_cast<int>(plan.total_distance);
     data["total_duration_seconds"] = plan.total_duration;
     data["usedAmap"] = true;
     data["usedTransportFallback"] = false;
+    data["optimization"] = optimization;
     return data;
 }
 
@@ -514,9 +572,10 @@ std::string amap_key() {
 crow::json::wvalue plan_amap_route_json(const std::string& key,
                                         const std::string& city,
                                         const std::string& travel_mode,
+                                        const std::string& optimization,
                                         const std::vector<std::string>& place_texts) {
-    AmapRoutePlan route = plan_amap_route(key, city, travel_mode, place_texts);
-    return amap_route_json(route, travel_mode);
+    AmapRoutePlan route = plan_amap_route(key, city, travel_mode, optimization, place_texts);
+    return amap_route_json(route, travel_mode, optimization);
 }
 
 } // namespace tourism::services

@@ -20,7 +20,7 @@
 - `verify_demo.sql`：初始化后检查核心表数据量。
 - `migration.sql`：旧数据库升级参考；全新建库通常不需要执行。
 
-`git pull` 不会自动更新本机 PostgreSQL；如果只拉代码但不执行对应 SQL 迁移和 seed，室内导航会显示“未接入”。所有数据仍然进入唯一数据库 `tourism_system`。
+`git pull` 不会自动更新本机 PostgreSQL；如果只拉代码但不执行对应 SQL 迁移和 seed，室内导航会显示“未接入”，路线规划也可能继续显示旧的演示直线。所有数据仍然进入唯一数据库 `tourism_system`。
 
 全新数据库完整初始化顺序：
 
@@ -63,6 +63,17 @@ psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seed_indoor_na
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\diary_compression_schema.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\cross_layer_navigation_schema.sql
 ```
+
+已有数据库只补路线规划演示路网 / 成就 seed（本文件已改为幂等，可重复执行）：
+
+```bat
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seed_demo.sql
+```
+
+说明：
+
+- `seed_demo.sql` 现在会同时补演示 `graph_edges.geometry`、拥挤度绕行样例边，以及按 `code` upsert 成就数据。
+- 如果路线页“拥挤度感知”模式仍画旧的节点直线，先重跑这条 SQL，再刷新页面验证。
 
 补完后验证室内导航数据：
 
