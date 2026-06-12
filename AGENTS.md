@@ -57,11 +57,17 @@ DeepSeek key 必须放在环境变量中。后端内置一个免费的高德 Web
 - `database/imports/amap_pois.sql`
 - `database/internal_navigation_schema.sql`
 - `database/imports/internal_navigation.sql`
-- `database/seed_campus_spots.sql`
+- `database/seeds/seed_campus_spots.sql`
 - `database/imports/internal_navigation_pku.sql`
 - `database/indoor_navigation_schema.sql`
-- `database/seed_demo.sql`
-- `database/seed_indoor_navigation.sql`
+- `database/migrations/diary_compression_schema.sql`
+- `database/migrations/diary_location_cover_schema.sql`
+- `database/migrations/diary_animation_schema.sql`
+- `database/migrations/cross_layer_navigation_schema.sql`
+- `database/seeds/seed_demo.sql`
+- `database/seeds/seed_indoor_navigation.sql`
+- `database/seeds/seed_facilities.sql`
+- `database/seeds/seed_foods.sql`
 - `database/verify_demo.sql`
 - `scripts/import_internal_map_data.py`：从 OSM/Overpass 和高德附近设施生成景区内部导航 SQL。数据库中几何统一存 WGS84；高德 POI 查询先用 GCJ-02，请求结果再转回 WGS84 入库。
 
@@ -91,7 +97,10 @@ DeepSeek key 必须放在环境变量中。后端内置一个免费的高德 Web
 - `scenic_routes`：景点列表、搜索、详情、分类、建议词、评价、景区内部导航 API、室内导航 API。
 - `recommendation_routes`：预算方案和个性化推荐。
 - `route_routes`：路线节点、路线列表、路线规划。
-- `diary_routes`：游记、点赞、收藏、评分、评论、成就审核提交。
+- `diary_routes`：游记、点赞、收藏、评分、评论、存量压缩迁移、检索、成就审核提交。
+- `diary_animation_routes`：日记动画分镜生成与保存。
+- `diary_compression_routes`：日记压缩统计与单篇压缩详情。
+- `huffman_routes`：Huffman 压缩/解压工具接口。
 - `aigc_routes`：游记摘要、润色、旅行聊天。
 - `food_routes`：`/api/v1/foods` 和 `/api/v1/foods/cuisines`。
 
@@ -125,7 +134,7 @@ DeepSeek key 必须放在环境变量中。后端内置一个免费的高德 Web
 - 所有室内数据行必须有 `source`、`source_ref` 和 `provider`；seed/import SQL 使用稳定 `source_ref` upsert。
 - 前端调用必须走 `frontend/src/services/tourismApi.js`，不要在 Vue 组件里绕过后端。
 - 核心室内路线规划不能放在前端。当前本地室内路线是后端在 `indoor_edges` 上跑 Dijkstra。
-- 室内 API 位于 `backend/src/api/scenic_routes.cpp`：建筑列表、节点列表、路线规划。
+- 室内/内部导航 API 应收敛到对应 navigation route module；如果还在整理中，迁移时必须保持所有公开路径不变。
 - 首期覆盖可以小，但必须正式。一个真实建筑可以接受，前提是 schema、API、provider fallback、审计记录和可视化路线完整。
 - 数据核查以 SQL 导入文件和 PostgreSQL 查询为准，不再使用独立核查脚本作为正式流程。
 
@@ -137,7 +146,7 @@ DeepSeek key 必须放在环境变量中。后端内置一个免费的高德 Web
 - 无法接入路网的设施应返回明确错误，不要用直线假路线。
 - 不要把 OSM 节点名、接入段等底层概念放大成主要用户文案。
 - 校园内部道路图也使用 `graph_nodes`、`graph_edges`、`facilities`，不要新建第二套校园图表。
-- `database/imports/internal_navigation_pku.sql` 是北京大学校园内部道路图；`database/seed_indoor_navigation.sql` 是北大红楼室内拓扑，两者不是同一项能力，不能相互替代。
+- `database/imports/internal_navigation_pku.sql` 是北京大学校园内部道路图；`database/seeds/seed_indoor_navigation.sql` 是北大红楼室内拓扑，两者不是同一项能力，不能相互替代。
 - PKU 校园图按 `scripts/pku_campus_spots.json` 的燕园主校区边界过滤，避免把清华或中关村周边 POI 算入北京大学校园。
 
 ## 美食推荐规则

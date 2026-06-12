@@ -9,14 +9,18 @@
 - `imports/amap_pois_supplement.sql`：高德 POI 补充导入，补主导入缺失的北京核心地标（中国国家博物馆、军事博物馆、颐和园），幂等可重复执行。
 - `internal_navigation_schema.sql`：景区内部设施、道路和路网表结构。
 - `imports/internal_navigation.sql`：故宫、北海、奥林匹克森林公园等景区内部导航数据。
-- `seed_campus_spots.sql`：北京大学校园主对象 seed，用于把校园作为 `scenic_spots` 中的正式对象接入系统。
+- `seeds/seed_campus_spots.sql`：北京大学校园主对象 seed，用于把校园作为 `scenic_spots` 中的正式对象接入系统。
 - `imports/internal_navigation_pku.sql`：北京大学校园内部道路图，使用现有 `graph_nodes`、`graph_edges`、`facilities`，不新建第二套校园图表。
 - `indoor_navigation_schema.sql`：室内导航领域表结构，包含 `indoor_buildings`、`indoor_floors`、`indoor_features`、`indoor_edges` 和 `indoor_route_audit`。
-- `seed_indoor_navigation.sql`：北大红楼首批正式室内图数据，使用 `local_indoor_graph` provider，不是独立数据库，也不是前端假 Demo。
-- `diary_compression_schema.sql`：旅行日记 Huffman 压缩存储迁移，`travel_diaries` 增加 `content_compressed` 和 `content_original_bytes` 列。
-- `cross_layer_navigation_schema.sql`：室内外跨层导航迁移，`indoor_buildings` 增加 `outdoor_node_id` 室外路网锚点并按名称自动绑定。
-- `diary_location_cover_schema.sql`：日记地点与封面迁移，`travel_diaries` 增加 `cover_image`、`location_name`、`location_address`、`location_latitude`、`location_longitude`、`location_poi_id` 六列；存量日记封面自动用 `images[1]` 填充。
-- `seed_demo.sql`：基础演示关系数据，不再插入景点；它会按名称从 `scenic_spots` 动态查找景点 id，再插入路线、游记、评论、收藏和成就数据。
+- `seeds/seed_indoor_navigation.sql`：北大红楼首批正式室内图数据，使用 `local_indoor_graph` provider，不是独立数据库，也不是前端假 Demo。
+- `migrations/diary_compression_schema.sql`：旅行日记 Huffman 压缩存储迁移，`travel_diaries` 增加 `content_compressed` 和 `content_original_bytes` 列。
+- `migrations/cross_layer_navigation_schema.sql`：室内外跨层导航迁移，`indoor_buildings` 增加 `outdoor_node_id` 室外路网锚点并按名称自动绑定。
+- `migrations/diary_location_cover_schema.sql`：日记地点与封面迁移，`travel_diaries` 增加 `cover_image`、`location_name`、`location_address`、`location_latitude`、`location_longitude`、`location_poi_id` 六列；存量日记封面自动用 `images[1]` 填充。
+- `migrations/diary_animation_schema.sql`：日记动画预览迁移，`travel_diaries` 增加 `videos` 和 `animation_storyboard` 列。
+- `seeds/seed_extra_users.sql`：补充演示用户，供多人互动和审核演示使用。
+- `seeds/seed_facilities.sql`：补充景区设施数据。
+- `seeds/seed_foods.sql`：补齐美食推荐依赖的餐饮设施数据。
+- `seeds/seed_demo.sql`：基础演示关系数据，不再插入景点；它会按名称从 `scenic_spots` 动态查找景点 id，再插入路线、游记、评论、收藏和成就数据。
 - `verify_demo.sql`：初始化后检查核心表数据量。
 - `migration.sql`：旧数据库升级参考；全新建库通常不需要执行。
 
@@ -30,14 +34,18 @@ psql -U postgres -d tourism_system -f database\imports\amap_pois.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\imports\amap_pois_supplement.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\internal_navigation_schema.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\imports\internal_navigation.sql
-psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seed_campus_spots.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_campus_spots.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\imports\internal_navigation_pku.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\indoor_navigation_schema.sql
-psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\diary_compression_schema.sql
-psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\cross_layer_navigation_schema.sql
-psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\diary_location_cover_schema.sql
-psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seed_demo.sql
-psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seed_indoor_navigation.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\diary_compression_schema.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\cross_layer_navigation_schema.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\diary_location_cover_schema.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\diary_animation_schema.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_extra_users.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_facilities.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_foods.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_demo.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_indoor_navigation.sql
 psql -U postgres -d tourism_system -f database\maintenance\repair_data_quality.sql
 psql -U postgres -d tourism_system -f database\verify_demo.sql
 ```
@@ -46,7 +54,7 @@ psql -U postgres -d tourism_system -f database\verify_demo.sql
 
 ```bat
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\internal_navigation_schema.sql
-psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seed_campus_spots.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_campus_spots.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\imports\internal_navigation_pku.sql
 ```
 
@@ -54,20 +62,29 @@ psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\imports\intern
 
 ```bat
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\indoor_navigation_schema.sql
-psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seed_indoor_navigation.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_indoor_navigation.sql
 ```
 
-已有数据库只补日记压缩存储和室内外跨层导航（两个迁移都幂等，可放心重复执行）：
+已有数据库只补日记相关迁移和室内外跨层导航（迁移都幂等，可放心重复执行）：
 
 ```bat
-psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\diary_compression_schema.sql
-psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\cross_layer_navigation_schema.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\diary_compression_schema.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\diary_location_cover_schema.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\diary_animation_schema.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\cross_layer_navigation_schema.sql
+```
+
+已有数据库只补美食推荐演示数据：
+
+```bat
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_facilities.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_foods.sql
 ```
 
 已有数据库只补路线规划演示路网 / 成就 seed（本文件已改为幂等，可重复执行）：
 
 ```bat
-psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seed_demo.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_demo.sql
 ```
 
 说明：

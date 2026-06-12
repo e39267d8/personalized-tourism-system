@@ -2,8 +2,11 @@
 #include "api/app.h"
 #include "api/auth_routes.h"
 #include "api/dashboard_routes.h"
+#include "api/diary_animation_routes.h"
+#include "api/diary_compression_routes.h"
 #include "api/diary_routes.h"
 #include "api/food_routes.h"
+#include "api/huffman_routes.h"
 #include "api/profile_routes.h"
 #include "api/recommendation_routes.h"
 #include "api/route_routes.h"
@@ -47,6 +50,9 @@ int main(int argc, char** argv) {
     tourism::api::register_recommendation_routes(app);
     tourism::api::register_route_routes(app);
     tourism::api::register_diary_routes(app);
+    tourism::api::register_diary_animation_routes(app);
+    tourism::api::register_diary_compression_routes(app);
+    tourism::api::register_huffman_routes(app);
     tourism::api::register_aigc_routes(app);
     tourism::api::register_food_routes(app);
 

@@ -7,7 +7,9 @@
 #include "services/index_manager.h"
 #include "support/api_helpers.h"
 
+#include <algorithm>
 #include <map>
+#include <vector>
 
 namespace tourism::api {
 namespace {
@@ -41,6 +43,7 @@ const std::string kDiarySelectSql = R"SQL(
            COALESCE(d.content_original_bytes, 0)::text AS content_original_bytes,
            COALESCE(OCTET_LENGTH(d.content_compressed), 0)::text AS content_compressed_bytes,
            COALESCE(array_to_string(d.images, '|'), '') AS images,
+           COALESCE(array_to_string(d.videos, '|'), '') AS videos,
            COALESCE(d.cover_image, '') AS cover_image,
            COALESCE(d.location_name, '') AS location_name,
            COALESCE(d.location_address, '') AS location_address,
@@ -78,6 +81,7 @@ const char* kPopularAlgorithmLabel = "时间衰减热度（重力公式 t^1.5）
 crow::json::wvalue diary_json(const PgResult& rows, int row) {
     std::string images_raw = rows.value(row, "images");
     auto image_list = split_pipe(images_raw);
+    auto video_list = split_pipe(rows.value(row, "videos"));
     std::string cover = first_nonempty({rows.value(row, "cover_image"), image_list.empty() ? "" : image_list[0]});
     std::string content = diary_content_from_row(rows, row);
 
@@ -116,6 +120,10 @@ crow::json::wvalue diary_json(const PgResult& rows, int row) {
     for (const auto& img : image_list) imgs.push_back(img);
     item["images"] = std::move(imgs);
 
+    crow::json::wvalue::list videos;
+    for (const auto& video : video_list) videos.push_back(video);
+    item["videos"] = std::move(videos);
+
     item["author"]["nickname"] = first_nonempty({rows.value(row, "author_nickname")}, "旅行者");
     item["author"]["id"] = to_int(rows.value(row, "author_id"));
     item["author"]["avatar"] = rows.value(row, "author_avatar");
@@ -146,6 +154,20 @@ std::vector<std::string> body_images(const crow::json::rvalue& body) {
     return img_list;
 }
 
+std::vector<std::string> body_videos(const crow::json::rvalue& body) {
+    std::vector<std::string> video_list;
+    if (body.has("videos")) {
+        try {
+            for (const auto& video : body["videos"]) {
+                std::string value = static_cast<std::string>(video.s());
+                if (!value.empty()) video_list.push_back(value);
+            }
+        } catch (...) {
+        }
+    }
+    return video_list;
+}
+
 std::string body_cover_image(const crow::json::rvalue& body, const std::vector<std::string>& images) {
     std::string cover = first_nonempty({
         json_string(body, "coverImage", ""),
@@ -153,6 +175,48 @@ std::string body_cover_image(const crow::json::rvalue& body, const std::vector<s
     });
     if (!cover.empty()) return cover;
     return images.empty() ? "" : images[0];
+}
+
+[[maybe_unused]] crow::json::wvalue build_animation_storyboard(const PgResult& rows) {
+    std::string title = rows.value(0, "title");
+    std::string content = diary_content_from_row(rows, 0);
+    auto images = split_pipe(rows.value(0, "images"));
+    auto videos = split_pipe(rows.value(0, "videos"));
+    std::string summary = summary_from(content);
+    if (summary.empty()) summary = "把这段旅行整理成有节奏的记忆短片。";
+
+    std::vector<std::string> captions = {
+        "出发与抵达",
+        "沿途见闻",
+        "旅行高光"
+    };
+    std::vector<std::string> motions = {
+        "slow-zoom-in",
+        "pan-left",
+        "fade-through"
+    };
+
+    crow::json::wvalue::list scenes;
+    int scene_count = std::max(3, static_cast<int>(std::min<size_t>(5, std::max<size_t>(images.size(), videos.size()))));
+    for (int index = 0; index < scene_count; ++index) {
+        crow::json::wvalue scene;
+        scene["caption"] = index < static_cast<int>(captions.size()) ? captions[index] : "旅行片段";
+        scene["voiceover"] = index == 0
+            ? summary
+            : "跟随照片和视频回到这段旅程的现场。";
+        scene["image"] = index < static_cast<int>(images.size()) ? images[index] : "";
+        scene["video"] = index < static_cast<int>(videos.size()) ? videos[index] : "";
+        scene["durationMs"] = 3500 + index * 500;
+        scene["motion"] = motions[static_cast<size_t>(index) % motions.size()];
+        scenes.push_back(std::move(scene));
+    }
+
+    crow::json::wvalue storyboard;
+    storyboard["title"] = title.empty() ? "旅行动画短片" : title;
+    storyboard["caption"] = "根据日记照片、视频和正文生成的旅行分镜。";
+    storyboard["voiceover"] = summary;
+    storyboard["scenes"] = std::move(scenes);
+    return storyboard;
 }
 
 double json_double_value(const crow::json::rvalue& body, const std::string& key, double fallback = 0.0) {
@@ -500,38 +564,6 @@ void register_diary_routes(TourismApp& app) {
     });
 
     // 压缩存储统计：全站日记原始字节 vs 压缩字节
-    CROW_ROUTE(app, "/api/v1/diaries/compression/stats")([]() -> crow::response {
-        try {
-            PgConnection db;
-            auto rows = exec_sql(db, R"SQL(
-                SELECT
-                    COUNT(*)::text AS total_diaries,
-                    COUNT(content_compressed)::text AS compressed_diaries,
-                    COALESCE(SUM(content_original_bytes) FILTER (WHERE content_compressed IS NOT NULL), 0)::text AS original_bytes,
-                    COALESCE(SUM(OCTET_LENGTH(content_compressed)), 0)::text AS compressed_bytes
-                FROM travel_diaries
-                WHERE status <> 2
-            )SQL");
-
-            long long original_bytes = std::stoll(first_nonempty({rows.value(0, "original_bytes")}, "0"));
-            long long compressed_bytes = std::stoll(first_nonempty({rows.value(0, "compressed_bytes")}, "0"));
-
-            crow::json::wvalue data;
-            data["totalDiaries"] = to_int(rows.value(0, "total_diaries"));
-            data["compressedDiaries"] = to_int(rows.value(0, "compressed_diaries"));
-            data["originalBytes"] = static_cast<int64_t>(original_bytes);
-            data["compressedBytes"] = static_cast<int64_t>(compressed_bytes);
-            data["savedBytes"] = static_cast<int64_t>(original_bytes - compressed_bytes);
-            data["savedPercent"] = original_bytes > 0
-                ? std::round(10000.0 * (original_bytes - compressed_bytes) / original_bytes) / 100.0
-                : 0.0;
-            data["algorithm"] = "huffman";
-            return crow::response(ok(std::move(data)));
-        } catch (const std::exception& error) {
-            return json_error(500, error.what());
-        }
-    });
-
     // 存量明文日记一键压缩迁移（需登录；逐行 Huffman 压缩后写回）
     CROW_ROUTE(app, "/api/v1/diaries/compression/migrate").methods("POST"_method)([](const crow::request& req) -> crow::response {
         try {
@@ -690,40 +722,6 @@ void register_diary_routes(TourismApp& app) {
         }
     });
 
-    CROW_ROUTE(app, "/api/v1/diaries/<int>/compression")([](int id) -> crow::response {
-        try {
-            PgConnection db;
-            auto rows = exec_params(db, R"SQL(
-                SELECT d.id::text,
-                       COALESCE(d.content_original_bytes, 0)::text AS content_original_bytes,
-                       COALESCE(OCTET_LENGTH(d.content_compressed), 0)::text AS content_compressed_bytes
-                FROM travel_diaries d
-                WHERE d.id = $1 AND d.status <> 2
-            )SQL", {std::to_string(id)});
-            if (rows.rows() == 0) return json_error(404, "Diary not found");
-
-            int original_bytes = to_int(rows.value(0, "content_original_bytes"));
-            int compressed_bytes = to_int(rows.value(0, "content_compressed_bytes"));
-
-            crow::json::wvalue data;
-            data["diaryId"] = id;
-            data["algorithm"] = "huffman";
-            data["originalBytes"] = original_bytes;
-            data["compressedBytes"] = compressed_bytes;
-            data["compressionRatio"] = original_bytes > 0
-                ? std::round(10000.0 * compressed_bytes / original_bytes) / 100.0
-                : 0.0;
-            data["spaceSavedPercent"] = (compressed_bytes > 0 && original_bytes > 0)
-                ? std::round(10000.0 * (original_bytes - compressed_bytes) / original_bytes) / 100.0
-                : 0.0;
-            data["compressedStorage"] = compressed_bytes > 0;
-            data["verified"] = compressed_bytes > 0;
-            return crow::response(ok(std::move(data)));
-        } catch (const std::exception& error) {
-            return json_error(500, error.what());
-        }
-    });
-
     CROW_ROUTE(app, "/api/v1/diaries/<int>")([](int id) -> crow::response {
         try {
             PgConnection db;
@@ -750,7 +748,9 @@ void register_diary_routes(TourismApp& app) {
             std::string distance = std::to_string(distance_number(json_string(body, "distance", "0")));
             int status = body.has("status") ? static_cast<int>(body["status"].i()) : 1;
             auto images = body_images(body);
+            auto videos = body_videos(body);
             std::string images_pg = pg_text_array(images);
+            std::string videos_pg = pg_text_array(videos);
             std::string cover = body_cover_image(body, images);
             std::string location_name = first_nonempty({json_string(body, "location"), json_string(body, "locationName")});
             std::string location_address = json_string(body, "locationAddress");
@@ -769,14 +769,14 @@ void register_diary_routes(TourismApp& app) {
                 INSERT INTO travel_diaries
                     (user_id, title, summary, content, content_compressed, content_original_bytes,
                      status, start_date, end_date, total_distance_km,
-                     images, cover_image, location_name, location_address, location_latitude,
+                     images, videos, cover_image, location_name, location_address, location_latitude,
                      location_longitude, location_poi_id, scenic_spot_ids,
                      tags, view_count, like_count, comment_count)
                 VALUES
                     ($9::bigint, $1, $2, $3,
                      CASE WHEN $10 = '' THEN NULL ELSE decode($10, 'hex') END,
                      $11::int,
-                     $4::int, $5::date, $5::date, $6::numeric, $7::text[],
+                     $4::int, $5::date, $5::date, $6::numeric, $7::text[], $19::text[],
                      $12, $13, $14, NULLIF($15, '')::double precision,
                      NULLIF($16, '')::double precision, $17, $18::int[],
                      $8::text[], 0, 0, 0)
@@ -785,6 +785,7 @@ void register_diary_routes(TourismApp& app) {
                           COALESCE(content_original_bytes, 0)::text AS content_original_bytes,
                           COALESCE(OCTET_LENGTH(content_compressed), 0)::text AS content_compressed_bytes,
                           COALESCE(array_to_string(images, '|'), '') AS images,
+                          COALESCE(array_to_string(videos, '|'), '') AS videos,
                           COALESCE(cover_image, '') AS cover_image,
                           COALESCE(location_name, '') AS location_name,
                           COALESCE(location_address, '') AS location_address,
@@ -802,7 +803,7 @@ void register_diary_routes(TourismApp& app) {
                     images_pg, tags, std::to_string(user->id),
                     packed.hex, std::to_string(packed.original_bytes), cover, location_name,
                     location_address, location_latitude, location_longitude, location_poi_id,
-                    scenic_spot_ids});
+                    scenic_spot_ids, videos_pg});
 
             int diary_id = to_int(rows.value(0, "id"));
             evaluate_user_achievements(db, user->id);
@@ -828,7 +829,9 @@ void register_diary_routes(TourismApp& app) {
             std::string distance = std::to_string(distance_number(json_string(body, "distance", "0")));
             int status = body.has("status") ? static_cast<int>(body["status"].i()) : 1;
             auto images = body_images(body);
+            auto videos = body_videos(body);
             std::string images_pg = pg_text_array(images);
+            std::string videos_pg = pg_text_array(videos);
             std::string cover = body_cover_image(body, images);
             std::string location_name = first_nonempty({json_string(body, "location"), json_string(body, "locationName")});
             std::string location_address = json_string(body, "locationAddress");
@@ -851,6 +854,7 @@ void register_diary_routes(TourismApp& app) {
                     status = $4::int,
                     start_date = $5::date, end_date = $5::date,
                     total_distance_km = $6::numeric, images = $7::text[],
+                    videos = $20::text[],
                     cover_image = $13,
                     location_name = $14,
                     location_address = $15,
@@ -866,6 +870,7 @@ void register_diary_routes(TourismApp& app) {
                           COALESCE(content_original_bytes, 0)::text AS content_original_bytes,
                           COALESCE(OCTET_LENGTH(content_compressed), 0)::text AS content_compressed_bytes,
                           COALESCE(array_to_string(images, '|'), '') AS images,
+                          COALESCE(array_to_string(videos, '|'), '') AS videos,
                           COALESCE(cover_image, '') AS cover_image,
                           COALESCE(location_name, '') AS location_name,
                           COALESCE(location_address, '') AS location_address,
@@ -885,7 +890,7 @@ void register_diary_routes(TourismApp& app) {
                     images_pg, tags, std::to_string(id), std::to_string(user->id),
                     packed.hex, std::to_string(packed.original_bytes), cover, location_name,
                     location_address, location_latitude, location_longitude, location_poi_id,
-                    scenic_spot_ids});
+                    scenic_spot_ids, videos_pg});
 
             if (rows.rows() == 0) return json_error(404, "Diary not found");
             int diary_id = to_int(rows.value(0, "id"));
@@ -1140,88 +1145,7 @@ void register_diary_routes(TourismApp& app) {
     });
 
     // Huffman 压缩接口：对日记内容进行无损压缩
-    CROW_ROUTE(app, "/api/v1/huffman/compress").methods("POST"_method)([](const crow::request& req) -> crow::response {
-        try {
-            auto body = crow::json::load(req.body);
-            if (!body || !body.has("content")) return json_error(400, "content is required");
-
-            std::string content = json_string(body, "content");
-            if (content.empty()) return json_error(400, "content is empty");
-
-            using tourism::services::HuffmanCompressor;
-            HuffmanCompressor compressor;
-            auto compressed = compressor.compress(content);
-
-            // Encode as base64 for JSON transport
-            static const char kBase64Table[] =
-                "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-            std::string base64;
-            base64.reserve(((compressed.size() + 2) / 3) * 4);
-            for (size_t i = 0; i < compressed.size(); i += 3) {
-                uint32_t triple = static_cast<uint32_t>(compressed[i]) << 16;
-                if (i + 1 < compressed.size()) triple |= static_cast<uint32_t>(compressed[i + 1]) << 8;
-                if (i + 2 < compressed.size()) triple |= static_cast<uint32_t>(compressed[i + 2]);
-                base64 += kBase64Table[(triple >> 18) & 0x3F];
-                base64 += kBase64Table[(triple >> 12) & 0x3F];
-                base64 += (i + 1 < compressed.size()) ? kBase64Table[(triple >> 6) & 0x3F] : '=';
-                base64 += (i + 2 < compressed.size()) ? kBase64Table[triple & 0x3F] : '=';
-            }
-
-            crow::json::wvalue data;
-            data["compressed"] = base64;
-            data["algorithm"] = "huffman";
-            data["originalBytes"] = static_cast<int>(compressor.original_size());
-            data["compressedBytes"] = static_cast<int>(compressed.size());
-            data["compressionRatio"] = std::round(compressor.compression_ratio() * 100.0) / 100.0;
-            return crow::response(ok(std::move(data)));
-        } catch (const std::exception& error) {
-            return json_error(500, error.what());
-        }
-    });
-
     // Huffman 解压缩接口
-    CROW_ROUTE(app, "/api/v1/huffman/decompress").methods("POST"_method)([](const crow::request& req) -> crow::response {
-        try {
-            auto body = crow::json::load(req.body);
-            if (!body || !body.has("compressed")) return json_error(400, "compressed is required");
-
-            std::string base64 = json_string(body, "compressed");
-            if (base64.empty()) return json_error(400, "compressed is empty");
-
-            // Decode base64 back to bytes
-            static const auto b64_decode = [](unsigned char c) -> uint32_t {
-                if (c >= 'A' && c <= 'Z') return c - 'A';
-                if (c >= 'a' && c <= 'z') return c - 'a' + 26;
-                if (c >= '0' && c <= '9') return c - '0' + 52;
-                if (c == '+') return 62;
-                if (c == '/') return 63;
-                return 0;
-            };
-
-            std::vector<uint8_t> compressed;
-            compressed.reserve((base64.size() / 4) * 3);
-            for (size_t i = 0; i < base64.size(); i += 4) {
-                uint32_t triple = (b64_decode(static_cast<unsigned char>(base64[i])) << 18)
-                                | (b64_decode(static_cast<unsigned char>(base64[i + 1])) << 12);
-                if (base64[i + 2] != '=') triple |= (b64_decode(static_cast<unsigned char>(base64[i + 2])) << 6);
-                if (base64[i + 3] != '=') triple |= b64_decode(static_cast<unsigned char>(base64[i + 3]));
-                compressed.push_back(static_cast<uint8_t>((triple >> 16) & 0xFF));
-                if (base64[i + 2] != '=') compressed.push_back(static_cast<uint8_t>((triple >> 8) & 0xFF));
-                if (base64[i + 3] != '=') compressed.push_back(static_cast<uint8_t>(triple & 0xFF));
-            }
-
-            using tourism::services::HuffmanCompressor;
-            HuffmanCompressor decompressor;
-            std::string original = decompressor.decompress(compressed);
-
-            crow::json::wvalue data;
-            data["content"] = original;
-            data["originalBytes"] = static_cast<int>(original.size());
-            return crow::response(ok(std::move(data)));
-        } catch (const std::exception& error) {
-            return json_error(500, error.what());
-        }
-    });
 }
 
 } // namespace tourism::api

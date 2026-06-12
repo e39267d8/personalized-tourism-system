@@ -151,7 +151,7 @@ SVG 室内拓扑图。
 
 `startNodeId` 是景区路网 `graph_nodes` 节点。后端先在室外图上跑 Dijkstra
 到建筑的室外锚点（`indoor_buildings.outdoor_node_id`，由
-`database/cross_layer_navigation_schema.sql` 按名称自动绑定），再从室内
+`database/migrations/cross_layer_navigation_schema.sql` 按名称自动绑定），再从室内
 `entrance` feature 跑室内 Dijkstra 到终点。响应字段：
 
 - `outdoor`：室外段，结构与路线规划接口一致（含地图坐标）。
@@ -321,10 +321,36 @@ tourismApi.planRoute({
 创建游记。需要登录。后端会在写入时自动尝试 Huffman 压缩正文：
 压缩结果确实小于原文时，正文写入 `travel_diaries.content_compressed`，
 `content` 置空；短文本或压缩无收益时保留明文，避免频率表头开销导致反向膨胀。
+请求可携带 `videos: string[]`，后端会写入 `travel_diaries.videos` 并在游记详情中原样返回。
 
 ### `PUT /api/v1/diaries/<id>`
 
-更新游记。需要登录。正文压缩策略与创建游记一致。
+更新游记。需要登录。正文压缩策略与创建游记一致。`videos` 字段采用整组覆盖语义。
+
+### `POST /api/v1/diaries/<id>/animation`
+
+生成日记动画预览。需要登录，只能操作自己的未删除日记。后端会读取标题、正文、图片和视频 URL，生成并覆盖
+`travel_diaries.animation_storyboard`。响应结构供 `TravelAnimationPreview.vue` 直接渲染：
+
+```json
+{
+  "title": "北海一日",
+  "caption": "把这篇游记整理成 3 段旅行动画预览。",
+  "voiceover": "北海一日。湖边散步...",
+  "scenes": [
+    {
+      "caption": "北海一日",
+      "voiceover": "湖边散步...",
+      "image": "/images/diary/beihai.jpg",
+      "video": "https://example.com/clip.mp4",
+      "durationMs": 4500,
+      "motion": "pan"
+    }
+  ]
+}
+```
+
+该接口当前生成的是本地确定性分镜，不调用真实视频生成或区块链网络。
 
 ### `DELETE /api/v1/diaries/<id>`
 
@@ -364,6 +390,7 @@ tourismApi.planRoute({
 | `GET` | `/api/v1/diaries/<id>/compression` | 查询单篇日记的压缩详情 |
 | `GET` | `/api/v1/diaries/compression/stats` | 查询全站日记压缩统计 |
 | `POST` | `/api/v1/diaries/compression/migrate` | 将存量明文日记批量迁移为压缩存储，需登录 |
+| `POST` | `/api/v1/diaries/<id>/animation` | 生成并保存日记动画分镜，需登录 |
 
 `GET /api/v1/diaries/compression/stats` 响应核心字段：
 
@@ -392,7 +419,9 @@ tourismApi.planRoute({
 
 这些接口不是日记压缩落库的权威路径。真实日记存储以 `POST /api/v1/diaries`、
 `PUT /api/v1/diaries/<id>`、`POST /api/v1/diaries/compression/migrate` 和
-`database/diary_compression_schema.sql` 为准。
+`database/migrations/diary_compression_schema.sql` 为准。
+
+日记视频 URL 与动画分镜字段以 `database/migrations/diary_animation_schema.sql` 为准。
 
 ### 游记互动
 

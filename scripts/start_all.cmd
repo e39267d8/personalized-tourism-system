@@ -1,6 +1,7 @@
 @echo off
 chcp 65001 >nul
 title =====个性化旅游系统 一键启动=====
+set "REPO_ROOT=%~dp0.."
 
 echo ========================================
 echo    个性化旅游系统 - 开发环境启动
@@ -33,7 +34,7 @@ if %errorlevel% neq 0 (
     echo   [错误] 数据库连接失败！请检查:
     echo     - PostgreSQL 是否运行在 127.0.0.1:5432
     echo     - tourism_system 数据库是否存在
-    echo     - 如果首次使用，请先运行 database\schema.sql 和种子数据
+    echo     - 如果首次使用，请按 QUICKSTART.md 或 database\README.md 完成数据库初始化
     pause
     exit /b 1
 )
@@ -58,7 +59,7 @@ REM 设置环境变量
 set "TOURISM_LLM_API_KEY=sk-placeholder"
 
 REM 启动后端 (后台运行)
-start "旅游系统后端" /MIN cmd /c "cd /d "%~dp0backend\build\bin\Debug" && tourism_server.exe"
+start "旅游系统后端" /MIN cmd /c "cd /d ""%REPO_ROOT%\backend\build\bin\Debug"" && tourism_server.exe"
 
 REM 等待后端启动
 echo   等待后端启动...
@@ -76,15 +77,15 @@ REM ==========================================
 echo [4/4] 启动前端开发服务器 (端口 5173)...
 
 REM 检查前端是否已安装依赖
-if not exist "%~dp0frontend\node_modules\" (
+if not exist "%REPO_ROOT%\frontend\node_modules\" (
     echo   [提示] 首次运行，正在安装前端依赖...
-    cd /d "%~dp0frontend"
+    cd /d "%REPO_ROOT%\frontend"
     call npm install
-    cd /d "%~dp0"
+    cd /d "%REPO_ROOT%"
 )
 
 REM 启动前端 (新窗口)
-start "旅游系统前端" /MIN cmd /c "cd /d "%~dp0frontend" && npx vite --host 0.0.0.0 --port 5173"
+start "旅游系统前端" /MIN cmd /c "cd /d ""%REPO_ROOT%\frontend"" && npm run dev -- --host 0.0.0.0 --port 5173"
 
 echo.
 echo ========================================

@@ -27,7 +27,7 @@
 - 在 `AGENTS.md` 明确文档职责、数据库变更正式口径，以及不再创建 `changes_after_xxx.md` 的协作规则。
 - 删除历史分支交接文档 `docs/changes_after_lxd.md`，其有效内容已由 `docs/engineering_log.md`、`docs/adr/0001-indoor-navigation-provider.md`、`QUICKSTART.md` 和 `database/README.md` 承接。
 - 补全 `docs/api-runtime.md` 中游记运行时 API：全文检索、按标题/景点检索、`GET /api/v1/diaries/<id>/replay-route`、压缩统计/迁移接口和 Huffman 工具接口。
-- 明确 Huffman 工具接口不是日记压缩落库的权威路径；真实存储以日记创建/更新、压缩迁移接口和 `database/diary_compression_schema.sql` 为准。
+- 明确 Huffman 工具接口不是日记压缩落库的权威路径；真实存储以日记创建/更新、压缩迁移接口和 `database/migrations/diary_compression_schema.sql` 为准。
 
 验证口径：
 
@@ -43,7 +43,7 @@
 
 变更：
 
-- 新增 `database/seed_campus_spots.sql`：把北京大学作为 `scenic_spots` 中的正式校园对象接入系统，分类为“高校校园”。
+- 新增 `database/seeds/seed_campus_spots.sql`：把北京大学作为 `scenic_spots` 中的正式校园对象接入系统，分类为“高校校园”。
 - 新增 `scripts/pku_campus_spots.json`：北京大学校园生成配置，包含燕园主校区边界和排除词，避免把清华或中关村周边 POI 算入北大校园。
 - 新增 `database/imports/internal_navigation_pku.sql`：北京大学校园内部道路图导入 SQL，数据来自 OSM/Overpass；导入前会清理同一景点下旧的 `pku:%` 内部图数据，再写入当前校园范围，保持幂等。
 - 扩展 `scripts/import_internal_map_data.py`：支持按 `bounds` 和 `exclude_terms` 过滤节点/边，并在生成 SQL 中加入旧内部图清理段，避免重复导入造成历史宽范围数据残留。
@@ -53,7 +53,7 @@
 
 - 已在本地 `tourism_system` 执行：
   - `database/internal_navigation_schema.sql`
-  - `database/seed_campus_spots.sql`
+  - `database/seeds/seed_campus_spots.sql`
   - `database/imports/internal_navigation_pku.sql`
 - 导入日志显示旧宽范围 `pku:%` 数据被清理后重新写入：794 个 PKU 图节点、402 条 OSM 道路边、567 条设施表记录、358 条设施接入边。
 - 正式表统计结果：北京大学校园范围内 794 个图节点、760 条内部图边，其中 OSM 真实道路边 402 条、设施接入边 358 条；建筑节点 449 个，非建筑服务设施 118 个、10 类。
@@ -124,7 +124,7 @@
 
 变更：
 
-- 新增数据库迁移 `database/diary_location_cover_schema.sql`：`travel_diaries` 增加 `cover_image`（显式封面图）、`location_name`/`location_address`/`location_latitude`/`location_longitude`/`location_poi_id` 五个地点字段；存量日记的 `cover_image` 由迁移自动用 `images[1]` 填充。
+- 新增数据库迁移 `database/migrations/diary_location_cover_schema.sql`：`travel_diaries` 增加 `cover_image`（显式封面图）、`location_name`/`location_address`/`location_latitude`/`location_longitude`/`location_poi_id` 五个地点字段；存量日记的 `cover_image` 由迁移自动用 `images[1]` 填充。
 - 后端日记 CRUD（POST/PUT/GET）全面支持上述新字段，SELECT SQL 新增对应列，`diary_json()` 返回 `coverImage` 和 `locationDetail` 对象。`GET /api/v1/diaries/mine` 新增 `status` 查询参数（`all`/`published`/`draft`），支持按草稿/发布状态过滤。
 - 新增 `POST /api/v1/aigc/diary-title`：根据正文内容生成标题文案（调用 `generate_diary_title_text()`）。
 - 前端 DiaryEditor.vue：图片区改为胶卷带（filmstrip）横向排列，支持长按拖拽排序；图片可独立设置封面（原为"第一张自动为封面"）；AI 摘要按钮改为"AI 标题文案"（调用新接口）；景点 ID 输入移至图片区；格式工具栏激活状态增加指示点。
@@ -149,7 +149,7 @@
 
 变更：
 
-- 新增迁移 `database/cross_layer_navigation_schema.sql`：`indoor_buildings` 增加 `outdoor_node_id`（室外路网锚点节点），并按名称规则自动绑定（精确匹配 + "北大/北京大学"前缀归一化，处理室内 seed"北大红楼"与 OSM 室外节点"北京大学红楼"的命名差异）；幂等可重复执行。
+- 新增迁移 `database/migrations/cross_layer_navigation_schema.sql`：`indoor_buildings` 增加 `outdoor_node_id`（室外路网锚点节点），并按名称规则自动绑定（精确匹配 + "北大/北京大学"前缀归一化，处理室内 seed"北大红楼"与 OSM 室外节点"北京大学红楼"的命名差异）；幂等可重复执行。
 - 新增 `POST /api/v1/indoor-buildings/<id>/routes/plan-cross`：
   - 室外段：景区路网 Dijkstra（步行，时间/距离策略跟随请求）。
   - 交接点：建筑室外锚点 ↔ 室内楼层最低的 `entrance` feature。
@@ -256,7 +256,7 @@
 
 变更：
 
-- 新增迁移 `database/diary_compression_schema.sql`：`travel_diaries` 增加 `content_compressed BYTEA`（压缩字节流，NULL=明文存储）与 `content_original_bytes INTEGER`（原文字节数）两列，幂等可重复执行。
+- 新增迁移 `database/migrations/diary_compression_schema.sql`：`travel_diaries` 增加 `content_compressed BYTEA`（压缩字节流，NULL=明文存储）与 `content_original_bytes INTEGER`（原文字节数）两列，幂等可重复执行。
 - 后端创建/更新日记时自动 Huffman 压缩：仅当压缩结果小于原文时存压缩列并将 `content` 置空（短于 64 字节或压缩无收益的文本保持明文，避免频率表头开销反向膨胀）。
 - 所有日记读取路径（列表、详情、mine、检索）透明解压，前端无感知；响应新增 `compressedStorage` 与 `spaceSavedPercent` 字段。
 - 倒排索引构建（`index_manager.cpp`）读取压缩列并解压后建索引，全文检索不受压缩影响。
@@ -293,7 +293,7 @@
   - 这样入口、换乘点等非 scenic 中间节点不会再被高德重投影吞掉。
   - 结果是“时间优先高峰绕行 / 距离优先直走 / 深夜恢复直走”的差异终于能在地图上真实显示出来。
 - 后端 `computed_route_json()` 追加 `requestedPlaces`，把本地路网每个停靠点的真实坐标一并返回，前端画点不再退回到折线首尾猜测。
-- `database/seed_demo.sql` 为演示 `graph_edges` 补齐正式 `geometry`，包括：
+- `database/seeds/seed_demo.sql` 为演示 `graph_edges` 补齐正式 `geometry`，包括：
   - `天安门广场 -> 故宫博物院` 主通道；
   - `天安门广场 -> 故宫北门换乘点 -> 故宫博物院` 绕行通道；
   - 其余北海/鼓楼/国博/前门/王府井等演示边。
@@ -307,7 +307,7 @@
 
 验证口径：
 
-- 重新执行 `database/seed_demo.sql` 后，以下 2 条边应有真实 `LINESTRING`：
+- 重新执行 `database/seeds/seed_demo.sql` 后，以下 2 条边应有真实 `LINESTRING`：
   - `graph_edges(2 -> 1, walk)`；
   - `graph_edges(2 -> 104, walk)`。
 - 拥挤度接口：
@@ -324,7 +324,49 @@
 
 补记：
 
-- 如果队友 `git pull` 后路线页仍显示旧的直线演示图，优先检查是否已重跑 `database/seed_demo.sql`；这次路线修复有一部分落在正式 seed 数据里，不只是前后端代码。
+- 如果队友 `git pull` 后路线页仍显示旧的直线演示图，优先检查是否已重跑 `database/seeds/seed_demo.sql`；这次路线修复有一部分落在正式 seed 数据里，不只是前后端代码。
+
+## 2026-06-07 / local-save-tourism / 课设算法与演示数据补齐归档
+
+类型：历史变更归档、算法能力、演示数据、工程清理。
+
+背景：根目录历史文档 `CHANGES.md` 记录了早期课设算法补齐过程，但与当前文档职责冲突。有效内容归档到本文后，根目录不再保留阶段流水文档。
+
+归档内容：
+
+- 路线算法：新增多点环游 TSP 能力，按点数选择枚举、回溯、分支限界或近邻 + 2-opt；新增拥挤度感知 Dijkstra。
+- 排序算法：推荐和美食模块使用 `TopKSelector` 做 Top-K 部分排序。
+- 游记算法：新增 Huffman 压缩工具、倒排索引/BM25、标题 Hash 检索和景点倒排检索。
+- 美食模块：新增 `/api/v1/foods`、`/api/v1/foods/cuisines`，菜系由设施名称推断，排序支持热门、评分和距离。
+- 数据补齐：补演示用户、设施和美食 seed；后续正式初始化命令以 `database/README.md` 为准。
+- 工程修复：新增数据库连接池、自包含 `test_algorithms` 目标、前端 API 测试草稿和压力测试脚本。
+
+后续口径：
+
+- 运行命令只维护在 `QUICKSTART.md`。
+- 数据库导入顺序只维护在 `database/README.md`。
+- API 契约只维护在 `docs/api-runtime.md`。
+- 普通工程变更继续追加本文，不再新增根目录交接/阶段文档。
+
+## 2026-06-12 / codex-structure-cleanup / 日记动画闭环与工程结构整理
+
+类型：日记动画、数据库目录、文档收敛、测试契约、工程清理。
+
+变更：
+
+- 新增正式迁移 `database/migrations/diary_animation_schema.sql`，只为 `travel_diaries` 增加 `videos TEXT[]` 与 `animation_storyboard JSONB`，继续沿用既有 `content_compressed` / `content_original_bytes` 压缩字段。
+- 后端日记创建、更新和读取补齐 `videos` 字段；新增 `POST /api/v1/diaries/<id>/animation`，基于标题、正文、图片和视频 URL 生成本地确定性动画分镜并覆盖保存。
+- 数据库目录收敛：增量结构迁移进入 `database/migrations/`，正式 seed 进入 `database/seeds/`，保留 `imports/` 与 `maintenance/`。
+- 清理根目录历史/临时入口：`CHANGES.md` 有效信息补录本文后删除；删除 `HANDOFF.md`、`tmp_pku_spots.csv`、过期 `api/api-definition.yaml`、旧 `docs/api.md`；启动脚本移动为 `scripts/start_all.cmd`。
+- 前端默认测试改为顺序执行 auth/坐标测试、API 客户端测试和轻量 API 契约脚本；契约脚本会比对 `tourismApi.js` 路径与后端 `CROW_ROUTE`。
+- 更新 `README.md`、`QUICKSTART.md`、`database/README.md`、`docs/api-runtime.md` 和 `AGENTS.md` 的权威入口、初始化顺序和日记动画说明。
+- 继续拆分后端日记相关 route：`huffman_routes` 独立承接 `/api/v1/huffman/compress` 与 `/api/v1/huffman/decompress`；`diary_compression_routes` 独立承接压缩统计与单篇压缩详情，公开路径保持不变。
+
+验证口径：
+
+- 前端 API 单测应通过 24 条用例，覆盖 `generateDiaryAnimation`、压缩统计/迁移、跨层路线、景点设施和拥挤度路线。
+- `npm.cmd run test:contract` 应显示 `API contract check passed`，避免再次出现前端调用有路由、后端无路由的半成品状态。
+- 后端增量构建应通过；如果 `tourism_server.exe` 正在运行，需要先停止占用进程再链接。
 
 ## 2026-06-09 / feature-yhm-graph / 室内导航中文化
 
@@ -332,7 +374,7 @@
 
 变更：
 
-- 将 `database/seed_indoor_navigation.sql` 中北大红楼室内建筑、楼层、节点名称改为中文。
+- 将 `database/seeds/seed_indoor_navigation.sql` 中北大红楼室内建筑、楼层、节点名称改为中文。
 - 将后端室内节点类型、边类型、路线步骤说明改为中文。
 - 将室内导航面板中的 provider、算法、策略、耗时、路线步骤说明改为中文展示。
 - 删除不正式的数据核查脚本，后续以 SQL 文件、导入顺序和数据库查询结果作为核查口径。
@@ -340,7 +382,7 @@
 
 验证口径：
 
-- 重新执行 `database/seed_indoor_navigation.sql` 后，北大红楼室内节点应显示为“主入口、一层大厅、票务服务台、基本陈列展厅”等中文名称。
+- 重新执行 `database/seeds/seed_indoor_navigation.sql` 后，北大红楼室内节点应显示为“主入口、一层大厅、票务服务台、基本陈列展厅”等中文名称。
 - `GET /api/v1/indoor-buildings/<id>/features` 应返回中文 `typeLabel` 和中文 `edgeTypeLabel`。
 - `POST /api/v1/indoor-buildings/<id>/routes/plan` 的 `steps[].instruction` 应为中文。
 
@@ -367,7 +409,7 @@
 
 变更：
 
-- 增加正式室内导航表和 seed 文件：`database/indoor_navigation_schema.sql`、`database/seed_indoor_navigation.sql`。
+- 增加正式室内导航表和 seed 文件：`database/indoor_navigation_schema.sql`、`database/seeds/seed_indoor_navigation.sql`。
 - 使用 `local_indoor_graph` 为北大红楼建立首批本地室内图数据。
 - 更新快速启动和数据库说明，明确 `git pull` 只更新代码和 SQL 文件，不会自动改变队友本地 PostgreSQL 数据。
 - 明确已有数据库必须在同一个 `tourism_system` 中执行室内导航迁移和 seed。
@@ -375,7 +417,7 @@
 验证口径：
 
 - `database/indoor_navigation_schema.sql` 通过 `CREATE TABLE IF NOT EXISTS` 保持幂等。
-- `database/seed_indoor_navigation.sql` 使用稳定 `source_ref` 做 upsert。
+- `database/seeds/seed_indoor_navigation.sql` 使用稳定 `source_ref` 做 upsert。
 - 预期 seed 结果：1 栋北大红楼室内建筑、2 个楼层、10 个节点、18 条有向边。
 
 注意：

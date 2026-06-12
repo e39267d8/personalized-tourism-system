@@ -10,7 +10,7 @@ TourPilot 是一个旅游规划全栈项目，面向景点搜索、个性化推�
 - 个性化推荐、预算方案和路线规划。
 - 景区/校园内部设施导航与北京大学校园内部道路图。
 - 北大红楼室内拓扑导航，采用 `amap_indoor` + `local_indoor_graph` provider 模型。
-- 游记广场、游记详情、互动、日记到路线的一键复刻。
+- 游记广场、游记详情、互动、视频 URL、动画分镜预览、日记到路线的一键复刻。
 - Huffman 日记正文压缩存储、透明解压读取和压缩统计。
 - 美食推荐、旅行护照成就、数字纪念凭证和 AI 旅行助手。
 
@@ -27,7 +27,11 @@ TourPilot 是一个旅游规划全栈项目，面向景点搜索、个性化推�
 personalized-tourism-system/
 ├─ frontend/              # Vue 单页应用
 ├─ backend/               # C++ Crow 后端
-├─ database/              # schema、迁移、seed 和导入 SQL
+├─ database/              # schema、imports、migrations、seeds、maintenance
+│  ├─ imports/            # 外部数据导入 SQL
+│  ├─ migrations/         # 增量结构迁移
+│  ├─ seeds/              # 正式初始化和演示扩展 seed
+│  └─ maintenance/        # 数据审计和修复脚本
 ├─ scripts/               # 数据生成和本地辅助脚本
 ├─ docs/                  # API、工程记录、架构说明和 ADR
 ├─ QUICKSTART.md          # 本地运行、初始化和验证步骤

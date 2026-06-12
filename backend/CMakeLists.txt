@@ -98,6 +98,9 @@ set(API_SOURCES
     src/api/recommendation_routes.cpp
     src/api/route_routes.cpp
     src/api/diary_routes.cpp
+    src/api/diary_animation_routes.cpp
+    src/api/diary_compression_routes.cpp
+    src/api/huffman_routes.cpp
     src/api/aigc_routes.cpp
     src/api/food_routes.cpp
 )

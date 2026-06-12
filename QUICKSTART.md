@@ -21,7 +21,7 @@ C:\Users\seele\Desktop\code\personalized-tourism-system
 
 ## 2. 初始化数据库
 
-`git pull` 只会更新代码和 SQL 文件，不会自动更新本机 PostgreSQL。景区/校园内部道路图、室内导航、路线规划演示路网和日记压缩都需要同步执行对应 SQL 迁移和 seed；如果没有执行对应 SQL，页面会显示“未接入”、查不到新增数据，或继续画旧的演示直线。
+`git pull` 只会更新代码和 SQL 文件，不会自动更新本机 PostgreSQL。景区/校园内部道路图、室内导航、路线规划演示路网、美食推荐和日记扩展字段都需要同步执行对应 SQL 迁移和 seed；如果没有执行对应 SQL，页面会显示“未接入”、查不到新增数据，或继续画旧的演示直线。
 
 全新数据库初始化顺序：
 
@@ -32,14 +32,18 @@ psql -U postgres -d tourism_system -f database\imports\amap_pois.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\imports\amap_pois_supplement.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\internal_navigation_schema.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\imports\internal_navigation.sql
-psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seed_campus_spots.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_campus_spots.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\imports\internal_navigation_pku.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\indoor_navigation_schema.sql
-psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\diary_compression_schema.sql
-psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\cross_layer_navigation_schema.sql
-psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\diary_location_cover_schema.sql
-psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seed_demo.sql
-psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seed_indoor_navigation.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\diary_compression_schema.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\cross_layer_navigation_schema.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\diary_location_cover_schema.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\diary_animation_schema.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_extra_users.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_facilities.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_foods.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_demo.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_indoor_navigation.sql
 psql -U postgres -d tourism_system -f database\maintenance\repair_data_quality.sql
 psql -U postgres -d tourism_system -f database\verify_demo.sql
 ```
@@ -48,7 +52,7 @@ psql -U postgres -d tourism_system -f database\verify_demo.sql
 
 ```powershell
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\internal_navigation_schema.sql
-psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seed_campus_spots.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_campus_spots.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\imports\internal_navigation_pku.sql
 ```
 
@@ -56,25 +60,38 @@ psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\imports\intern
 
 ```powershell
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\indoor_navigation_schema.sql
-psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seed_indoor_navigation.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_indoor_navigation.sql
 ```
 
 已有数据库只补日记压缩存储（新增 `content_compressed` / `content_original_bytes` 列）：
 
 ```powershell
-psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\diary_compression_schema.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\diary_compression_schema.sql
 ```
 
 已有数据库只补日记地点与封面（新增 `cover_image`、`location_*` 六列，存量日记封面自动回填）：
 
 ```powershell
-psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\diary_location_cover_schema.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\diary_location_cover_schema.sql
+```
+
+已有数据库只补日记动画预览（新增 `videos` 和 `animation_storyboard` 列）：
+
+```powershell
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\diary_animation_schema.sql
+```
+
+已有数据库只补美食推荐演示数据：
+
+```powershell
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_facilities.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_foods.sql
 ```
 
 已有数据库只补路线规划演示路网 / 成就 seed（推荐在拉到路线规划相关修复后重跑一次）：
 
 ```powershell
-psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seed_demo.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_demo.sql
 ```
 
 说明：
@@ -85,7 +102,7 @@ psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seed_demo.sql
 已有数据库只补室内外跨层导航（`indoor_buildings` 新增 `outdoor_node_id` 室外锚点绑定，需先导入内部路网和室内导航数据）：
 
 ```powershell
-psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\cross_layer_navigation_schema.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\cross_layer_navigation_schema.sql
 ```
 
 迁移会按名称自动绑定建筑与室外路网节点（如"北大红楼"↔"北京大学红楼"）。验证绑定结果：
@@ -306,7 +323,7 @@ Invoke-WebRequest http://127.0.0.1:8080/health
 确认已经执行：
 
 ```powershell
-psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seed_demo.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_demo.sql
 ```
 
 演示账号是 `demo_user / demo123456`。如果数据库里仍是旧的 `demo_hash_not_for_production`，后端会在首次成功登录后自动升级为 PBKDF2 密码哈希。
