@@ -157,25 +157,29 @@
           <svg class="w-4 h-4 flex-none text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
           当前路网中所选交通方式无可达路线，已自动回退为混合模式出行
         </div>
+        <div v-if="route && route.fallbackNotice" class="mt-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-700 flex items-start gap-2">
+          <svg class="mt-0.5 w-4 h-4 flex-none text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          <span>{{ route.fallbackNotice }}</span>
+        </div>
 
         <template v-if="route">
           <div class="mt-4 grid grid-cols-3 gap-3">
             <div class="rounded-md bg-slate-50 p-3">
-              <div class="text-xs text-slate-500">{{ tourMode ? 'TSP 距离' : '距离' }}</div>
+              <div class="text-xs text-slate-500">{{ tourMode && !route.routeServiceFallback ? 'TSP 距离' : '距离' }}</div>
               <div class="mt-1 text-lg font-bold">{{ route.distance }}</div>
             </div>
             <div class="rounded-md bg-slate-50 p-3">
-              <div class="text-xs text-slate-500">{{ tourMode ? 'TSP 时长' : '时长' }}</div>
+              <div class="text-xs text-slate-500">{{ tourMode && !route.routeServiceFallback ? 'TSP 时长' : '时长' }}</div>
               <div class="mt-1 text-lg font-bold">{{ route.time }}</div>
             </div>
             <div class="rounded-md bg-slate-50 p-3">
-              <div class="text-xs text-slate-500">{{ tourMode ? '算法' : '预估费用' }}</div>
-              <div class="mt-1 text-base font-bold">{{ tourMode ? (route.algorithm || 'TSP') : ('¥' + route.cost) }}</div>
+              <div class="text-xs text-slate-500">{{ tourMode && !route.routeServiceFallback ? '算法' : '预估费用' }}</div>
+              <div class="mt-1 text-base font-bold">{{ tourMode && !route.routeServiceFallback ? (route.algorithm || 'TSP') : ('¥' + route.cost) }}</div>
             </div>
           </div>
 
           <!-- TSP visit order -->
-          <div v-if="tourMode && route.visitOrder" class="mt-3 rounded-md bg-teal-50 px-3 py-2 text-sm text-teal-800">
+          <div v-if="tourMode && !route.routeServiceFallback && route.visitOrder" class="mt-3 rounded-md bg-teal-50 px-3 py-2 text-sm text-teal-800">
             访问顺序: {{ route.visitOrder.join(' → ') }}
           </div>
 
@@ -191,7 +195,7 @@
         </template>
 
         <div v-else-if="!error" class="mt-4 rounded-md border border-dashed border-slate-300 p-6 text-sm text-slate-500">
-          添加起点、途经点和目的地后会生成路线。后端会优先调用高德路线服务；如果接口不可用，前端会展示演示路线。
+          添加起点、途经点和目的地后会生成真实道路路线；路线服务不可用或本地路网质量不足时会显示明确错误。
         </div>
       </div>
     </section>
@@ -276,6 +280,7 @@ const congestionColor = computed(() => {
 
 // Route polyline color: follows congestion level when congestion mode is on
 const routeLineColor = computed(() => {
+  if (route.value?.routeServiceFallback) return '#0f766e'
   if (!useCongestion.value) return '#0f766e'
   return congestionColor.value
 })
@@ -290,36 +295,9 @@ const form = reactive({
 
 let map
 let routeLayer
-
-const placeCoordinates = {
-  前门大街: [39.8994, 116.3977],
-  前门: [39.8994, 116.3977],
-  天安门广场: [39.9055, 116.3976],
-  天安门: [39.9087, 116.3975],
-  故宫博物院: [39.9163, 116.3972],
-  故宫: [39.9163, 116.3972],
-  景山公园: [39.9251, 116.3967],
-  国家博物馆: [39.9052, 116.4016],
-  中国国家博物馆: [39.9052, 116.4016],
-  王府井: [39.9148, 116.4112],
-  王府井步行街: [39.9148, 116.4112],
-  北海公园: [39.9255, 116.3896],
-  鼓楼: [39.9402, 116.3958],
-  什刹海: [39.9373, 116.3862],
-  后海: [39.9417, 116.3828],
-  天坛公园: [39.8822, 116.4066],
-  天坛: [39.8822, 116.4066],
-  雍和宫: [39.9471, 116.4173],
-  南锣鼓巷: [39.9337, 116.4038],
-  颐和园: [39.9999, 116.2755],
-  圆明园: [40.0087, 116.3102],
-  奥林匹克森林公园: [40.0164, 116.3899],
-  奥森: [40.0164, 116.3899],
-  三里屯: [39.9346, 116.4540],
-  工体: [39.9294, 116.4410],
-  '798艺术区': [39.9846, 116.4953],
-  '798': [39.9846, 116.4953]
-}
+let routePolyline
+let routeMarkers = []
+let focusPulseTimer = null
 
 onMounted(async () => {
   await nextTick()
@@ -388,8 +366,8 @@ const planRoute = async () => {
 
   // TSP 环游模式：把输入地点解析为本地路网节点，后端跑真实 TSP + Dijkstra
   if (tourMode.value) {
+    const texts = allStopTexts()
     try {
-      const texts = allStopTexts()
       if (texts.length < 2) {
         error.value = '环游模式至少需要两个地点。'
         return
@@ -398,7 +376,13 @@ const planRoute = async () => {
       const resolved = texts.map(text => ({ text, node: resolveGraphNode(nodes, text) }))
       const missing = resolved.filter(item => !item.node).map(item => item.text)
       if (missing.length) {
-        error.value = graphNodeMissingMessage('环游模式', missing)
+        route.value = await routeServiceFallbackForStops(
+          texts,
+          'TSP 环游',
+          graphNodeMissingMessage('环游模式', missing),
+          '已按当前输入顺序显示真实道路路线'
+        )
+        drawRoute()
         return
       }
 
@@ -408,7 +392,7 @@ const planRoute = async () => {
         optimization: form.optimization
       })
 
-      // 分层渲染：TSP 只决定访问顺序，真实道路折线交给高德按所选交通方式规划
+      // 分层渲染：TSP 只决定访问顺序，真实道路折线交给路线服务按所选交通方式规划
       // （本地图的边没有道路几何，直接画会穿楼；环游闭环 = 末尾补回起点）
       const visitNames = tourResult.visitOrder || []
       const loopStops = visitNames.length >= 2 ? [...visitNames, visitNames[0]] : visitNames
@@ -431,7 +415,19 @@ const planRoute = async () => {
       }
       drawRoute()
     } catch (requestError) {
-      error.value = requestError.response?.data?.message || 'TSP 环游规划失败，请稍后重试'
+      try {
+        route.value = await routeServiceFallbackForStops(
+          texts,
+          'TSP 环游',
+          routeErrorMessage(requestError, 'TSP 环游规划失败'),
+          '已按当前输入顺序显示真实道路路线'
+        )
+        drawRoute()
+      } catch (fallbackError) {
+        route.value = null
+        error.value = fallbackError.message
+        drawRoute()
+      }
     } finally {
       loading.value = false
     }
@@ -440,13 +436,20 @@ const planRoute = async () => {
 
   // 拥挤度感知模式：解析起终点为本地路网节点，后端跑拥挤度加权 Dijkstra
   if (useCongestion.value) {
+    const texts = allStopTexts()
     try {
       const nodes = await loadRouteNodes()
       const startNode = resolveGraphNode(nodes, form.startText)
       const endNode = resolveGraphNode(nodes, form.endText)
       const missing = [!startNode && form.startText, !endNode && form.endText].filter(Boolean)
       if (missing.length) {
-        error.value = graphNodeMissingMessage('拥挤度感知', missing)
+        route.value = await routeServiceFallbackForStops(
+          texts,
+          '拥挤度感知',
+          graphNodeMissingMessage('拥挤度感知', missing),
+          '已按当前输入顺序显示真实道路路线'
+        )
+        drawRoute()
         return
       }
 
@@ -463,7 +466,7 @@ const planRoute = async () => {
         title: `拥挤度感知路线（${congestionResult.crowd_label || '中等'}敏感时段）`,
         algorithm: `拥挤度感知 Dijkstra · ${modeLabel()}`,
         transport: congestionResult.transport || modeLabel(),
-        // 拥挤度模式直接展示本地图算法选中的路径；如果再把中间节点交给高德
+        // 拥挤度模式直接展示本地图算法选中的路径；如果再把中间节点交给外部路线服务
         // 二次重算，入口/换乘点这类非 scenic 节点会被抹掉，视觉上就像
         // “不同时间段/不同优化目标完全一样”。
         congestionSource: congestionResult.congestionSource,
@@ -472,7 +475,19 @@ const planRoute = async () => {
       }
       drawRoute()
     } catch (requestError) {
-      error.value = requestError.response?.data?.message || '拥挤度感知路由失败，请稍后重试'
+      try {
+        route.value = await routeServiceFallbackForStops(
+          texts,
+          '拥挤度感知',
+          routeErrorMessage(requestError, '拥挤度感知路由失败'),
+          '已按当前输入顺序显示真实道路路线'
+        )
+        drawRoute()
+      } catch (fallbackError) {
+        route.value = null
+        error.value = fallbackError.message
+        drawRoute()
+      }
     } finally {
       loading.value = false
     }
@@ -491,8 +506,8 @@ const planRoute = async () => {
     })
     drawRoute()
   } catch (planError) {
-    route.value = buildFallbackRoute()
-    error.value = ''
+    route.value = null
+    error.value = planError.response?.data?.message || '路线规划失败，未生成演示路线。请检查地点、交通方式或稍后重试。'
     drawRoute()
   } finally {
     loading.value = false
@@ -504,6 +519,29 @@ const allStopTexts = () => [
   ...waypointTexts(),
   form.endText.trim()
 ].filter(Boolean)
+
+const routeErrorMessage = (requestError, fallbackText) =>
+  requestError?.response?.data?.message || requestError?.message || fallbackText
+
+const routeServiceFallbackForStops = async (stopTexts, modeName, reason, routeLabel) => {
+  const routeServiceRoute = await amapGeometryForStops(stopTexts)
+  if (!routeServiceRoute) {
+    throw new Error(`${modeName}未生成可展示路线（${reason}），且路线服务兜底也不可用。`)
+  }
+  const fallbackLabel =
+    form.travelMode === 'transit' && stopTexts.length > 2
+      ? '地铁公交模式已按起终点显示真实道路路线'
+      : routeLabel
+  return {
+    ...routeServiceRoute,
+    title: `${modeName}兜底路线`,
+    algorithm: '真实道路路线服务',
+    routeServiceFallback: true,
+    fallbackNotice: `${modeName}本地算法未生成可展示路线（${reason}），${fallbackLabel}；该路线不代表${modeName}算法结果。`,
+    originalPlanningError: reason,
+    usedTransportFallback: false
+  }
+}
 
 // ---- 本地路网节点解析（环游 / 拥挤度模式共用）----
 // 这两个模式跑在本地 graph_nodes/graph_edges 图上，必须把用户输入的地点
@@ -550,18 +588,18 @@ const graphNodeMissingMessage = (modeName, missing) => {
 
 // 本地图的交通方式映射。演示路网以步行边为主（地铁/骑行边零星），
 // transit/driving 在算法层直接用混合模式（空串=不过滤），避免"无可达
-// 路线已回退"的误报横幅；几何层仍按用户所选模式向高德取真实路线。
+// 路线已回退"的误报横幅；几何层仍按用户所选模式向路线服务取真实路线。
 const localGraphTravelMode = () => {
   if (form.travelMode === 'driving' || form.travelMode === 'transit') return ''
   return form.travelMode
 }
 
 // 分层渲染的几何层：把算法层（TSP/拥挤度 Dijkstra）决定的停靠点序列
-// 交给高德按所选交通方式取真实道路折线。本地图的边只有节点连线、没有
-// 道路几何，直接画会穿过街区。高德不可用时返回 null，调用方回退图几何。
+// 交给路线服务按所选交通方式取真实道路折线。路线服务不可用时返回 null，
+// 调用方会优先展示通过后端质量闸门的本地路线；本地算法不可展示时可用
+// 真实路线服务兜底，但必须显式标记为兜底结果，不再生成演示线。
 // 地铁公交模式特殊处理：公交方案由线路决定，"途经点"语义不成立且
-// 相邻停靠点太近时高德 transit 无方案直接报错——只用起终点直达；
-// 仍失败（如起终点过近无公交方案）则降级用步行取街道几何兜底。
+// 相邻停靠点太近时公交方案可能不可用——只用起终点直达。
 const amapGeometryForStops = async (stopTexts) => {
   if (!stopTexts || stopTexts.length < 2) return null
   const isTransit = form.travelMode === 'transit'
@@ -577,45 +615,8 @@ const amapGeometryForStops = async (stopTexts) => {
   try {
     return await request(form.travelMode)
   } catch {
-    if (!isTransit) return null
-    try {
-      return await request('walk')
-    } catch {
-      return null
-    }
+    return null
   }
-}
-
-const coordinateForPlace = (name, index) => {
-  const key = Object.keys(placeCoordinates).find(item => name.includes(item) || item.includes(name))
-  if (key) return placeCoordinates[key]
-
-  const base = [39.916, 116.397]
-  let hash = 0
-  for (let i = 0; i < name.length; i += 1) hash = ((hash << 5) - hash + name.charCodeAt(i)) | 0
-  const angle = ((Math.abs(hash) % 360) * Math.PI) / 180
-  const radius = 0.01 + (index % 4) * 0.006
-  return [
-    base[0] + Math.sin(angle) * radius,
-    base[1] + Math.cos(angle) * radius
-  ]
-}
-
-const distanceMeters = (from, to) => {
-  const earthRadius = 6371000
-  const toRad = value => (value * Math.PI) / 180
-  const dLat = toRad(to[0] - from[0])
-  const dLng = toRad(to[1] - from[1])
-  const lat1 = toRad(from[0])
-  const lat2 = toRad(to[0])
-  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2
-  return earthRadius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
-}
-
-const interpolateSegment = (from, to) => {
-  const latFirst = Math.abs(to[0] - from[0]) > Math.abs(to[1] - from[1])
-  const corner = latFirst ? [to[0], from[1]] : [from[0], to[1]]
-  return [from, corner, to]
 }
 
 const modeLabel = () => ({
@@ -625,68 +626,12 @@ const modeLabel = () => ({
   transit: '地铁公交'
 }[form.travelMode] || '步行')
 
-const speedMetersPerSecond = () => ({
-  walk: 1.2,
-  bike: 4.2,
-  driving: 8,
-  transit: 6
-}[form.travelMode] || 1.2)
-
-const buildFallbackRoute = () => {
-  const stops = allStopTexts()
-  const places = stops.map((name, index) => {
-    const [latitude, longitude] = coordinateForPlace(name, index)
-    return { name, latitude, longitude }
-  })
-
-  const coordinates = []
-  const segments = []
-  let totalDistance = 0
-  let totalDuration = 0
-
-  for (let i = 0; i + 1 < places.length; i += 1) {
-    const from = places[i]
-    const to = places[i + 1]
-    const fromCoord = [from.latitude, from.longitude]
-    const toCoord = [to.latitude, to.longitude]
-    const distance = distanceMeters(fromCoord, toCoord) * (form.optimization === 'distance' ? 0.92 : 1.08)
-    const duration = Math.max(180, Math.round(distance / speedMetersPerSecond()))
-    totalDistance += distance
-    totalDuration += duration
-    const segmentCoords = interpolateSegment(fromCoord, toCoord)
-    coordinates.push(...(coordinates.length ? segmentCoords.slice(1) : segmentCoords))
-    segments.push({
-      from: `从 ${from.name} 前往 ${to.name}`,
-      to: to.name,
-      transport: modeLabel(),
-      distance,
-      duration,
-      congestion: 0
-    })
-  }
-
-  return {
-    id: 0,
-    route_id: 'planned-route',
-    title: `${stops[0]} 到 ${stops[stops.length - 1]}`,
-    stops,
-    requestedPlaces: places,
-    segments,
-    coordinates,
-    distance: `${(totalDistance / 1000).toFixed(1)} km`,
-    time: `${Math.max(1, Math.round(totalDuration / 60))} 分钟`,
-    cost: form.travelMode === 'walk' ? 0 : Math.max(3, Math.round((totalDistance / 1000) * 2)),
-    intensity: totalDistance > 3500 ? '中等' : '轻松',
-    transport: modeLabel(),
-    total_distance_meters: Math.round(totalDistance),
-    total_duration_seconds: totalDuration
-  }
-}
-
 const drawRoute = () => {
   if (!map) return
   if (routeLayer) routeLayer.remove()
   routeLayer = L.layerGroup()
+  routePolyline = null
+  routeMarkers = []
 
   const coords = route.value?.coordinates || []
   if (!coords.length) {
@@ -694,7 +639,12 @@ const drawRoute = () => {
     return
   }
 
-  L.polyline(coords, { color: routeLineColor.value, weight: useCongestion.value ? 7 : 5, opacity: 0.9 }).addTo(routeLayer)
+  const useCongestionStyle = useCongestion.value && !route.value?.routeServiceFallback
+  routePolyline = L.polyline(coords, {
+    color: routeLineColor.value,
+    weight: useCongestionStyle ? 7 : 5,
+    opacity: 0.9
+  }).addTo(routeLayer)
 
   const markers = route.value?.requestedPlaces?.length
     ? route.value.requestedPlaces.map(place => [place.latitude, place.longitude, place.name])
@@ -704,23 +654,48 @@ const drawRoute = () => {
       })
 
   markers.forEach(([latitude, longitude, name], index) => {
-    L.circleMarker([latitude, longitude], {
+    const marker = L.circleMarker([latitude, longitude], {
       radius: index === 0 || index === markers.length - 1 ? 9 : 7,
       color: '#0f172a',
       fillColor: '#ffffff',
       fillOpacity: 1,
       weight: 3
     }).bindTooltip(name).addTo(routeLayer)
+    routeMarkers.push(marker)
   })
 
   routeLayer.addTo(map)
-  fitRoute()
+  fitRoute({ pulse: false })
 }
 
-const fitRoute = () => {
+const pulseRouteFocus = () => {
+  if (!routePolyline) return
+  if (focusPulseTimer) {
+    clearTimeout(focusPulseTimer)
+    focusPulseTimer = null
+  }
+  const baseWeight = useCongestion.value && !route.value?.routeServiceFallback ? 7 : 5
+  const baseColor = routeLineColor.value
+  routePolyline.setStyle({ color: '#0284c7', weight: baseWeight + 2, opacity: 1 })
+  routeMarkers.forEach((marker, index) => {
+    if (index === 0 || index === routeMarkers.length - 1) marker.openTooltip()
+  })
+  focusPulseTimer = setTimeout(() => {
+    if (routePolyline) {
+      routePolyline.setStyle({ color: baseColor, weight: baseWeight, opacity: 0.9 })
+    }
+    routeMarkers.forEach(marker => marker.closeTooltip())
+    focusPulseTimer = null
+  }, 1200)
+}
+
+const fitRoute = ({ pulse = true } = {}) => {
   if (!map) return
   const coords = route.value?.coordinates || []
-  if (coords.length) map.fitBounds(coords, { padding: [36, 36] })
+  if (!coords.length) return
+  map.invalidateSize()
+  map.flyToBounds(L.latLngBounds(coords), { padding: [36, 36], duration: 0.6, maxZoom: 16 })
+  if (pulse) pulseRouteFocus()
 }
 
 const requestedStopLabel = (index) => {

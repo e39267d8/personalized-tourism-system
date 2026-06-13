@@ -35,14 +35,17 @@ psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\imports\intern
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_campus_spots.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\imports\internal_navigation_pku.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\indoor_navigation_schema.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\achievement_module_schema.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\diary_compression_schema.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\cross_layer_navigation_schema.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\diary_location_cover_schema.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\diary_animation_schema.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\scenic_search_indexes.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_extra_users.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_facilities.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_foods.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_demo.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_achievements.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_indoor_navigation.sql
 psql -U postgres -d tourism_system -f database\maintenance\repair_data_quality.sql
 psql -U postgres -d tourism_system -f database\verify_demo.sql
@@ -61,6 +64,13 @@ psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\imports\intern
 ```powershell
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\indoor_navigation_schema.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_indoor_navigation.sql
+```
+
+已有数据库只补成就系统结构与演示数据：
+
+```powershell
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\achievement_module_schema.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_achievements.sql
 ```
 
 已有数据库只补日记压缩存储（新增 `content_compressed` / `content_original_bytes` 列）：
@@ -88,15 +98,17 @@ psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_fac
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_foods.sql
 ```
 
-已有数据库只补路线规划演示路网 / 成就 seed（推荐在拉到路线规划相关修复后重跑一次）：
+已有数据库只补路线规划演示路网和成就演示数据（推荐在拉到路线规划或成就相关修复后重跑一次）：
 
 ```powershell
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_demo.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_achievements.sql
 ```
 
 说明：
 
-- `seed_demo.sql` 现在支持幂等重跑。
+- `seed_demo.sql` 现在支持幂等重跑，但只负责基础演示关系数据。
+- `seed_achievements.sql` 单独负责成就系统演示数据，更适合创新功能分支独立维护。
 - 如果路线规划页在“拥挤度感知”模式下仍然只画节点直线，先重跑这条 SQL，再刷新页面验证。
 
 已有数据库只补室内外跨层导航（`indoor_buildings` 新增 `outdoor_node_id` 室外锚点绑定，需先导入内部路网和室内导航数据）：

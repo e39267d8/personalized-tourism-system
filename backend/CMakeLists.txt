@@ -91,6 +91,7 @@ set(SERVICE_SOURCES
     src/services/index_manager.cpp
 )
 set(API_SOURCES
+    src/api/achievement_routes.cpp
     src/api/auth_routes.cpp
     src/api/dashboard_routes.cpp
     src/api/profile_routes.cpp

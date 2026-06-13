@@ -6,6 +6,8 @@
 #include "services/scenic_service.h"
 #include "support/api_helpers.h"
 
+#include <algorithm>
+#include <cctype>
 #include <unordered_map>
 
 namespace tourism::api {
@@ -13,7 +15,6 @@ namespace {
 
 using tourism::db::PgConnection;
 using tourism::db::exec_params;
-using tourism::db::exec_sql;
 using tourism::services::RecommendationProfile;
 using tourism::services::rank_personalized_recommendations;
 using tourism::services::scenic_candidate_from_row;
@@ -25,7 +26,6 @@ using tourism::support::json_string;
 using tourism::support::json_string_array;
 using tourism::support::ok;
 using tourism::support::query_int;
-using tourism::support::split_pipe;
 using tourism::support::string_list;
 using tourism::support::to_double;
 
@@ -36,20 +36,18 @@ RecommendationProfile recommendation_profile_from_json(const crow::json::rvalue&
     profile.budget_level = json_string(body, "budgetLevel", "medium");
     profile.crowd_preference = json_string(body, "crowdPreference", "any");
     profile.intensity = json_string(body, "intensity", "medium");
+    profile.sort_by = json_string(body, "sortBy", "interest");
     return profile;
 }
 
-const std::string kRecommendationSpotsSql = R"SQL(
-    SELECT s.id, s.name, s.description, s.rating, s.address, s.city, s.opening_hours,
-           s.ticket_price, s.duration_minutes, s.crowd_level, s.thumbnail_url,
-           s.category_id,
-           COALESCE(c.name, '景点') AS category,
-           COALESCE(array_to_string(s.tags, '|'), '') AS tags,
-           COALESCE(array_to_string(s.images, '|'), '') AS images
-    FROM scenic_spots s
-    LEFT JOIN categories c ON c.id = s.category_id
-    WHERE s.status = 1
-)SQL";
+std::string normalize_sort_by(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char ch) {
+        return static_cast<char>(std::tolower(ch));
+    });
+    if (value == "rating" || value == "hot" || value == "interest") return value;
+    if (value == "personalized") return "interest";
+    return "interest";
+}
 
 } // namespace
 
@@ -90,9 +88,10 @@ void register_recommendation_routes(TourismApp& app) {
             if (limit > 30) limit = 30;
 
             auto profile = recommendation_profile_from_json(body);
+            profile.sort_by = normalize_sort_by(profile.sort_by);
 
             PgConnection db;
-            auto rows = exec_sql(db, kRecommendationSpotsSql);
+            auto rows = exec_params(db, scenic_select_sql(), {"", "", "", "relevance", "5000", ""});
 
             std::vector<tourism::services::ScenicCandidate> candidates;
             std::unordered_map<int, int> row_by_id;
@@ -120,12 +119,25 @@ void register_recommendation_routes(TourismApp& app) {
                 item["scoreBreakdown"]["ratingScore"] = result.rating_score;
                 item["scoreBreakdown"]["budgetScore"] = result.budget_score;
                 item["scoreBreakdown"]["crowdScore"] = result.crowd_score;
+                item["scoreBreakdown"]["intensityScore"] = result.intensity_score;
+                item["scoreBreakdown"]["hotScore"] = result.hot_score;
+                item["scoreBreakdown"]["hotSignalScore"] = result.hot_signal_score;
+                item["displayMetric"] = profile.sort_by == "rating"
+                    ? "rating"
+                    : (profile.sort_by == "hot" ? "hot" : "interest");
+                item["displayValue"] = profile.sort_by == "rating"
+                    ? to_double(rows.value(row_it->second, "rating"))
+                    : (profile.sort_by == "hot"
+                        ? (result.hot_signal_score > 0.0 ? result.hot_signal_score : result.hot_score)
+                        : result.score);
                 items.push_back(std::move(item));
             }
 
             crow::json::wvalue data;
             data["recommendations"] = std::move(items);
-            data["algorithm"] = "score = tagScore * 50 + categoryScore * 20 + ratingScore * 15 + budgetScore * 10 + crowdScore * 5";
+            data["sortBy"] = profile.sort_by;
+            data["topKStrategy"] = "min-heap Top-K partial sorting, O(n log k), keeps only the requested leading candidates";
+            data["algorithm"] = "interest score combines tags, category, rating, budget, crowd, visit duration and dynamic heat; rating mode ranks by rating; hot mode ranks by favorites, check-ins, diary mentions and route references";
             return crow::response(ok(std::move(data)));
         } catch (const std::exception& error) {
             return json_error(500, error.what());

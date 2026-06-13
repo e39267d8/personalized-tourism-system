@@ -17,6 +17,8 @@ namespace {
 using tourism::db::PgConnection;
 using tourism::db::exec_sql;
 using tourism::services::RouteNode;
+using tourism::services::assess_route_quality;
+using tourism::services::apply_congestion_travel_time;
 using tourism::services::build_tsp_matrix;
 using tourism::services::compose_tsp_route;
 using tourism::services::computed_route_json;
@@ -83,6 +85,16 @@ std::unordered_map<int, double> load_spot_activity(PgConnection& db, int hour) {
     if (max_score <= 0) return factors;
     for (const auto& [spot_id, score] : scores) factors[spot_id] = score / max_score;
     return factors;
+}
+
+void attach_route_quality(crow::json::wvalue& data, const tourism::services::RouteQualityReport& quality) {
+    crow::json::wvalue item;
+    item["displayable"] = quality.displayable;
+    item["realRoadEdges"] = quality.real_road_edges;
+    item["generatedConnectorEdges"] = quality.generated_connector_edges;
+    item["missingGeometryEdges"] = quality.missing_geometry_edges;
+    item["maxGeneratedConnectorMeters"] = quality.max_generated_connector_meters;
+    data["routeQuality"] = std::move(item);
 }
 
 } // namespace
@@ -179,7 +191,7 @@ void register_route_routes(TourismApp& app) {
 
                 std::string key = tourism::services::amap_key();
                 if (key.empty()) {
-                    return json_error(500, "未配置高德 Web Service Key，无法使用文本地点路线规划");
+                    return json_error(500, "未配置地图路线服务 Key，无法使用文本地点路线规划");
                 }
 
                 std::string amap_mode = raw_transport == "driving" || raw_transport == "car" ? "driving" :
@@ -207,8 +219,11 @@ void register_route_routes(TourismApp& app) {
 
             auto route = plan_route_with_waypoints(graph, points, transport, optimization, crowd_tolerance);
             if (!route.success) return json_error(404, route.error.empty() ? "无法规划路线" : route.error);
+            auto quality = assess_route_quality(route);
+            if (!quality.displayable) return json_error(422, quality.error);
 
             crow::json::wvalue data = computed_route_json(graph, route, optimization, transport);
+            attach_route_quality(data, quality);
             return crow::response(ok(std::move(data)));
         } catch (const std::exception& error) {
             return json_error(500, error.what());
@@ -257,11 +272,14 @@ void register_route_routes(TourismApp& app) {
             if (!route.success) {
                 return json_error(422, route.error.empty() ? "无法规划路线" : route.error);
             }
+            auto quality = assess_route_quality(route);
+            if (!quality.displayable) return json_error(422, quality.error);
 
             std::vector<int> visit_order;
             for (int idx : tsp_result.best_order) visit_order.push_back(waypoints[idx]);
 
             crow::json::wvalue data = tour_route_json(graph, route, visit_order, optimization, transport, tsp_result.algorithm_used);
+            attach_route_quality(data, quality);
             data["tspDistance"] = static_cast<int>(tsp_result.total_distance);
             data["tspDuration"] = tsp_result.total_duration;
             return crow::response(ok(std::move(data)));
@@ -332,8 +350,12 @@ void register_route_routes(TourismApp& app) {
             auto result = plan_route_with_waypoints(graph, points, transport, optimization, crowd_tolerance);
 
             if (!result.success) return json_error(422, result.error);
+            apply_congestion_travel_time(result, crowd_tolerance);
+            auto quality = assess_route_quality(result);
+            if (!quality.displayable) return json_error(422, quality.error);
 
             crow::json::wvalue data = computed_route_json(graph, result, optimization, transport);
+            attach_route_quality(data, quality);
             data["hour"] = hour;
             data["optimization"] = optimization;
             data["crowd_tolerance"] = crowd_tolerance;

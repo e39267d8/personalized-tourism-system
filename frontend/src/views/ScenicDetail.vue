@@ -105,7 +105,7 @@
             {{ selectedStartPoint ? `起点 ${selectedStartPointLabel}` : '点击地图选择起点' }}
           </div>
           <div v-if="amapError" class="absolute inset-x-4 bottom-4 rounded-md border border-amber-200 bg-white/95 p-3 text-sm leading-6 text-amber-800 shadow-sm">
-            {{ amapError }}。自动入口和下拉起点仍可规划路线，地图点选需要高德地图加载成功。
+            {{ amapError }}。自动入口和下拉起点仍可规划路线，地图点选需要地图服务加载成功。
           </div>
         </div>
       </div>
@@ -424,7 +424,7 @@ const canPlanInternalRoute = computed(() => {
 })
 
 const mapStatusLabel = computed(() => {
-  if (amapReady.value) return '高德地图'
+  if (amapReady.value) return '地图服务'
   if (amapError.value) return '地图配置不可用'
   return '地图加载中'
 })
@@ -453,7 +453,7 @@ const initInternalMap = async () => {
   if (map || !internalMapContainer.value) return
   const configStatus = getAmapConfigStatus()
   if (!configStatus.ready) {
-    amapError.value = '高德地图配置不可用，请设置 VITE_AMAP_JS_KEY'
+    amapError.value = '地图服务配置不可用，请联系管理员检查配置'
     return
   }
 
@@ -473,7 +473,7 @@ const initInternalMap = async () => {
     drawInternalMap(true)
   } catch (error) {
     amapReady.value = false
-    amapError.value = error?.message || '高德地图加载失败'
+    amapError.value = error?.message || '地图服务加载失败'
   }
 }
 
@@ -489,7 +489,7 @@ function handleInternalMapClick(event) {
 
 const setStartMode = (mode) => {
   if (mode === 'map' && !amapReady.value) {
-    internalError.value = '地图点选起点需要先配置并加载高德地图'
+    internalError.value = '地图点选起点需要先配置并加载地图服务'
     return
   }
   selectedStartMode.value = mode

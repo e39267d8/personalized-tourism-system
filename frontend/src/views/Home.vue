@@ -33,7 +33,16 @@
           </form>
         </div>
 
-        <div class="hidden rounded-md bg-white/95 p-5 text-slate-950 shadow-xl lg:block">
+        <div v-if="homeLoading" class="hidden rounded-md bg-white/95 p-5 text-slate-950 shadow-xl lg:block">
+          <div class="h-4 w-28 animate-pulse rounded bg-slate-100"></div>
+          <div class="mt-3 h-7 w-3/4 animate-pulse rounded bg-slate-100"></div>
+          <div class="mt-4 h-4 w-full animate-pulse rounded bg-slate-100"></div>
+          <div class="mt-2 h-4 w-5/6 animate-pulse rounded bg-slate-100"></div>
+          <div class="mt-5 grid grid-cols-3 gap-3">
+            <div v-for="item in 3" :key="item" class="h-16 animate-pulse rounded-md bg-slate-100"></div>
+          </div>
+        </div>
+        <div v-else class="hidden rounded-md bg-white/95 p-5 text-slate-950 shadow-xl lg:block">
           <div class="text-sm font-semibold text-slate-500">今日路线灵感</div>
           <h2 class="mt-2 text-2xl font-bold">{{ featuredRoute?.title || '中轴线经典一日游' }}</h2>
           <p class="mt-3 text-sm leading-6 text-slate-600">
@@ -84,7 +93,18 @@
           </router-link>
         </div>
 
-        <div class="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div v-if="homeLoading && !recommendations.length" class="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <div v-for="item in 6" :key="item" class="overflow-hidden rounded-md border border-slate-200 bg-white">
+            <div class="h-44 w-full animate-pulse bg-slate-100"></div>
+            <div class="space-y-3 p-4">
+              <div class="h-4 w-2/3 animate-pulse rounded bg-slate-100"></div>
+              <div class="h-3 w-full animate-pulse rounded bg-slate-100"></div>
+              <div class="h-3 w-5/6 animate-pulse rounded bg-slate-100"></div>
+            </div>
+          </div>
+        </div>
+
+        <div v-else class="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           <router-link
             v-for="item in recommendations"
             :key="item.scenicSpot.id"
@@ -135,7 +155,13 @@
             </div>
             <input v-model.number="budget" type="range" min="60" max="500" step="10" class="mt-4 w-full accent-teal-700">
           </div>
-          <div class="mt-4 space-y-3">
+          <div v-if="homeLoading && !plans.length" class="mt-4 space-y-3">
+            <div v-for="item in 2" :key="item" class="rounded-md bg-slate-50 p-3">
+              <div class="h-4 w-2/3 animate-pulse rounded bg-slate-100"></div>
+              <div class="mt-2 h-3 w-full animate-pulse rounded bg-slate-100"></div>
+            </div>
+          </div>
+          <div v-else class="mt-4 space-y-3">
             <div v-for="plan in affordablePlans" :key="plan.id" class="rounded-md bg-slate-50 p-3">
               <div class="font-semibold">{{ plan.title }}</div>
               <div class="mt-1 text-sm text-slate-500">{{ plan.route }}</div>
@@ -167,7 +193,16 @@
         </router-link>
       </div>
 
-      <div class="mt-5 grid gap-4 lg:grid-cols-3">
+      <div v-if="homeLoading && !routes.length" class="mt-5 grid gap-4 lg:grid-cols-3">
+        <article v-for="item in 3" :key="item" class="rounded-md border border-slate-200 p-4">
+          <div class="h-4 w-2/3 animate-pulse rounded bg-slate-100"></div>
+          <div class="mt-3 h-3 w-full animate-pulse rounded bg-slate-100"></div>
+          <div class="mt-2 h-3 w-5/6 animate-pulse rounded bg-slate-100"></div>
+          <div class="mt-4 h-8 animate-pulse rounded bg-slate-100"></div>
+        </article>
+      </div>
+
+      <div v-else class="mt-5 grid gap-4 lg:grid-cols-3">
         <article v-for="route in routes.slice(0, 3)" :key="route.id" class="rounded-md border border-slate-200 p-4">
           <h3 class="font-semibold">{{ route.title }}</h3>
           <p class="mt-2 line-clamp-2 text-sm leading-6 text-slate-500">{{ route.stops.join(' / ') }}</p>
@@ -201,11 +236,12 @@ const router = useRouter()
 
 const searchQuery = ref('')
 const budget = ref(180)
-const routes = ref(fallbackRoutes)
-const plans = ref(fallbackBudgetPlans)
+const routes = ref([])
+const plans = ref([])
 const recommendations = ref([])
 const hasUserProfile = ref(false)
 const activeProfile = ref(null)
+const homeLoading = ref(true)
 
 const quickSearches = [
   { title: '第一次来北京', copy: '经典地标和中轴线', query: '中轴线' },
@@ -260,20 +296,21 @@ const loadRecommendations = async () => {
   hasUserProfile.value = hasMeaningfulProfile(activeProfile.value)
 
   try {
-    const payload = hasUserProfile.value ? { ...activeProfile.value, limit: 6 } : { limit: 6 }
+    const payload = hasUserProfile.value
+      ? { ...activeProfile.value, sortBy: 'interest', limit: 6 }
+      : { sortBy: 'interest', limit: 6 }
     const data = await tourismApi.personalizedRecommendations(payload)
-    const items = (data.recommendations || []).map(item => normalizeRecommendation(item, activeProfile.value))
-    recommendations.value = (items.length ? items : fallbackRecommendations())
-      .sort((left, right) => right.score - left.score)
-      .slice(0, 6)
+    const items = (data.recommendations || []).map(item => normalizeRecommendation(item, activeProfile.value, {
+      preserveBackendScore: true,
+      useBackendReason: true
+    }))
+    recommendations.value = items.length ? items.slice(0, 6) : fallbackRecommendations()
   } catch (error) {
     recommendations.value = fallbackRecommendations()
   }
 }
 
-onMounted(async () => {
-  await loadRecommendations()
-
+const loadRouteAndBudgetPlans = async () => {
   try {
     const [routeData, budgetData] = await Promise.all([
       tourismApi.routes(),
@@ -284,6 +321,18 @@ onMounted(async () => {
   } catch (error) {
     routes.value = fallbackRoutes
     plans.value = fallbackBudgetPlans
+  }
+}
+
+onMounted(async () => {
+  homeLoading.value = true
+  try {
+    await Promise.all([
+      loadRecommendations(),
+      loadRouteAndBudgetPlans()
+    ])
+  } finally {
+    homeLoading.value = false
   }
 })
 </script>

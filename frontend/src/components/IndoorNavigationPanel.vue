@@ -654,14 +654,14 @@ const edgeTypeText = (type) => {
 
 const providerStatusLabel = (provider) => {
   if (provider === 'local_indoor_graph') return '本地图计算引擎'
-  if (provider === 'amap_indoor') return '高德室内地图'
+  if (provider === 'amap_indoor') return '室内地图服务'
   return provider || '未知提供方'
 }
 
 const algorithmLabel = (algorithm) => {
   if (algorithm === 'indoor-dijkstra') return 'Dijkstra 最短路径'
   if (algorithm === 'cross-layer-dijkstra') return '跨层 Dijkstra'
-  if (algorithm === 'amap-indoor-routePath') return '高德室内路线'
+  if (algorithm === 'amap-indoor-routePath') return '室内路线服务'
   return algorithm || '未返回算法'
 }
 

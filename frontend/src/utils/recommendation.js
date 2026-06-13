@@ -164,19 +164,28 @@ export const recommendationReason = (spot, profile, matches) => {
   return `${(parts.length ? parts.slice(0, 3) : ['综合评分、成本和游玩节奏更均衡']).join('，')}。`
 }
 
-export const normalizeRecommendation = (item, profile) => {
+export const normalizeRecommendation = (item, profile, options = {}) => {
   const scenicSpot = item.scenic_spot || item.scenicSpot || item
   const prefs = normalizeProfile(profile)
   const localMatch = preferenceScore(scenicSpot, prefs)
   const backendScore = Number(item.score ?? scenicSpot.score ?? 0)
-  const score = backendScore
-    ? Math.round(localMatch.score * 0.85 + Math.min(100, backendScore) * 0.15)
-    : localMatch.score
+  const displayMetric = item.displayMetric || 'interest'
+  const displayValue = Number(item.displayValue ?? backendScore ?? localMatch.score)
+  const score = options.preserveBackendScore && backendScore
+    ? Math.round(Math.min(100, backendScore))
+    : (backendScore
+      ? Math.round(localMatch.score * 0.85 + Math.min(100, backendScore) * 0.15)
+      : localMatch.score)
+  const backendTags = Array.isArray(item.matchedTags) ? item.matchedTags : []
 
   return {
     scenicSpot,
     score,
-    matchedTags: unique([...localMatch.categories, ...localMatch.tags, ...spotTags(scenicSpot)]).slice(0, 3),
-    reason: recommendationReason(scenicSpot, prefs, localMatch)
+    displayMetric,
+    displayValue,
+    matchedTags: unique([...backendTags, ...localMatch.categories, ...localMatch.tags, ...spotTags(scenicSpot)]).slice(0, 3),
+    reason: options.useBackendReason && item.reason
+      ? item.reason
+      : recommendationReason(scenicSpot, prefs, localMatch)
   }
 }

@@ -51,6 +51,27 @@ const unwrap = (response) => response.data?.data ?? response.data
 
 成就页数据。
 
+成就系统当前公开接口：
+
+| 方法 | 路径 | 用途 |
+| --- | --- | --- |
+| `GET` | `/api/v1/achievements` | 成就总览、护照层级、解锁状态、下一步建议 |
+| `POST` | `/api/v1/scenic-spots/<id>/checkins` | 景点打卡，返回新解锁成就 |
+| `POST` | `/api/v1/achievements/<id>/claim` | 领取数字纪念凭证 |
+| `GET` | `/api/v1/collectibles` | 我的数字纪念凭证列表 |
+| `GET` | `/api/v1/collectibles/<id>` | 单张数字纪念凭证详情 |
+| `POST` | `/api/v1/badge-redemptions` | 提交实体徽章申请 |
+| `GET` | `/api/v1/badge-redemptions` | 查询我的实体徽章申请 |
+| `GET` | `/api/v1/achievement-review-submissions` | 评审队列，仅评审账号可用 |
+| `POST` | `/api/v1/achievement-review-submissions/<id>/decision` | 评审通过或驳回，仅评审账号可用 |
+
+数据库同步口径：
+
+- 结构迁移：`database/migrations/achievement_module_schema.sql`
+- 演示数据：`database/seeds/seed_achievements.sql`
+
+运行时 `achievement_service.cpp` 仍保留兼容性兜底，但正式协作流程以 SQL 迁移和 seed 为准。
+
 ## 景点
 
 ### `GET /api/v1/scenic-spots`
@@ -64,7 +85,19 @@ const unwrap = (response) => response.data?.data ?? response.data
 - `limit`: 返回数量。
 - `offset`: 分页偏移。
 - `max_ticket` 或 `maxTicket`: 最高票价。
-- `sort`: 排序方式。
+- `sort`: 排序方式，支持 `relevance`、`rating`、`hot`、`price`。
+
+查询能力：
+
+- 名称：精确、前缀、包含匹配。
+- 中文简称：按字顺序连字匹配，例如“国博”命中“中国国家博物馆”。
+- 类别：按 `categories.name` 匹配，例如“博物馆”“公园”“校园”。
+- 关键字：匹配景点标签和描述，描述匹配作为兜底，避免过宽召回。
+
+查询性能：
+
+- `database/migrations/scenic_search_indexes.sql` 启用 `pg_trgm`，为名称、描述、分类名补充模糊检索索引。
+- 同一迁移补充 `status + rating/view_count/favorite_count` 组合排序索引，支撑评分优先和热度优先。
 
 前端调用：
 
@@ -189,10 +222,22 @@ SVG 室内拓扑图。
 
 payload 常见字段：
 
-- 偏好分类。
-- 预算。
-- 出行方式。
-- 人群或标签。
+- `preferredCategories`: 偏好分类。
+- `preferredTags`: 偏好标签。
+- `budgetLevel`: 预算偏好。
+- `crowdPreference`: 人流偏好。
+- `intensity`: 游玩强度。
+- `sortBy`: 推荐排序，支持 `interest`、`rating`、`hot`，省略时默认 `interest`。
+
+响应补充字段：
+
+- `sortBy`: 本次实际采用的排序模式。
+- `topKStrategy`: Top-K 部分排序说明。
+- `algorithm`: 推荐分和排序模式说明。
+- `scoreBreakdown.hotScore`: 热度分，基于浏览量和收藏量的对数缩放。
+
+后端推荐不会先全量排序再截取前 10，而是使用小顶堆维护 Top-K 候选池：
+扫描候选景点/学校时只保留当前最好的 `limit` 个结果，复杂度约为 `O(n log k)`。
 
 ## 路线
 

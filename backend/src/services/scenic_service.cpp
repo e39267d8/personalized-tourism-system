@@ -21,10 +21,51 @@ using tourism::support::to_double;
 using tourism::support::to_int;
 
 const std::string kScenicSelectSql = R"SQL(
-    WITH scored AS (
+    WITH behavior_stats AS (
+        SELECT
+            s.id,
+            COALESCE(fav.favorite_events, 0) AS behavior_favorite_count,
+            COALESCE(chk.checkin_events, 0) AS behavior_checkin_count,
+            COALESCE(dia.diary_events, 0) AS diary_mention_count,
+            COALESCE(rte.route_events, 0) AS route_reference_count
+        FROM scenic_spots s
+        LEFT JOIN (
+            SELECT scenic_spot_id, COUNT(*) AS favorite_events
+            FROM user_favorites
+            GROUP BY scenic_spot_id
+        ) fav ON fav.scenic_spot_id = s.id
+        LEFT JOIN (
+            SELECT scenic_spot_id, COUNT(*) AS checkin_events
+            FROM user_scenic_checkins
+            GROUP BY scenic_spot_id
+        ) chk ON chk.scenic_spot_id = s.id
+        LEFT JOIN (
+            SELECT spot_id AS scenic_spot_id, COUNT(*) AS diary_events
+            FROM (
+                SELECT unnest(scenic_spot_ids) AS spot_id
+                FROM travel_diaries
+                WHERE status <> 2
+            ) diary_spots
+            GROUP BY spot_id
+        ) dia ON dia.scenic_spot_id = s.id
+        LEFT JOIN (
+            SELECT gn.scenic_spot_id, COUNT(*) AS route_events
+            FROM route_plans rp
+            JOIN graph_nodes gn
+              ON gn.id = ANY(array_cat(ARRAY[rp.start_node_id, rp.end_node_id], COALESCE(rp.waypoint_node_ids, ARRAY[]::integer[])))
+            WHERE gn.scenic_spot_id IS NOT NULL
+            GROUP BY gn.scenic_spot_id
+        ) rte ON rte.scenic_spot_id = s.id
+    ),
+    scored AS (
         SELECT s.id, s.name, s.description, s.rating, s.address, s.city, s.opening_hours,
                s.ticket_price, s.duration_minutes, s.crowd_level, s.thumbnail_url,
                s.view_count,
+               s.favorite_count,
+               bs.behavior_favorite_count,
+               bs.behavior_checkin_count,
+               bs.diary_mention_count,
+               bs.route_reference_count,
                s.category_id,
                COALESCE(c.name, '景点') AS category,
                COALESCE(array_to_string(s.tags, '|'), '') AS tags,
@@ -46,7 +87,11 @@ const std::string kScenicSelectSql = R"SQL(
                    CASE WHEN $2 = '' THEN 0 WHEN lower(COALESCE(s.description, '')) LIKE '%' || lower($2) || '%' THEN 18 ELSE 0 END +
                    (s.rating * 8) +
                    LEAST(s.favorite_count, 10000) / 500.0 +
-                   LEAST(s.view_count, 100000) / 5000.0
+                   LEAST(s.view_count, 100000) / 5000.0 +
+                   LEAST(bs.behavior_favorite_count, 1000) / 30.0 +
+                   LEAST(bs.behavior_checkin_count, 1000) / 35.0 +
+                   LEAST(bs.diary_mention_count, 1000) / 45.0 +
+                   LEAST(bs.route_reference_count, 1000) / 50.0
                )::numeric(10,2) AS search_score,
                CASE
                    WHEN $2 = '' THEN '综合评分和热度排序'
@@ -60,6 +105,7 @@ const std::string kScenicSelectSql = R"SQL(
                END AS match_reason
         FROM scenic_spots s
         LEFT JOIN categories c ON c.id = s.category_id
+        LEFT JOIN behavior_stats bs ON bs.id = s.id
         WHERE s.status = 1
           AND (
               ($6 <> '' AND s.category_id = NULLIF($6, '')::int)
@@ -103,15 +149,19 @@ const std::string kScenicSelectSql = R"SQL(
     )
     SELECT id, name, description, rating, address, city, opening_hours,
            ticket_price, duration_minutes, crowd_level, thumbnail_url,
-           category_id, category, tags, images, search_score, match_reason
+           category_id, category, tags, images, view_count, favorite_count,
+           behavior_favorite_count, behavior_checkin_count, diary_mention_count, route_reference_count,
+           search_score, match_reason
     FROM deduped
     WHERE display_rank = 1
     ORDER BY
       CASE WHEN $4 = 'rating' THEN rating END DESC,
       CASE WHEN $4 = 'price' THEN ticket_price END ASC,
-      CASE WHEN $4 = 'hot' THEN view_count END DESC,
+      CASE WHEN $4 = 'hot' THEN (behavior_favorite_count * 4 + behavior_checkin_count * 3 + diary_mention_count * 2 + route_reference_count + LEAST(favorite_count, 1000) / 100.0 + LEAST(view_count, 10000) / 1000.0) END DESC,
       search_score DESC,
       rating DESC,
+      behavior_favorite_count DESC,
+      behavior_checkin_count DESC,
       view_count DESC,
       id
     LIMIT $5::int
@@ -163,6 +213,12 @@ crow::json::wvalue scenic_json(const tourism::db::PgResult& rows, int row) {
     item["description"] = rows.value(row, "description");
     item["address"] = rows.value(row, "address");
     item["openingHours"] = rows.value(row, "opening_hours");
+    item["viewCount"] = to_int(rows.value(row, "view_count"));
+    item["favoriteCount"] = to_int(rows.value(row, "favorite_count"));
+    item["behaviorFavoriteCount"] = to_int(rows.value(row, "behavior_favorite_count"));
+    item["behaviorCheckinCount"] = to_int(rows.value(row, "behavior_checkin_count"));
+    item["diaryMentionCount"] = to_int(rows.value(row, "diary_mention_count"));
+    item["routeReferenceCount"] = to_int(rows.value(row, "route_reference_count"));
     if (!rows.value(row, "search_score").empty()) item["score"] = to_double(rows.value(row, "search_score"));
     if (!rows.value(row, "match_reason").empty()) item["matchReason"] = rows.value(row, "match_reason");
     return item;
@@ -210,6 +266,12 @@ ScenicCandidate scenic_candidate_from_row(const tourism::db::PgResult& rows, int
     candidate.ticket_price = to_double(rows.value(row, "ticket_price"));
     candidate.crowd_level = to_int(rows.value(row, "crowd_level"), 2);
     candidate.duration_minutes = to_int(rows.value(row, "duration_minutes"));
+    candidate.view_count = to_int(rows.value(row, "view_count"));
+    candidate.favorite_count = to_int(rows.value(row, "favorite_count"));
+    candidate.behavior_favorite_count = to_int(rows.value(row, "behavior_favorite_count"));
+    candidate.behavior_checkin_count = to_int(rows.value(row, "behavior_checkin_count"));
+    candidate.diary_mention_count = to_int(rows.value(row, "diary_mention_count"));
+    candidate.route_reference_count = to_int(rows.value(row, "route_reference_count"));
     return candidate;
 }
 

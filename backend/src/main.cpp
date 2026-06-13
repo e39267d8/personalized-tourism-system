@@ -1,3 +1,4 @@
+#include "api/achievement_routes.h"
 #include "api/aigc_routes.h"
 #include "api/app.h"
 #include "api/auth_routes.h"
@@ -45,6 +46,7 @@ int main(int argc, char** argv) {
     tourism::api::TourismApp app;
     tourism::api::register_auth_routes(app);
     tourism::api::register_dashboard_routes(app);
+    tourism::api::register_achievement_routes(app);
     tourism::api::register_profile_routes(app);
     tourism::api::register_scenic_routes(app);
     tourism::api::register_recommendation_routes(app);

@@ -31,6 +31,7 @@ struct RouteEdge {
     std::string source;
     double distance = 0.0;
     int duration = 0;
+    int effective_duration = 0;
     double base_weight = 1.0;
     int congestion = 2;
     std::vector<std::pair<double, double>> coordinates;
@@ -49,7 +50,17 @@ struct RouteSearchResult {
     std::vector<RouteEdge> edges;
     double total_distance = 0.0;
     int total_duration = 0;
+    int display_duration = 0;
     double total_weight = 0.0;
+};
+
+struct RouteQualityReport {
+    bool displayable = true;
+    std::string error;
+    int real_road_edges = 0;
+    int generated_connector_edges = 0;
+    int missing_geometry_edges = 0;
+    double max_generated_connector_meters = 0.0;
 };
 
 std::string normalize_transport(const std::string& value);
@@ -61,6 +72,8 @@ RouteSearchResult plan_route_with_waypoints(const RouteGraphData& graph,
                                             const std::string& transport,
                                             const std::string& optimization,
                                             int crowd_tolerance);
+void apply_congestion_travel_time(RouteSearchResult& route, int crowd_tolerance);
+RouteQualityReport assess_route_quality(const RouteSearchResult& route);
 
 crow::json::wvalue route_node_json(const RouteNode& node);
 crow::json::wvalue computed_route_json(const RouteGraphData& graph,

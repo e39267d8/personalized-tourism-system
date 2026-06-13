@@ -24,7 +24,7 @@ function appendLoaderScript() {
     const existingScript = document.querySelector(`script[src="${AMAP_LOADER_URL}"]`)
     if (existingScript) {
       existingScript.addEventListener('load', resolve, { once: true })
-      existingScript.addEventListener('error', () => reject(new Error('高德地图加载器加载失败')), { once: true })
+      existingScript.addEventListener('error', () => reject(new Error('地图服务加载器加载失败')), { once: true })
       return
     }
 
@@ -32,7 +32,7 @@ function appendLoaderScript() {
     script.src = AMAP_LOADER_URL
     script.async = true
     script.onload = resolve
-    script.onerror = () => reject(new Error('高德地图加载器加载失败'))
+    script.onerror = () => reject(new Error('地图服务加载器加载失败'))
     document.head.appendChild(script)
   })
 
@@ -51,7 +51,7 @@ export function getAmapConfigStatus() {
 export async function loadAmap() {
   const { key, securityJsCode } = readAmapConfig()
   if (!key) {
-    throw new Error('请配置 VITE_AMAP_JS_KEY 后使用高德地图')
+    throw new Error('地图服务配置不可用，请联系管理员检查配置')
   }
 
   if (securityJsCode) {
@@ -62,7 +62,7 @@ export async function loadAmap() {
 
   if (!amapPromise) {
     amapPromise = appendLoaderScript().then(() => {
-      if (!window.AMapLoader) throw new Error('高德地图加载器不可用')
+      if (!window.AMapLoader) throw new Error('地图服务加载器不可用')
       return window.AMapLoader.load({
         key,
         version: AMAP_VERSION,

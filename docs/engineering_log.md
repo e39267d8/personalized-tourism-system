@@ -15,6 +15,82 @@
 - 用户可见页面文案默认使用中文。
 - API 路径、JSON 字段、表名、provider 名、算法标识等技术契约可以保留英文。
 
+## 2026-06-13 / feature-lxd-search / 成就系统模块边界与并行协作准备
+
+类型：模块拆分、数据库正式化、并行开发协作、文档规范。
+
+背景：后续会并行推进两条主线。一条负责评分标准里的基础功能，另一条负责评分标准之外的创新点“成就系统”。仓库里成就功能已经具备后端服务、前端页面和演示数据，但此前成就接口混在 `dashboard_routes.cpp`，成就演示数据混在 `seed_demo.sql`，不利于多人并行，也不符合“数据库变更以 SQL 迁移和 seed 为准”的协作规范。
+
+变更：
+
+- 新增 `backend/src/api/achievement_routes.cpp` 和 `backend/include/api/achievement_routes.h`，把成就相关公开接口从 `dashboard_routes.cpp` 中拆出；首页概览接口继续保留在 dashboard 模块。
+- 新增正式迁移 `database/migrations/achievement_module_schema.sql`，把成就编码、景点打卡、游记评审、实体徽章申请和数字纪念凭证相关结构固化到 SQL，减少“运行时自动补表”带来的状态不透明。
+- 新增正式 seed `database/seeds/seed_achievements.sql`，把旅行护照、用户成就进度和数字纪念凭证示例数据从 `seed_demo.sql` 分离；`seed_demo.sql` 继续只承载基础演示路线、游记、评论、收藏和推荐标签。
+- 新增 ADR `docs/adr/0002-achievement-module-boundary.md`，明确基础功能主线与成就创新主线的后端、前端、数据库和共享文件边界。
+- 更新 `QUICKSTART.md`、`database/README.md` 和 `docs/api-runtime.md`，补充成就模块独立迁移和 seed 的执行顺序与接口口径。
+
+验证口径：
+
+- 新拉代码后，如果只需要同步成就模块数据库，应执行：
+  - `database/migrations/achievement_module_schema.sql`
+  - `database/seeds/seed_achievements.sql`
+- 后端成就接口注册入口应位于 `achievement_routes.cpp`，`dashboard_routes.cpp` 不再承载成就业务接口。
+- `seed_demo.sql` 与 `seed_achievements.sql` 可以分别幂等重跑，降低基础功能与创新功能分支同时修改同一 seed 文件的冲突概率。
+
+## 2026-06-12 / feature-lxd-search / 路线规划质量闸门与演示路线清理
+
+类型：路线规划、地图渲染、质量兜底、验收风险治理。
+
+背景：路线规划核查发现，普通路线接口失败时前端会生成演示折线；TSP/拥挤度分层渲染在路线服务几何失败时也可能退回低可信本地图几何或把公交失败降级为步行几何。这会让用户误以为系统生成了真实可走路线，和“修复问题、不搞假的”的验收目标冲突。同时，不能把“拒绝假路线”做成“本地算法失败就直接空白”：如果真实地图路线服务仍可用，应当诚实兜底，但不能把兜底结果冒充 TSP 或拥挤度算法结果。
+
+变更：
+
+- 路线规划页删除前端演示路线 fallback：普通 `POST /api/v1/routes/plan` 失败时显示明确错误，不再用硬编码坐标和插值折线伪造路线。
+- TSP/拥挤度分层渲染关闭“公交失败后改用步行几何”的隐式降级。
+- TSP/拥挤度本地算法失败、节点缺失或质量闸门拒绝时，前端会优先调用真实地图路线服务兜底；兜底成功后页面显示黄色说明，普通步行/骑行/驾车按当前输入顺序显示真实道路路线，地铁公交按起终点显示真实道路路线，并标记 `routeServiceFallback=true`，不冒充 TSP 或拥挤度算法结果。
+- 后端新增 `RouteQualityReport` 与 `assess_route_quality()`，对本地 Dijkstra/TSP/拥挤度路线做展示前检查。
+- 本地路线若存在缺失道路几何、超过 60 米的 `generated` 接入边，或完全由生成接入边拼成且没有真实 OSM 路段支撑，则返回 422，不生成路线。
+- 通过质量闸门的本地路线响应新增 `routeQuality`，包含真实 OSM 路段数、生成接入边数、缺几何边数和最长生成接入边距离，便于验收解释。
+- 真实地图路线服务若只返回文字步骤但没有道路折线，后端不再用起终点坐标连成直线，而是返回“未返回可展示的道路折线”，避免地图上出现误导性的直线。
+- 前端用户可见文案统一使用“地图服务 / 路线服务 / 室内地图服务”，不显示供应商名称或内部配置变量名。
+
+验证口径：
+
+- 普通路线接口失败时，页面应显示“路线规划失败，未生成演示路线”，地图不画假线。
+- `POST /api/v1/routes/plan`、`POST /api/v1/routes/tour`、`POST /api/v1/routes/plan/congestion` 对低质量本地路线应返回 422 和明确原因。
+- 可展示的本地路线响应应包含 `routeQuality.displayable=true`。
+- TSP/拥挤度模式如果本地算法不可展示，但真实地图路线服务成功，页面应显示可走的真实道路路线和黄色兜底说明；如果兜底也失败，则显示明确错误，地图不画线。
+- 普通步行/公交路线仍按真实 polyline 渲染，不受本地质量闸门影响；路线服务未返回 polyline 时不画起终点直线。
+- 前端源码扫描不应出现用户可见的供应商中文名称。
+
+## 2026-06-12 / feature-lxd-search / 推荐 Top-K、查询索引与页面闪屏治理
+
+类型：推荐算法、搜索查询、前端体验、数据库迁移、答辩文档。
+
+背景：评分要求明确要求旅游景点和学校推荐支持热度、评价和个人兴趣排序，并且用户通常只看前 10 个结果，应避免全量排序后截断；搜索要求支持名称、类别、关键字查询，并在多结果时支持热度和评价排序。页面核查时还发现首页、搜索页、推荐页存在“先显示演示/fallback 数据再替换真实数据”的闪屏观感。
+
+变更：
+
+- `POST /api/v1/recommendations/personalized` 新增可选 `sortBy`，支持 `interest`、`rating`、`hot`，默认 `interest`。
+- 后端推荐继续采用小顶堆 Top-K 部分排序，只维护前 `limit` 个候选，避免对全部景点/学校做完整排序后再截取。
+- 推荐候选补充 `view_count` 和 `favorite_count`，热度模式按浏览量、收藏量的对数缩放计算 `hotScore`，评价模式按评分优先并用热度/综合分兜底。
+- 前端推荐页新增“个人兴趣优先 / 评价优先 / 热度优先”排序切换，后端返回顺序不再被前端二次全量排序覆盖。
+- 搜索页首次加载改为空数据 + 骨架屏；路由 query 作为搜索触发源，请求序号会丢弃过期响应，避免快速输入或切换排序时旧响应覆盖新结果。
+- 首页不再先渲染 fallback 推荐/路线/预算方案，首次加载展示稳定骨架屏，接口失败时才启用本地 fallback。
+- 新增正式迁移 `database/migrations/scenic_search_indexes.sql`，启用 `pg_trgm`，为景点/学校名称、描述、分类名和评分/热度排序补充索引。
+- 新增长期维护文档 `docs/答辩文档.md`，开头收录评分加分项/减分项，并先写“（1）旅游推荐”章节，用答辩口径解释 Top-K、动态推荐和多维查询排序。
+
+验证口径：
+
+- 前端构建应通过，首页、发现景点、推荐页进入时不再先闪出演示数据后替换。
+- 推荐页切换 `interest/rating/hot` 时，请求 payload 包含 `sortBy`，响应顺序由后端 Top-K 排序决定。
+- 搜索页输入“国博”等中文简称仍可命中中国国家博物馆；切换 `rating` 和 `hot` 时结果按对应字段排序。
+- 已有数据库需要补跑：
+
+```bat
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\scenic_search_indexes.sql
+```
+
 ## 2026-06-10 / feature-lxd-search / 文档职责收敛
 
 类型：文档规范、协作规则、API 文档补全。
@@ -325,6 +401,54 @@
 补记：
 
 - 如果队友 `git pull` 后路线页仍显示旧的直线演示图，优先检查是否已重跑 `database/seeds/seed_demo.sql`；这次路线修复有一部分落在正式 seed 数据里，不只是前后端代码。
+
+## 2026-06-13 / feature-lxd-search / 推荐排序恢复真实差异、定位路线可感知、开发启动链纠偏
+
+类型：推荐算法、路线规划交互、开发脚本、验收稳定性。
+
+背景：验收复测时发现三个表面上像“功能做了但没起作用”的问题。第一，推荐页切换“个人兴趣 / 评价 / 热度”后结果几乎不变；第二，路线规划页点击“定位路线”缺少明显反馈，用户主观感受接近“没反应”；第三，拥挤度感知和“时间优先 / 距离优先”虽然代码里已有差异化逻辑，但实际复测经常看起来还是一样。继续排查后确认，问题不只在算法本身，也在开发环境长期误跑旧的 `build-mingw` 后端可执行文件，导致“代码已经改了，页面却还像旧版本”。
+
+变更：
+
+- 修正 `scripts/run_backend_dev.ps1`，与 `run_backend_dev.cmd` 保持一致：
+  - 候选可执行文件加入 `backend/build/bin/Release/tourism_server.exe`
+  - 改为按最后修改时间选择最新构建产物
+  - 避免 PowerShell 脚本继续固定优先启动旧 `build-mingw` 版本
+- 调整推荐算法权重与可解释指标：
+  - `RecommendationScore` 新增 `intensity_score`、`hot_signal_score`
+  - 个人兴趣排序不再只被“评分 4.2 大面积并列”拖平，而是额外考虑游玩时长与动态热度信号
+  - 评价排序继续以评分为主，但用热度信号和综合分兜底，减少大面积并列时的“排序切了像没切”
+  - 热度排序直接按真实行为信号排名：收藏、打卡、游记提及、路线引用，加上历史收藏/浏览兜底
+- 推荐接口 `POST /api/v1/recommendations/personalized` 的展示字段同步增强：
+  - `displayValue` 在热度模式下优先返回真实热度信号值，而不是仅返回归一化热度分
+  - `scoreBreakdown` 增加 `intensityScore` 与 `hotSignalScore`
+  - `algorithm` 描述更新为“兴趣 + 评分 + 动态热度 + 时长”的实际逻辑
+- 路线规划页“定位路线”按钮补足可感知交互：
+  - `fitRoute()` 改为 `flyToBounds()` + `maxZoom`
+  - 定位时对路线折线做短暂高亮，对起终点 tooltip 做短暂提示
+  - 解决“地图明明重新 fit 了，但用户肉眼几乎感觉不到变化”的体验问题
+
+验收口径：
+
+- 推荐排序接口实测：
+  - `sortBy=interest` 前列结果为 `颐和园 -> 中国国家博物馆 -> 故宫博物院`
+  - `sortBy=rating` 前列结果为 `中国国家博物馆 -> 故宫博物院 -> 颐和园`
+  - `sortBy=hot` 前列结果为 `中国国家博物馆 -> 故宫博物院 -> 正阳门箭楼 -> 鼓楼`
+  - 三种排序结果已不再“看起来完全一样”
+- 当前库中 `scenic_spots.view_count` / `favorite_count` 仍几乎全为 0，因此热度排序的主要有效信号来自：
+  - `user_favorites`
+  - `user_scenic_checkins`
+  - `travel_diaries.scenic_spot_ids`
+  - `route_plans` 引用到的 `graph_nodes.scenic_spot_id`
+- 拥挤度接口实测（`start_id=6,end_id=1,travel_mode=walk`）：
+  - `distance @ 07:00`：`6 -> 102 -> 2 -> 1`，`2.3 km / 58 分钟`
+  - `time @ 07:00`：`6 -> 102 -> 2 -> 104 -> 1`，`3.5 km / 53 分钟`
+  - `time @ 23:00`：回到 `6 -> 102 -> 2 -> 1`，`2.3 km / 32 分钟`
+  - 说明“时间优先”和“距离优先”在高峰时段已经能真实走出不同路径，而非前端演示差异
+
+补记：
+
+- 这次问题里最隐蔽的不是算法，而是“误跑旧后端”造成的假回归。后续如果再出现“代码改了但页面完全没变化”，优先先确认实际监听 8080 的可执行文件路径。
 
 ## 2026-06-07 / local-save-tourism / 课设算法与演示数据补齐归档
 

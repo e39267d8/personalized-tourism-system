@@ -13,14 +13,17 @@
 - `imports/internal_navigation_pku.sql`：北京大学校园内部道路图，使用现有 `graph_nodes`、`graph_edges`、`facilities`，不新建第二套校园图表。
 - `indoor_navigation_schema.sql`：室内导航领域表结构，包含 `indoor_buildings`、`indoor_floors`、`indoor_features`、`indoor_edges` 和 `indoor_route_audit`。
 - `seeds/seed_indoor_navigation.sql`：北大红楼首批正式室内图数据，使用 `local_indoor_graph` provider，不是独立数据库，也不是前端假 Demo。
+- `migrations/achievement_module_schema.sql`：成就系统正式结构迁移，补齐成就编码、景点打卡、游记评审、实体徽章申请与数字纪念凭证相关表和索引。
 - `migrations/diary_compression_schema.sql`：旅行日记 Huffman 压缩存储迁移，`travel_diaries` 增加 `content_compressed` 和 `content_original_bytes` 列。
 - `migrations/cross_layer_navigation_schema.sql`：室内外跨层导航迁移，`indoor_buildings` 增加 `outdoor_node_id` 室外路网锚点并按名称自动绑定。
 - `migrations/diary_location_cover_schema.sql`：日记地点与封面迁移，`travel_diaries` 增加 `cover_image`、`location_name`、`location_address`、`location_latitude`、`location_longitude`、`location_poi_id` 六列；存量日记封面自动用 `images[1]` 填充。
 - `migrations/diary_animation_schema.sql`：日记动画预览迁移，`travel_diaries` 增加 `videos` 和 `animation_storyboard` 列。
+- `migrations/scenic_search_indexes.sql`：景点/学校查询与排序索引迁移，启用 `pg_trgm` 并补充名称、描述、标签、类型和热度/评分排序索引。
 - `seeds/seed_extra_users.sql`：补充演示用户，供多人互动和审核演示使用。
 - `seeds/seed_facilities.sql`：补充景区设施数据。
 - `seeds/seed_foods.sql`：补齐美食推荐依赖的餐饮设施数据。
-- `seeds/seed_demo.sql`：基础演示关系数据，不再插入景点；它会按名称从 `scenic_spots` 动态查找景点 id，再插入路线、游记、评论、收藏和成就数据。
+- `seeds/seed_demo.sql`：基础演示关系数据，不再插入景点；它会按名称从 `scenic_spots` 动态查找景点 id，再插入路线、游记、评论、收藏和推荐标签数据。
+- `seeds/seed_achievements.sql`：成就系统演示 seed，负责旅行护照、用户成就进度和数字纪念凭证示例数据。
 - `verify_demo.sql`：初始化后检查核心表数据量。
 - `migration.sql`：旧数据库升级参考；全新建库通常不需要执行。
 
@@ -37,14 +40,17 @@ psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\imports\intern
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_campus_spots.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\imports\internal_navigation_pku.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\indoor_navigation_schema.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\achievement_module_schema.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\diary_compression_schema.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\cross_layer_navigation_schema.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\diary_location_cover_schema.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\diary_animation_schema.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\scenic_search_indexes.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_extra_users.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_facilities.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_foods.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_demo.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_achievements.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_indoor_navigation.sql
 psql -U postgres -d tourism_system -f database\maintenance\repair_data_quality.sql
 psql -U postgres -d tourism_system -f database\verify_demo.sql
@@ -65,6 +71,13 @@ psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\indoor_navigat
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_indoor_navigation.sql
 ```
 
+已有数据库只补成就系统结构与演示数据：
+
+```bat
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\achievement_module_schema.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_achievements.sql
+```
+
 已有数据库只补日记相关迁移和室内外跨层导航（迁移都幂等，可放心重复执行）：
 
 ```bat
@@ -74,6 +87,12 @@ psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\dia
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\cross_layer_navigation_schema.sql
 ```
 
+已有数据库只补景点/学校查询和排序索引（迁移幂等，可放心重复执行）：
+
+```bat
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\scenic_search_indexes.sql
+```
+
 已有数据库只补美食推荐演示数据：
 
 ```bat
@@ -81,15 +100,18 @@ psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_fac
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_foods.sql
 ```
 
-已有数据库只补路线规划演示路网 / 成就 seed（本文件已改为幂等，可重复执行）：
+已有数据库只补路线规划演示路网和成就演示数据：
 
 ```bat
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_demo.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_achievements.sql
 ```
 
 说明：
 
-- `seed_demo.sql` 现在会同时补演示 `graph_edges.geometry`、拥挤度绕行样例边，以及按 `code` upsert 成就数据。
+- `seed_demo.sql` 现在只负责基础演示路线、游记、评论、收藏和推荐标签。
+- `seed_achievements.sql` 单独负责旅行护照、数字纪念凭证和成就进度演示数据，更适合与创新功能分支并行维护。
+- 如果只拉取了成就系统分支，至少要同步 `achievement_module_schema.sql` 和 `seed_achievements.sql`，否则 `/api/v1/achievements` 页面可能只显示示例护照或接口报表结构缺失。
 - 如果路线页“拥挤度感知”模式仍画旧的节点直线，先重跑这条 SQL，再刷新页面验证。
 
 补完后验证室内导航数据：

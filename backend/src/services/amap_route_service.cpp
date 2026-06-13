@@ -121,7 +121,7 @@ std::string http_get_text(const std::string& url) {
                                         0);
     if (!request) {
         InternetCloseHandle(internet);
-        throw std::runtime_error("无法请求高德 Web 服务");
+        throw std::runtime_error("无法请求地图路线服务");
     }
 
     std::string body;
@@ -176,15 +176,15 @@ crow::json::rvalue amap_request_json(const std::string& path, const std::vector<
         std::this_thread::sleep_for(std::chrono::milliseconds(attempt == 0 ? 180 : 600 * attempt));
 
         auto payload = crow::json::load(http_get_text(amap_url(path, params)));
-        if (!payload) throw std::runtime_error("高德返回了无效 JSON");
+        if (!payload) throw std::runtime_error("地图路线服务返回了无效 JSON");
         if (!payload.has("status") || json_value_string(payload["status"]) == "1") return payload;
 
-        std::string info = payload.has("info") ? json_value_string(payload["info"], "高德请求失败") : "高德请求失败";
+        std::string info = payload.has("info") ? json_value_string(payload["info"], "地图路线服务请求失败") : "地图路线服务请求失败";
         std::string infocode = payload.has("infocode") ? json_value_string(payload["infocode"]) : "";
         last_error = infocode.empty() ? info : info + " (" + infocode + ")";
         if (!retryable_amap_error(info) && !retryable_amap_error(infocode)) break;
     }
-    throw std::runtime_error(last_error.empty() ? "高德请求失败" : last_error);
+    throw std::runtime_error(last_error.empty() ? "地图路线服务请求失败" : last_error);
 }
 
 bool parse_location(const std::string& location, double& longitude, double& latitude) {
@@ -319,7 +319,7 @@ double amap_candidate_score(const crow::json::rvalue& item, const std::string& o
 }
 
 crow::json::rvalue best_candidate_from_array(const crow::json::rvalue& items, const std::string& optimization) {
-    if (items.size() == 0) throw std::runtime_error("高德没有返回可用候选路线");
+    if (items.size() == 0) throw std::runtime_error("地图路线服务没有返回可用候选路线");
     if (optimization != "distance" && optimization != "time") return items[0];
 
     size_t best_index = 0;
@@ -341,14 +341,14 @@ crow::json::rvalue best_path_from_amap_payload(const crow::json::rvalue& payload
     if (payload.has("data") && payload["data"].has("paths") && payload["data"]["paths"].size() > 0) {
         return best_candidate_from_array(payload["data"]["paths"], optimization);
     }
-    throw std::runtime_error("高德没有返回可用路线");
+    throw std::runtime_error("地图路线服务没有返回可用路线");
 }
 
 crow::json::rvalue best_transit_from_amap_payload(const crow::json::rvalue& payload, const std::string& optimization) {
     if (payload.has("route") && payload["route"].has("transits") && payload["route"]["transits"].size() > 0) {
         return best_candidate_from_array(payload["route"]["transits"], optimization);
     }
-    throw std::runtime_error("高德没有返回可用公交/地铁路线");
+    throw std::runtime_error("地图路线服务没有返回可用公交/地铁路线");
 }
 
 std::string amap_json_string_field(const crow::json::rvalue& value, const std::string& key) {
@@ -524,12 +524,7 @@ crow::json::wvalue amap_route_json(const AmapRoutePlan& plan,
     }
 
     if (coordinates.empty()) {
-        for (const auto& place : plan.places) {
-            crow::json::wvalue::list point;
-            point.push_back(place.latitude);
-            point.push_back(place.longitude);
-            coordinates.push_back(crow::json::wvalue(std::move(point)));
-        }
+        throw std::runtime_error("地图路线服务未返回可展示的道路折线");
     }
 
     std::ostringstream distance;
@@ -548,7 +543,7 @@ crow::json::wvalue amap_route_json(const AmapRoutePlan& plan,
     data["cost"] = travel_mode == "walk" ? 0 : std::max(3, static_cast<int>(plan.total_distance / 1000.0 * 2));
     data["intensity"] = plan.total_distance > 3500 ? "中等" : "轻松";
     data["transport"] = amap_direction_transport(travel_mode);
-    data["bestFor"] = optimization_label(optimization) + " · 高德路线规划";
+    data["bestFor"] = optimization_label(optimization) + " · 真实道路路线规划";
     data["total_distance_meters"] = static_cast<int>(plan.total_distance);
     data["total_duration_seconds"] = plan.total_duration;
     data["usedAmap"] = true;

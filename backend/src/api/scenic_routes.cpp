@@ -728,7 +728,7 @@ void register_scenic_routes(TourismApp& app) {
             auto rows = exec_params(db, R"SQL(
                 SELECT s.id, s.name, s.description, s.rating, s.address, s.city, s.opening_hours,
                        s.ticket_price, s.duration_minutes, s.crowd_level, s.thumbnail_url,
-                       s.category_id,
+                       s.view_count, s.favorite_count, s.category_id,
                        COALESCE(c.name, '景点') AS category,
                        COALESCE(array_to_string(s.tags, '|'), '') AS tags,
                        COALESCE(array_to_string(s.images, '|'), '') AS images

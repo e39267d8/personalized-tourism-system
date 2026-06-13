@@ -61,12 +61,23 @@
         <div class="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 class="text-lg font-semibold">搜索结果</h2>
-            <p class="mt-1 text-sm text-slate-500">找到 {{ spots.length }} 个景点，已按综合相关度排序。</p>
+            <p class="mt-1 text-sm text-slate-500">找到 {{ spots.length }} 个景点，已按{{ sortLabel }}排序。</p>
           </div>
           <span class="rounded-md bg-teal-50 px-3 py-1 text-sm font-semibold text-teal-800">{{ sourceLabel }}</span>
         </div>
 
-        <div class="mt-5 grid gap-4 md:grid-cols-2">
+        <div v-if="loading && !spots.length" class="mt-5 grid gap-4 md:grid-cols-2">
+          <div v-for="item in 4" :key="item" class="overflow-hidden rounded-md border border-slate-200 bg-white">
+            <div class="h-40 w-full animate-pulse bg-slate-100"></div>
+            <div class="space-y-3 p-4">
+              <div class="h-4 w-2/3 animate-pulse rounded bg-slate-100"></div>
+              <div class="h-3 w-full animate-pulse rounded bg-slate-100"></div>
+              <div class="h-3 w-5/6 animate-pulse rounded bg-slate-100"></div>
+            </div>
+          </div>
+        </div>
+
+        <div v-else class="mt-5 grid gap-4 md:grid-cols-2">
           <router-link
             v-for="spot in spots"
             :key="spot.id"
@@ -103,7 +114,7 @@
           </router-link>
         </div>
 
-        <div v-if="!spots.length" class="mt-5 rounded-md border border-dashed border-slate-300 p-8 text-center">
+        <div v-if="ready && !loading && !spots.length" class="mt-5 rounded-md border border-dashed border-slate-300 p-8 text-center">
           <div class="text-lg font-semibold">没有找到匹配景点</div>
           <p class="mt-2 text-sm text-slate-500">试试缩短关键词，或放宽门票预算。</p>
         </div>
@@ -126,22 +137,52 @@ const query = ref(typeof route.query.q === 'string' ? route.query.q : '')
 const category = ref('')
 const maxTicket = ref(120)
 const sort = ref('relevance')
-const spots = ref(fallbackSpots)
+const spots = ref([])
+const categoryOptions = ref([])
 const suggestions = ref([])
+const loading = ref(false)
+const ready = ref(false)
+let spotsRequestSeq = 0
+let suggestionsRequestSeq = 0
 const sourceLabel = ref('精选景点')
+const sortLabels = {
+  relevance: '综合相关度',
+  rating: '评分',
+  price: '低价',
+  hot: '热度'
+}
 
-const categories = computed(() => [...new Set(spots.value.map(spot => spot.category).filter(Boolean))])
+const categories = computed(() => {
+  if (categoryOptions.value.length) return categoryOptions.value
+  return [...new Set(spots.value.map(spot => spot.category).filter(Boolean))]
+})
+const sortLabel = computed(() => sortLabels[sort.value] || sortLabels.relevance)
+
+const loadCategories = async () => {
+  try {
+    const response = await tourismApi.scenicCategories()
+    categoryOptions.value = (response.items || []).map(item => item.name).filter(Boolean)
+  } catch (error) {
+    categoryOptions.value = []
+  }
+}
 
 const loadSuggestions = async () => {
+  const seq = ++suggestionsRequestSeq
   try {
     const response = await tourismApi.searchSuggestions({ q: query.value.trim() })
+    if (seq !== suggestionsRequestSeq) return
     suggestions.value = response.items || []
   } catch (error) {
+    if (seq !== suggestionsRequestSeq) return
     suggestions.value = []
   }
 }
 
 const loadSpots = async () => {
+  const seq = ++spotsRequestSeq
+  loading.value = true
+  ready.value = false
   try {
     const response = await tourismApi.scenicSpots({
       q: query.value.trim(),
@@ -150,18 +191,30 @@ const loadSpots = async () => {
       sort: sort.value,
       limit: 50
     })
+    if (seq !== spotsRequestSeq) return
     spots.value = response.items || []
+    ready.value = true
     sourceLabel.value = '智能检索'
   } catch (error) {
+    if (seq !== spotsRequestSeq) return
     spots.value = fallbackSpots
+    ready.value = true
     sourceLabel.value = '精选景点'
+  } finally {
+    if (seq === spotsRequestSeq) {
+      loading.value = false
+    }
   }
 }
 
 const runSearch = () => {
-  router.push({ path: '/search', query: query.value.trim() ? { q: query.value.trim() } : {} })
-  loadSpots()
-  loadSuggestions()
+  const q = query.value.trim()
+  if ((route.query.q || '') === q) {
+    loadSpots()
+    loadSuggestions()
+    return
+  }
+  router.push({ path: '/search', query: q ? { q } : {} })
 }
 
 const useSuggestion = (item) => {
@@ -181,6 +234,7 @@ watch(
 watch([category, maxTicket, sort], loadSpots)
 
 onMounted(() => {
+  loadCategories()
   loadSpots()
   loadSuggestions()
 })

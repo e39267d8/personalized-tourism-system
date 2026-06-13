@@ -1,6 +1,7 @@
 #include "services/recommendation_service.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <queue>
 #include <set>
@@ -36,6 +37,12 @@ double clamp01(double value) {
     return std::max(0.0, std::min(1.0, value));
 }
 
+double normalized_rating(double rating) {
+    if (rating <= 0.0) return 0.0;
+    if (rating >= 5.0) return 1.0;
+    return clamp01((rating - 3.5) / 1.5);
+}
+
 double budget_score(double ticket_price, const std::string& budget_level) {
     if (budget_level == "low") {
         if (ticket_price <= 0) return 1.0;
@@ -66,6 +73,69 @@ double crowd_score(int crowd_level, const std::string& crowd_preference) {
         return 0.45;
     }
     return 0.75;
+}
+
+double intensity_score(int duration_minutes, const std::string& intensity) {
+    if (duration_minutes <= 0) return 0.6;
+    if (intensity == "light") {
+        if (duration_minutes <= 90) return 1.0;
+        if (duration_minutes <= 180) return 0.75;
+        if (duration_minutes <= 300) return 0.45;
+        return 0.2;
+    }
+    if (intensity == "high") {
+        if (duration_minutes >= 240) return 1.0;
+        if (duration_minutes >= 180) return 0.8;
+        if (duration_minutes >= 120) return 0.6;
+        return 0.3;
+    }
+    if (duration_minutes >= 90 && duration_minutes <= 210) return 1.0;
+    if (duration_minutes >= 60 && duration_minutes <= 300) return 0.75;
+    return 0.45;
+}
+
+std::string normalize_sort_by(std::string sort_by) {
+    std::transform(sort_by.begin(), sort_by.end(), sort_by.begin(), [](unsigned char ch) {
+        return static_cast<char>(std::tolower(ch));
+    });
+    if (sort_by == "rating" || sort_by == "hot" || sort_by == "interest") return sort_by;
+    if (sort_by == "personalized") return "interest";
+    return "interest";
+}
+
+double hot_score(int view_count, int favorite_count) {
+    double views = std::log1p(static_cast<double>(std::max(view_count, 0))) * 8.0;
+    double favorites = std::log1p(static_cast<double>(std::max(favorite_count, 0))) * 12.0;
+    return std::round(std::min(100.0, views + favorites) * 100.0) / 100.0;
+}
+
+double behavior_hot_score(const ScenicCandidate& spot) {
+    double views = std::log1p(static_cast<double>(std::max(spot.view_count, 0))) * 4.0;
+    double favorites = std::log1p(static_cast<double>(std::max(spot.favorite_count, 0))) * 6.0;
+    double behavior_favorites = std::log1p(static_cast<double>(std::max(spot.behavior_favorite_count, 0))) * 22.0;
+    double checkins = std::log1p(static_cast<double>(std::max(spot.behavior_checkin_count, 0))) * 16.0;
+    double diary_mentions = std::log1p(static_cast<double>(std::max(spot.diary_mention_count, 0))) * 13.0;
+    double route_refs = std::log1p(static_cast<double>(std::max(spot.route_reference_count, 0))) * 11.0;
+    double score = views + favorites + behavior_favorites + checkins + diary_mentions + route_refs;
+    return std::round(std::min(100.0, score) * 100.0) / 100.0;
+}
+
+double behavior_signal_score(const ScenicCandidate& spot) {
+    return static_cast<double>(std::max(spot.behavior_favorite_count, 0)) * 4.0 +
+           static_cast<double>(std::max(spot.behavior_checkin_count, 0)) * 3.0 +
+           static_cast<double>(std::max(spot.diary_mention_count, 0)) * 2.0 +
+           static_cast<double>(std::max(spot.route_reference_count, 0)) +
+           static_cast<double>(std::max(spot.favorite_count, 0)) / 10.0 +
+           static_cast<double>(std::max(spot.view_count, 0)) / 100.0;
+}
+
+bool has_behavior_signal(const ScenicCandidate& spot) {
+    return spot.behavior_favorite_count > 0 ||
+           spot.behavior_checkin_count > 0 ||
+           spot.diary_mention_count > 0 ||
+           spot.route_reference_count > 0 ||
+           spot.view_count > 0 ||
+           spot.favorite_count > 0;
 }
 
 bool has_preferences(const RecommendationProfile& profile) {
@@ -154,14 +224,31 @@ RecommendationScore score_candidate(const ScenicCandidate& spot, const Recommend
         }
     }
 
-    result.rating_score = clamp01(spot.rating / 5.0);
+    result.rating_score = normalized_rating(spot.rating);
     result.budget_score = budget_score(spot.ticket_price, profile.budget_level);
     result.crowd_score = crowd_score(spot.crowd_level, profile.crowd_preference);
-    result.score = result.tag_score * 50.0 +
-                   result.category_score * 20.0 +
-                   result.rating_score * 15.0 +
-                   result.budget_score * 10.0 +
-                   result.crowd_score * 5.0;
+    result.intensity_score = intensity_score(spot.duration_minutes, profile.intensity);
+    result.hot_score = behavior_hot_score(spot);
+    result.hot_signal_score = behavior_signal_score(spot);
+
+    double hot_component = has_behavior_signal(spot)
+        ? clamp01(result.hot_score / 100.0)
+        : result.rating_score;
+    if (!has_preferences(profile)) {
+        result.score = result.rating_score * 28.0 +
+                       hot_component * 28.0 +
+                       result.budget_score * 14.0 +
+                       result.crowd_score * 12.0 +
+                       result.intensity_score * 18.0;
+    } else {
+        result.score = result.tag_score * 34.0 +
+                       result.category_score * 18.0 +
+                       result.rating_score * 14.0 +
+                       result.budget_score * 8.0 +
+                       result.crowd_score * 6.0 +
+                       result.intensity_score * 10.0 +
+                       hot_component * 10.0;
+    }
     result.score = std::round(result.score * 100.0) / 100.0;
     result.reason = reason_for(spot, profile, result, !has_preferences(profile));
     return result;
@@ -176,11 +263,19 @@ std::vector<RecommendationScore> rank_personalized_recommendations(
     if (limit <= 0) limit = 6;
 
     // Use min-heap for partial sorting (O(n log k) instead of O(n log n))
-    // Heap top is the smallest score - the "cutoff" for the current top-k
+    // Heap top is the worst current item - the "cutoff" for the current top-k.
     struct HeapEntry {
         RecommendationScore value;
+        double rank = 0.0;
+        double tie_1 = 0.0;
+        double tie_2 = 0.0;
+        double tie_3 = 0.0;
+
         bool operator<(const HeapEntry& other) const {
-            if (value.score != other.value.score) return value.score > other.value.score;
+            if (rank != other.rank) return rank > other.rank;
+            if (tie_1 != other.tie_1) return tie_1 > other.tie_1;
+            if (tie_2 != other.tie_2) return tie_2 > other.tie_2;
+            if (tie_3 != other.tie_3) return tie_3 > other.tie_3;
             return value.scenic_spot_id < other.value.scenic_spot_id;
         }
     };
@@ -190,17 +285,45 @@ std::vector<RecommendationScore> rank_personalized_recommendations(
     if (normalized.budget_level.empty()) normalized.budget_level = "medium";
     if (normalized.crowd_preference.empty()) normalized.crowd_preference = "any";
     if (normalized.intensity.empty()) normalized.intensity = "medium";
+    normalized.sort_by = normalize_sort_by(normalized.sort_by);
+
+    auto make_entry = [&](RecommendationScore scored) {
+        HeapEntry entry;
+        entry.value = std::move(scored);
+        if (normalized.sort_by == "rating") {
+            entry.rank = entry.value.rating_score;
+            entry.tie_1 = entry.value.hot_score;
+            entry.tie_2 = entry.value.hot_signal_score;
+        } else if (normalized.sort_by == "hot") {
+            entry.rank = entry.value.hot_score;
+            entry.tie_1 = entry.value.hot_signal_score;
+            entry.tie_2 = entry.value.rating_score;
+        } else {
+            entry.rank = entry.value.score;
+            entry.tie_1 = entry.value.tag_score + entry.value.category_score + entry.value.intensity_score;
+            entry.tie_2 = entry.value.hot_score + entry.value.rating_score;
+        }
+        entry.tie_3 = static_cast<double>(-entry.value.scenic_spot_id);
+        return entry;
+    };
+
+    auto is_better = [](const HeapEntry& left, const HeapEntry& right) {
+        if (left.rank != right.rank) return left.rank > right.rank;
+        if (left.tie_1 != right.tie_1) return left.tie_1 > right.tie_1;
+        if (left.tie_2 != right.tie_2) return left.tie_2 > right.tie_2;
+        if (left.tie_3 != right.tie_3) return left.tie_3 > right.tie_3;
+        return left.value.scenic_spot_id < right.value.scenic_spot_id;
+    };
 
     for (const auto& candidate : candidates) {
-        RecommendationScore scored = score_candidate(candidate, normalized);
+        HeapEntry entry = make_entry(score_candidate(candidate, normalized));
         if (static_cast<int>(min_heap.size()) < limit) {
-            min_heap.push({std::move(scored)});
+            min_heap.push(std::move(entry));
         } else if (!min_heap.empty()) {
             const auto& cutoff = min_heap.top();
-            if (scored.score > cutoff.value.score ||
-                (scored.score == cutoff.value.score && scored.scenic_spot_id < cutoff.value.scenic_spot_id)) {
+            if (is_better(entry, cutoff)) {
                 min_heap.pop();
-                min_heap.push({std::move(scored)});
+                min_heap.push(std::move(entry));
             }
         }
     }

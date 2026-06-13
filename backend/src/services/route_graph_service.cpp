@@ -3,6 +3,7 @@
 #include "support/api_helpers.h"
 
 #include <algorithm>
+#include <cmath>
 #include <iomanip>
 #include <limits>
 #include <queue>
@@ -20,6 +21,8 @@ using tourism::support::to_double;
 using tourism::support::to_int;
 using tourism::support::transport_label;
 
+constexpr double kMaxGeneratedConnectorMeters = 60.0;
+
 // 拥挤惩罚用乘法因子：拥挤的本质是让这条边"通行变慢"，惩罚应与边的
 // 体量成正比（原先固定加法对长边九牛一毛，时段变化永远不会触发绕行）。
 // 时间优先对拥挤最敏感（0.4/级），距离优先最不敏感（0.15/级，"我就要最短路程"）。
@@ -32,6 +35,12 @@ double route_edge_weight(const RouteEdge& edge, const std::string& optimization,
         return (edge.distance / 120.0 + edge.duration / 60.0) * (1.0 + crowd_penalty * 0.2) + mode_cost * 20.0;
     }
     return (edge.distance / 90.0 + edge.duration / 45.0 + edge.base_weight) * (1.0 + crowd_penalty * 0.3);
+}
+
+int effective_edge_duration(const RouteEdge& edge, int crowd_tolerance) {
+    double crowd_penalty = std::max(0, edge.congestion - crowd_tolerance);
+    double multiplier = 1.0 + crowd_penalty * 0.35;
+    return std::max(edge.duration, static_cast<int>(std::round(edge.duration * multiplier)));
 }
 
 RouteSearchResult dijkstra_route(const RouteGraphData& graph,
@@ -105,6 +114,7 @@ RouteSearchResult dijkstra_route(const RouteGraphData& graph,
         result.total_duration += edge.duration;
         result.total_weight += route_edge_weight(edge, optimization, crowd_tolerance);
     }
+    result.display_duration = result.total_duration;
     result.success = true;
     return result;
 }
@@ -319,8 +329,51 @@ RouteSearchResult plan_route_with_waypoints(const RouteGraphData& graph,
         combined.used_transport_fallback = combined.used_transport_fallback || segment.used_transport_fallback;
     }
 
+    combined.display_duration = combined.total_duration;
     combined.success = true;
     return combined;
+}
+
+void apply_congestion_travel_time(RouteSearchResult& route, int crowd_tolerance) {
+    int display_duration = 0;
+    for (auto& edge : route.edges) {
+        edge.effective_duration = effective_edge_duration(edge, crowd_tolerance);
+        display_duration += edge.effective_duration;
+    }
+    route.display_duration = display_duration > 0 ? display_duration : route.total_duration;
+}
+
+RouteQualityReport assess_route_quality(const RouteSearchResult& route) {
+    RouteQualityReport report;
+    if (!route.success || route.edges.empty()) return report;
+
+    for (const auto& edge : route.edges) {
+        if (edge.source == "osm") {
+            report.real_road_edges += 1;
+        } else if (edge.source == "generated") {
+            report.generated_connector_edges += 1;
+            report.max_generated_connector_meters = std::max(report.max_generated_connector_meters, edge.distance);
+        }
+        if (edge.coordinates.empty()) report.missing_geometry_edges += 1;
+    }
+
+    if (report.missing_geometry_edges > 0) {
+        report.displayable = false;
+        report.error = "当前本地路网存在缺少道路几何的路段，未生成路线，避免展示直线示意路线。";
+        return report;
+    }
+    if (report.max_generated_connector_meters > kMaxGeneratedConnectorMeters) {
+        report.displayable = false;
+        report.error = "当前路线依赖过长设施接入边，可能穿越建筑或不可通行区域，未生成路线。";
+        return report;
+    }
+    if (report.real_road_edges == 0 && report.generated_connector_edges > 0) {
+        report.displayable = false;
+        report.error = "当前路线缺少真实道路路段支撑，未生成仅由接入线拼成的示意路线。";
+        return report;
+    }
+
+    return report;
 }
 
 crow::json::wvalue route_node_json(const RouteNode& node) {
@@ -373,7 +426,8 @@ crow::json::wvalue computed_route_json(const RouteGraphData& graph,
         segment["transportMode"] = edge.mode;
         segment["source"] = edge.source;
         segment["distance"] = edge.distance;
-        segment["duration"] = edge.duration;
+        segment["duration"] = edge.effective_duration > 0 ? edge.effective_duration : edge.duration;
+        segment["baseDuration"] = edge.duration;
         segment["congestion"] = edge.congestion;
         segments.push_back(std::move(segment));
 
@@ -386,7 +440,8 @@ crow::json::wvalue computed_route_json(const RouteGraphData& graph,
         path_edge["travelMode"] = edge.mode;
         path_edge["source"] = edge.source;
         path_edge["distance"] = edge.distance;
-        path_edge["duration"] = edge.duration;
+        path_edge["duration"] = edge.effective_duration > 0 ? edge.effective_duration : edge.duration;
+        path_edge["baseDuration"] = edge.duration;
         path_edge["congestion"] = edge.congestion;
         path_edge["coordinates"] = edge_coordinates_json(edge, from, to);
         path_edges.push_back(std::move(path_edge));
@@ -414,13 +469,15 @@ crow::json::wvalue computed_route_json(const RouteGraphData& graph,
     item["pathEdges"] = std::move(path_edges);
     item["coordinates"] = std::move(coordinates);
     item["distance"] = distance.str();
-    item["time"] = duration_label(std::to_string(route.total_duration / 60));
+    int display_duration = route.display_duration > 0 ? route.display_duration : route.total_duration;
+    item["time"] = duration_label(std::to_string(display_duration / 60));
     item["cost"] = route.total_distance <= 0 ? 0 : std::max(0, static_cast<int>(route.total_distance / 1000.0 * 2));
     item["intensity"] = route.total_distance > 3500 ? "中等" : "轻松";
     item["transport"] = requested_transport.empty() ? "混合" : transport_label(requested_transport);
     item["bestFor"] = optimization + " 优先";
     item["total_distance_meters"] = static_cast<int>(route.total_distance);
     item["total_duration_seconds"] = route.total_duration;
+    item["display_duration_seconds"] = display_duration;
     item["usedTransportFallback"] = route.used_transport_fallback;
     return item;
 }

@@ -11,6 +11,7 @@ struct RecommendationProfile {
     std::string budget_level = "medium";
     std::string crowd_preference = "any";
     std::string intensity = "medium";
+    std::string sort_by = "interest";
 };
 
 struct ScenicCandidate {
@@ -22,6 +23,12 @@ struct ScenicCandidate {
     double ticket_price = 0.0;
     int crowd_level = 2;
     int duration_minutes = 0;
+    int view_count = 0;
+    int favorite_count = 0;
+    int behavior_favorite_count = 0;
+    int behavior_checkin_count = 0;
+    int diary_mention_count = 0;
+    int route_reference_count = 0;
 };
 
 struct RecommendationScore {
@@ -32,6 +39,9 @@ struct RecommendationScore {
     double rating_score = 0.0;
     double budget_score = 0.0;
     double crowd_score = 0.0;
+    double intensity_score = 0.0;
+    double hot_score = 0.0;
+    double hot_signal_score = 0.0;
     std::vector<std::string> matched_tags;
     std::string reason;
 };
