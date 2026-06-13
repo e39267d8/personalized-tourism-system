@@ -482,12 +482,10 @@
             </p>
           </div>
 
-          <div class="mt-4">
+          <div v-if="availableTransports.length > 1" class="mt-4">
             <label class="text-sm font-semibold text-slate-700">交通工具（时间最短策略）</label>
             <select v-model="selectedInternalTransport" class="mt-2 h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm outline-none focus:border-teal-700">
-              <option value="walk">步行</option>
-              <option value="walk+bike">自行车 + 步行（校区）</option>
-              <option value="walk+shuttle">电瓶车 + 步行（景区）</option>
+              <option v-for="opt in availableTransports" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
             </select>
             <p class="mt-1.5 text-xs text-slate-500">按各交通工具理想速度与道路拥挤度计算，规划时间最短路线，允许多种工具混合。</p>
           </div>
@@ -880,6 +878,24 @@ const internalMapStats = computed(() => {
     edges,
     facilities: facilities.value.length,
     routableFacilities: routableFacilities.value.length
+  }
+})
+
+// 交通工具选项按本场地路网实际拥有的 travel_mode 动态生成（验收 4c）：
+// 校区有自行车道才显示"自行车"，景区有电瓶车线才显示"电瓶车"，避免选了
+// 没有的工具却和步行无区别造成误解。
+const availableTransports = computed(() => {
+  const modes = new Set((internalMap.value.edges || []).map(edge => edge.travelMode))
+  const options = [{ value: 'walk', label: '步行' }]
+  if (modes.has('bike')) options.push({ value: 'walk+bike', label: '自行车 + 步行' })
+  if (modes.has('shuttle')) options.push({ value: 'walk+shuttle', label: '电瓶车 + 步行' })
+  return options
+})
+
+// 切换景点后若当前选择的交通工具在新场地不存在，回退步行
+watch(availableTransports, (options) => {
+  if (!options.some(opt => opt.value === selectedInternalTransport.value)) {
+    selectedInternalTransport.value = 'walk'
   }
 })
 
