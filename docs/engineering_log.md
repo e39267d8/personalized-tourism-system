@@ -15,6 +15,42 @@
 - 用户可见页面文案默认使用中文。
 - API 路径、JSON 字段、表名、provider 名、算法标识等技术契约可以保留英文。
 
+## 2026-06-13 / feature-lxd-search / 内部导航交通工具最短时间策略（验收 4c）
+
+类型：内部路线规划、多交通工具、拥挤度时间模型、Dijkstra、数据库 seed。
+
+背景：验收 4c 要求内部导航支持交通工具最短时间——校区步行/自行车（仅走自行车道）、
+景区步行/电瓶车（仅走电瓶车线），按各工具速度与道路拥挤度计算时间，且时间最短的
+线路可多工具混合。此前内部规划端点写死 `walk`，演示图也只有步行边，4c 基本未实现。
+
+变更（后端）：
+
+- `route_graph_service.cpp` 新增 `mode_ideal_speed`（步行 1.2 / 自行车 4 / 电瓶车 5 m/s）
+  与 `congestion_speed_factor`（拥挤等级 1..4 → 系数 1.0/0.8/0.6/0.4，即"真实速度=拥挤度×理想速度"，验收 4b）。
+- `route_edge_weight` 的时间策略改为 `时间 = 距离 / (理想速度 × 拥挤度系数)`，按边的
+  `travel_mode` 区分速度；混合模式下不同 mode 的边各自计时，Dijkstra 自然选出多工具混合的最短时间路径。
+- Dijkstra 交通方式过滤由"单一精确匹配"改为 `mode_allowed`，支持 `walk+bike`、`walk+shuttle`
+  这类 '+' 组合允许集（空=不限）。
+- `scenic_routes.cpp` 内部规划端点接收 `transport`（walk / bike→walk+bike / shuttle→walk+shuttle / mixed），
+  响应新增 `transport` 与 `transportBreakdown`（各工具用量米数）。
+
+变更（数据）：
+
+- 颐和园演示图（`seed_yiheyuan_demo_map.sql`，生成器加 `SHUTTLE_EDGES`）补一条电瓶车固定线（`travel_mode='shuttle'`）。
+- 新增 `seeds/seed_pku_bike_lanes.sql`：北大主干道自行车道（`travel_mode='bike'`），依赖 curated 主路网，幂等。
+
+变更（前端）：
+
+- `ScenicDetail.vue` 内部导航增加"交通工具（时间最短策略）"下拉（步行 / 自行车+步行 / 电瓶车+步行），
+  选工具时用 `optimization='time'`，并展示交通工具用量明细徽章。
+
+验证口径：
+
+- 颐和园 东宫门→北宫门：纯步行 18 分钟；步行+电瓶车 5 分钟。东宫门→苏州街：步行+电瓶车 = 电瓶车 1238m + 步行 140m（真实混合）。
+- 北大 西门→邱德拔体育馆：纯步行 17 分钟；步行+自行车 6 分钟。
+- 回归：拥挤度绕行仍正常（早高峰 time 优先绕行 3.5km，distance 直达 2.3km）。
+- 队友需执行：`seed_pku_bike_lanes.sql` 与 `seed_yiheyuan_demo_map.sql`。
+
 ## 2026-06-13 / feature-lxd-search / 北京大学校园内部连通图校核
 
 类型：校园内部道路图、设施查询、Dijkstra、数据库 seed、路线质量判断。

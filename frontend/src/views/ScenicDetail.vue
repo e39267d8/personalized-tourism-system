@@ -482,9 +482,26 @@
             </p>
           </div>
 
+          <div class="mt-4">
+            <label class="text-sm font-semibold text-slate-700">交通工具（时间最短策略）</label>
+            <select v-model="selectedInternalTransport" class="mt-2 h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm outline-none focus:border-teal-700">
+              <option value="walk">步行</option>
+              <option value="walk+bike">自行车 + 步行（校区）</option>
+              <option value="walk+shuttle">电瓶车 + 步行（景区）</option>
+            </select>
+            <p class="mt-1.5 text-xs text-slate-500">按各交通工具理想速度与道路拥挤度计算，规划时间最短路线，允许多种工具混合。</p>
+          </div>
+
           <button type="button" class="mt-4 w-full rounded-md bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400" :disabled="internalLoading || !canPlanInternalRoute" @click="planInternalRoute">
             {{ internalLoading ? '规划中...' : '规划到该设施' }}
           </button>
+
+          <!-- 交通工具用量明细（验收 4c：可多种工具混合） -->
+          <div v-if="internalRoute && internalRoute.transportBreakdown && internalRoute.transportBreakdown.length" class="mt-3 flex flex-wrap gap-2">
+            <span v-for="seg in internalRoute.transportBreakdown" :key="seg.mode" class="rounded-full bg-teal-50 px-3 py-1 text-xs font-semibold text-teal-700">
+              {{ seg.modeLabel }} {{ seg.distanceMeters }} m
+            </span>
+          </div>
 
           <div v-if="internalRoute" class="mt-5 rounded-md bg-slate-50 p-4">
             <div class="grid grid-cols-2 gap-3">
@@ -617,6 +634,8 @@ const visiblePopularHours = computed(() =>
   (popularTimes.value?.hours || []).filter(item => item.hour >= 6 && item.hour <= 22))
 const internalMap = ref({ nodes: [], edges: [], nodeCount: 0, edgeCount: 0 })
 const internalRoute = ref(null)
+// 内部导航交通工具（验收 4c）：步行 / 自行车+步行 / 电瓶车+步行
+const selectedInternalTransport = ref('walk')
 const internalError = ref('')
 const internalLoading = ref(false)
 const selectedFacilityType = ref('')
@@ -1704,7 +1723,9 @@ const planInternalRoute = async () => {
   try {
     const payload = {
       facilityId: Number(selectedFacilityId.value),
-      optimization: 'balanced'
+      transport: selectedInternalTransport.value,
+      // 选了交通工具时用时间最短策略，工具的速度优势才会体现（验收 4c）
+      optimization: selectedInternalTransport.value === 'walk' ? 'balanced' : 'time'
     }
     if (selectedStartMode.value === 'node') {
       payload.startNodeId = Number(facilitySourceNode.value?.id || selectedStartNodeId.value || 0)

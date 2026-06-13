@@ -58,6 +58,11 @@ std::string facility_type_label(const std::string& type) {
     if (type == "building") return "建筑";
     if (type == "museum") return "展馆";
     if (type == "attraction") return "景观";
+    if (type == "walk") return "步行";
+    if (type == "bike") return "自行车";
+    if (type == "shuttle") return "电瓶车";
+    if (type == "subway") return "地铁";
+    if (type == "car") return "驾车";
     return type.empty() ? "设施" : type;
 }
 
@@ -203,6 +208,35 @@ bool route_has_long_connector(const std::vector<RouteEdge>& edges) {
     return std::any_of(edges.begin(), edges.end(), [](const RouteEdge& edge) {
         return edge.source == "generated" && edge.distance > kInternalSnapMaxMeters;
     });
+}
+
+// 内部导航交通方式白名单（验收 4c）：
+//   walk 步行 / bike 自行车(校区) / shuttle 电瓶车(景区) /
+//   walk+bike 校区步行+自行车混合 / walk+shuttle 景区步行+电瓶车混合。
+// 传给 Dijkstra 时，组合值用 '+' 表示允许多种模式，规划出时间最短的混合路径。
+// 未识别值回退 walk。设施接入边(generated)恒为步行，需并入允许集，否则
+// 任何工具都到不了挂在接入边末端的设施。
+std::string normalize_internal_transport(const std::string& value) {
+    if (value == "bike" || value == "自行车") return "walk+bike";
+    if (value == "shuttle" || value == "电瓶车" || value == "电瓶") return "walk+shuttle";
+    if (value == "walk+bike" || value == "walk+shuttle") return value;
+    if (value == "mixed" || value == "混合") return "";  // 不限，所有模式混合
+    return "walk";
+}
+
+// 统计路线里各交通工具的使用占比，便于前端标注"步行 X 米 + 电瓶车 Y 米"
+crow::json::wvalue transport_breakdown_json(const std::vector<RouteEdge>& edges) {
+    std::map<std::string, double> dist_by_mode;
+    for (const auto& edge : edges) dist_by_mode[edge.mode] += edge.distance;
+    crow::json::wvalue::list items;
+    for (const auto& [mode, dist] : dist_by_mode) {
+        crow::json::wvalue item;
+        item["mode"] = mode;
+        item["modeLabel"] = facility_type_label(mode);  // 复用标签；mode 多为 walk/bike/shuttle
+        item["distanceMeters"] = static_cast<int>(std::round(dist));
+        items.push_back(std::move(item));
+    }
+    return crow::json::wvalue(std::move(items));
 }
 
 bool node_has_incident_edge(const RouteGraphData& graph, int node_id) {
@@ -1410,6 +1444,9 @@ void register_scenic_routes(TourismApp& app) {
                 bool used_map_start = start_latitude != 0.0 && start_longitude != 0.0;
                 double start_snap_distance = 0.0;
                 std::string optimization = normalize_optimization(json_string(body, "optimization", "balanced"));
+                // 交通工具最短时间策略（验收 4c）：步行/自行车/电瓶车/混合
+                std::string transport = normalize_internal_transport(
+                    json_string(body, "transport", json_string(body, "travelMode", "walk")));
 
                 if (facility_id > 0 && end_node_id <= 0) {
                     end_node_id = node_id_for_facility(db, id, facility_id);
@@ -1437,7 +1474,7 @@ void register_scenic_routes(TourismApp& app) {
 
                 if (!graph.nodes.count(start_node_id)) return json_error(400, "起点不在当前景点内部路网中");
 
-                auto route = plan_route_with_waypoints(graph, {start_node_id, end_node_id}, "walk", optimization, 3);
+                auto route = plan_route_with_waypoints(graph, {start_node_id, end_node_id}, transport, optimization, 3);
                 if (!route.success) {
                     return json_error(422, "当前内部路网无法连通该设施，未生成直线示意路线");
                 }
@@ -1448,9 +1485,11 @@ void register_scenic_routes(TourismApp& app) {
                     return json_error(422, "该设施离真实道路较远，未接入可导航路网");
                 }
 
-                crow::json::wvalue data = computed_route_json(graph, route, optimization, "walk");
+                crow::json::wvalue data = computed_route_json(graph, route, optimization, transport);
                 data["usedInternalMap"] = true;
                 data["usedInternalFallback"] = false;
+                data["transport"] = transport.empty() ? "mixed" : transport;
+                data["transportBreakdown"] = transport_breakdown_json(route.edges);
                 data["startNodeId"] = start_node_id;
                 data["endNodeId"] = end_node_id;
                 data["routeQuality"] = route_quality_json(graph, route.edges, start_node_id, end_node_id, start_snap_distance, used_map_start);

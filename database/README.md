@@ -12,6 +12,8 @@
 - `seeds/seed_campus_spots.sql`：北京大学校园主对象 seed，用于把校园作为 `scenic_spots` 中的正式对象接入系统。
 - `imports/internal_navigation_pku.sql`：北京大学校园内部道路图，使用现有 `graph_nodes`、`graph_edges`、`facilities`，不新建第二套校园图表。
 - `seeds/seed_pku_curated_map.sql`：北京大学校园人工校核连通主路网 seed，补足 OSM 内部路网碎片化导致的设施不可达问题；主路网来源标记为 `campus_curated`，设施接入短边标记为 `generated`。
+- `seeds/seed_pku_bike_lanes.sql`：北京大学校园自行车道（`travel_mode='bike'`），供验收 4c 校区"自行车最短时间/混合交通"演示；依赖 `seed_pku_curated_map.sql`，按 `source_ref='pku-curated:bike'` 幂等重建。
+- `seeds/seed_yiheyuan_demo_map.sql`：颐和园内部步行演示图 + 电瓶车线（`travel_mode='shuttle'`），供场所查询和验收 4c 景区"电瓶车最短时间/混合交通"演示。
 - `indoor_navigation_schema.sql`：室内导航领域表结构，包含 `indoor_buildings`、`indoor_floors`、`indoor_features`、`indoor_edges` 和 `indoor_route_audit`。
 - `seeds/seed_indoor_navigation.sql`：北大红楼首批正式室内图数据，使用 `local_indoor_graph` provider，不是独立数据库，也不是前端假 Demo。
 - `migrations/achievement_module_schema.sql`：成就系统正式结构迁移，补齐成就编码、景点打卡、游记评审、实体徽章申请与数字纪念凭证相关表和索引。
@@ -41,6 +43,8 @@ psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\imports\intern
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_campus_spots.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\imports\internal_navigation_pku.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_pku_curated_map.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_pku_bike_lanes.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_yiheyuan_demo_map.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\indoor_navigation_schema.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\achievement_module_schema.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\diary_compression_schema.sql
@@ -66,6 +70,17 @@ psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_cam
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\imports\internal_navigation_pku.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_pku_curated_map.sql
 ```
+
+已有数据库只补内部导航交通工具（验收 4c：校区自行车 / 景区电瓶车，支持混合最短时间）：
+
+```bat
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_pku_bike_lanes.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_yiheyuan_demo_map.sql
+```
+
+说明：`bike`/`shuttle` 边的 `travel_mode` 决定可走道路，后端按各工具理想速度
+（步行 1.2 / 自行车 4 / 电瓶车 5 m/s）× 拥挤度系数计算时间，`transport` 传
+`walk` / `walk+bike` / `walk+shuttle` 选择策略，可多工具混合求时间最短。
 
 已有 lxd/yhm 数据库只补北大红楼室内导航：
 

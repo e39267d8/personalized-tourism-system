@@ -65,6 +65,18 @@ PATH_EDGES = [
     ("w14", "w16"),                                   # 南湖岛 ↔ 西堤，闭合环湖
 ]
 
+# --- 电瓶车线（景区固定线路，travel_mode='shuttle'，验收 4c）---
+# 沿主轴的固定观光线：东宫门 → 长廊东口 → 石舫 → 佛香阁下 → 北宫门，
+# 速度比步行快（5 vs 1.2 m/s），拥挤度低（专线）。停靠点复用已有路网节点。
+# 演示：东宫门到北宫门，纯步行很慢；步行+电瓶车混合，算法自动选电瓶车更快。
+SHUTTLE_EDGES = [
+    ("e_dong", "w5"),   # 东宫门 → 长廊东口
+    ("w5", "w7"),       # 长廊东口 → 石舫
+    ("w7", "w8"),       # 石舫 → 佛香阁下
+    ("w8", "w10"),      # 佛香阁下 → 北宫门内
+    ("w10", "e_bei"),   # 北宫门内 → 北宫门
+]
+
 # --- 设施：(名称, 类型, 最近路网节点 key, 评分, 价位) ---
 # 类型用系统已识别的英文枚举：toilet/restaurant/shop/service/atm
 FACILITIES = [
@@ -169,6 +181,18 @@ def main():
             w("    INSERT INTO graph_edges (from_node, to_node, distance, travel_mode, travel_time, "
               "base_weight, congestion_level, source, source_ref)")
             w(f"    SELECT na.id, nb.id, {d:.1f}, 'walk', {t}, {d/100.0:.2f}, 2, 'osm', '{SRC}:edge'")
+            w(f"    FROM graph_nodes na, graph_nodes nb WHERE na.source_ref='{xref}' AND nb.source_ref='{yref}';")
+    w("")
+    w("    -- 5b. 电瓶车线（双向，travel_mode='shuttle'，速度快、拥挤度低，验收 4c）")
+    for a, b in SHUTTLE_EDGES:
+        ca, cb = node_coord(a), node_coord(b)
+        d = dist_m(ca, cb)
+        t = int(d / 5.0)  # 电瓶车 5 m/s
+        for (x, y) in ((a, b), (b, a)):
+            xref, yref = f"{SRC}:node:{x}", f"{SRC}:node:{y}"
+            w("    INSERT INTO graph_edges (from_node, to_node, distance, travel_mode, travel_time, "
+              "base_weight, congestion_level, source, source_ref)")
+            w(f"    SELECT na.id, nb.id, {d:.1f}, 'shuttle', {t}, {d/100.0:.2f}, 1, 'osm', '{SRC}:shuttle'")
             w(f"    FROM graph_nodes na, graph_nodes nb WHERE na.source_ref='{xref}' AND nb.source_ref='{yref}';")
     w("")
     w("    -- 6. 设施接入边（双向，source='generated' 表示接入连接边）")

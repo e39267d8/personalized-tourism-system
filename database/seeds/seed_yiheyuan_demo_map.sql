@@ -276,6 +276,38 @@ BEGIN
     SELECT na.id, nb.id, 469.6, 'walk', 391, 4.70, 2, 'osm', 'yiheyuan-demo:edge'
     FROM graph_nodes na, graph_nodes nb WHERE na.source_ref='yiheyuan-demo:node:w16' AND nb.source_ref='yiheyuan-demo:node:w14';
 
+    -- 5b. 电瓶车线（双向，travel_mode='shuttle'，速度快、拥挤度低，验收 4c）
+    INSERT INTO graph_edges (from_node, to_node, distance, travel_mode, travel_time, base_weight, congestion_level, source, source_ref)
+    SELECT na.id, nb.id, 560.0, 'shuttle', 111, 5.60, 1, 'osm', 'yiheyuan-demo:shuttle'
+    FROM graph_nodes na, graph_nodes nb WHERE na.source_ref='yiheyuan-demo:node:e_dong' AND nb.source_ref='yiheyuan-demo:node:w5';
+    INSERT INTO graph_edges (from_node, to_node, distance, travel_mode, travel_time, base_weight, congestion_level, source, source_ref)
+    SELECT na.id, nb.id, 560.0, 'shuttle', 111, 5.60, 1, 'osm', 'yiheyuan-demo:shuttle'
+    FROM graph_nodes na, graph_nodes nb WHERE na.source_ref='yiheyuan-demo:node:w5' AND nb.source_ref='yiheyuan-demo:node:e_dong';
+    INSERT INTO graph_edges (from_node, to_node, distance, travel_mode, travel_time, base_weight, congestion_level, source, source_ref)
+    SELECT na.id, nb.id, 400.0, 'shuttle', 80, 4.00, 1, 'osm', 'yiheyuan-demo:shuttle'
+    FROM graph_nodes na, graph_nodes nb WHERE na.source_ref='yiheyuan-demo:node:w5' AND nb.source_ref='yiheyuan-demo:node:w7';
+    INSERT INTO graph_edges (from_node, to_node, distance, travel_mode, travel_time, base_weight, congestion_level, source, source_ref)
+    SELECT na.id, nb.id, 400.0, 'shuttle', 80, 4.00, 1, 'osm', 'yiheyuan-demo:shuttle'
+    FROM graph_nodes na, graph_nodes nb WHERE na.source_ref='yiheyuan-demo:node:w7' AND nb.source_ref='yiheyuan-demo:node:w5';
+    INSERT INTO graph_edges (from_node, to_node, distance, travel_mode, travel_time, base_weight, congestion_level, source, source_ref)
+    SELECT na.id, nb.id, 278.0, 'shuttle', 55, 2.78, 1, 'osm', 'yiheyuan-demo:shuttle'
+    FROM graph_nodes na, graph_nodes nb WHERE na.source_ref='yiheyuan-demo:node:w7' AND nb.source_ref='yiheyuan-demo:node:w8';
+    INSERT INTO graph_edges (from_node, to_node, distance, travel_mode, travel_time, base_weight, congestion_level, source, source_ref)
+    SELECT na.id, nb.id, 278.0, 'shuttle', 55, 2.78, 1, 'osm', 'yiheyuan-demo:shuttle'
+    FROM graph_nodes na, graph_nodes nb WHERE na.source_ref='yiheyuan-demo:node:w8' AND nb.source_ref='yiheyuan-demo:node:w7';
+    INSERT INTO graph_edges (from_node, to_node, distance, travel_mode, travel_time, base_weight, congestion_level, source, source_ref)
+    SELECT na.id, nb.id, 243.5, 'shuttle', 48, 2.44, 1, 'osm', 'yiheyuan-demo:shuttle'
+    FROM graph_nodes na, graph_nodes nb WHERE na.source_ref='yiheyuan-demo:node:w8' AND nb.source_ref='yiheyuan-demo:node:w10';
+    INSERT INTO graph_edges (from_node, to_node, distance, travel_mode, travel_time, base_weight, congestion_level, source, source_ref)
+    SELECT na.id, nb.id, 243.5, 'shuttle', 48, 2.44, 1, 'osm', 'yiheyuan-demo:shuttle'
+    FROM graph_nodes na, graph_nodes nb WHERE na.source_ref='yiheyuan-demo:node:w10' AND nb.source_ref='yiheyuan-demo:node:w8';
+    INSERT INTO graph_edges (from_node, to_node, distance, travel_mode, travel_time, base_weight, congestion_level, source, source_ref)
+    SELECT na.id, nb.id, 100.0, 'shuttle', 20, 1.00, 1, 'osm', 'yiheyuan-demo:shuttle'
+    FROM graph_nodes na, graph_nodes nb WHERE na.source_ref='yiheyuan-demo:node:w10' AND nb.source_ref='yiheyuan-demo:node:e_bei';
+    INSERT INTO graph_edges (from_node, to_node, distance, travel_mode, travel_time, base_weight, congestion_level, source, source_ref)
+    SELECT na.id, nb.id, 100.0, 'shuttle', 20, 1.00, 1, 'osm', 'yiheyuan-demo:shuttle'
+    FROM graph_nodes na, graph_nodes nb WHERE na.source_ref='yiheyuan-demo:node:e_bei' AND nb.source_ref='yiheyuan-demo:node:w10';
+
     -- 6. 设施接入边（双向，source='generated' 表示接入连接边）
     INSERT INTO graph_edges (from_node, to_node, distance, travel_mode, travel_time, base_weight, congestion_level, source, source_ref)
     SELECT na.id, nb.id, 18.0, 'walk', 15, 0.18, 2, 'generated', 'yiheyuan-demo:connector'

@@ -23,13 +23,54 @@ using tourism::support::transport_label;
 
 constexpr double kMaxGeneratedConnectorMeters = 60.0;
 
+// 各交通工具的理想速度（米/秒）。校区：步行/自行车；景区：步行/电瓶车(shuttle)。
+double mode_ideal_speed(const std::string& mode) {
+    if (mode == "bike") return 4.0;        // 自行车
+    if (mode == "shuttle") return 5.0;     // 电瓶车（景区固定线路）
+    if (mode == "subway") return 10.0;
+    if (mode == "car") return 8.0;
+    return 1.2;                            // 步行
+}
+
+// 拥挤度系数 ∈ (0,1]：真实速度 = 拥挤度 × 理想速度（验收 4b）。
+// 由边的拥挤等级(1=畅通..4=拥堵)映射，等级越高越慢。
+double congestion_speed_factor(int congestion_level) {
+    switch (congestion_level) {
+        case 1: return 1.0;
+        case 2: return 0.8;
+        case 3: return 0.6;
+        default: return 0.4;  // level 4 及以上
+    }
+}
+
+// 交通方式过滤：transport 为空=不限（混合所有）；可用 '+' 组合多种允许模式，
+// 例如 "walk+shuttle"（景区步行+电瓶车混合）、"walk+bike"（校区步行+自行车混合）。
+bool mode_allowed(const std::string& edge_mode, const std::string& transport) {
+    if (transport.empty()) return true;
+    size_t pos = 0;
+    while (pos <= transport.size()) {
+        size_t plus = transport.find('+', pos);
+        std::string token = transport.substr(pos, plus == std::string::npos ? std::string::npos : plus - pos);
+        if (token == edge_mode) return true;
+        if (plus == std::string::npos) break;
+        pos = plus + 1;
+    }
+    return false;
+}
+
 // 拥挤惩罚用乘法因子：拥挤的本质是让这条边"通行变慢"，惩罚应与边的
 // 体量成正比（原先固定加法对长边九牛一毛，时段变化永远不会触发绕行）。
-// 时间优先对拥挤最敏感（0.4/级），距离优先最不敏感（0.15/级，"我就要最短路程"）。
+// 距离优先最不敏感（0.15/级，"我就要最短路程"）。
 double route_edge_weight(const RouteEdge& edge, const std::string& optimization, int crowd_tolerance) {
     double crowd_penalty = std::max(0, edge.congestion - crowd_tolerance);
     if (optimization == "distance") return edge.distance * (1.0 + crowd_penalty * 0.15);
-    if (optimization == "time") return edge.duration * (1.0 + crowd_penalty * 0.4);
+    if (optimization == "time") {
+        // 时间 = 距离 / (理想速度 × 拥挤度系数)，按交通工具区分速度（验收 4b/4c）。
+        // 混合模式下不同 mode 的边各自按本工具速度计时，Dijkstra 自然选出
+        // 总时间最短的多工具组合路径。
+        double real_speed = mode_ideal_speed(edge.mode) * congestion_speed_factor(edge.congestion);
+        return edge.distance / std::max(0.1, real_speed);  // 秒
+    }
     if (optimization == "budget") {
         double mode_cost = edge.mode == "walk" ? 0.0 : edge.mode == "bike" ? 3.0 : edge.mode == "subway" ? 5.0 : 15.0;
         return (edge.distance / 120.0 + edge.duration / 60.0) * (1.0 + crowd_penalty * 0.2) + mode_cost * 20.0;
@@ -82,7 +123,7 @@ RouteSearchResult dijkstra_route(const RouteGraphData& graph,
         auto edge_iter = graph.edges.find(current);
         if (edge_iter == graph.edges.end()) continue;
         for (const auto& edge : edge_iter->second) {
-            if (!transport.empty() && edge.mode != transport) continue;
+            if (!mode_allowed(edge.mode, transport)) continue;
             double next_weight = current_weight + route_edge_weight(edge, optimization, crowd_tolerance);
             if (next_weight < dist[edge.to]) {
                 dist[edge.to] = next_weight;
