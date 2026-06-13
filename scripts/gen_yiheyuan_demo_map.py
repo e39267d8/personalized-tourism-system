@@ -11,11 +11,71 @@
 同前缀旧数据，不影响其它景点。
 """
 
+import json
 import math
+import os
+import urllib.parse
+import urllib.request
 
 SPOT_NAME = "颐和园"
 SRC = "yiheyuan-demo"
 CENTER_LAT, CENTER_LNG = 39.9985, 116.2755
+
+# 高德 Web 服务 key（与后端内置默认一致）；可用环境变量覆盖。
+AMAP_KEY = os.environ.get("AMAP_WEB_SERVICE_KEY", "fbdf40a14e05c09c0e6c56230dd2688f")
+# 缓存高德返回的折线，避免重复请求（按 from→to 坐标对）
+_amap_cache = {}
+
+
+def amap_walk_polyline(a, b):
+    """调高德步行规划，返回沿真实道路的折线点串 [(lng,lat), ...]。
+    失败时返回 None，调用方回退两点直线。a/b 为 (lng, lat)。"""
+    key = (round(a[0], 6), round(a[1], 6), round(b[0], 6), round(b[1], 6))
+    if key in _amap_cache:
+        return _amap_cache[key]
+    params = urllib.parse.urlencode({
+        "origin": f"{a[0]:.6f},{a[1]:.6f}",
+        "destination": f"{b[0]:.6f},{b[1]:.6f}",
+        "key": AMAP_KEY,
+        "output": "JSON",
+    })
+    url = f"https://restapi.amap.com/v3/direction/walking?{params}"
+    try:
+        with urllib.request.urlopen(url, timeout=10) as resp:
+            data = json.load(resp)
+        paths = data.get("route", {}).get("paths", [])
+        if not paths:
+            _amap_cache[key] = None
+            return None
+        pts = []
+        for step in paths[0].get("steps", []):
+            for seg in step.get("polyline", "").split(";"):
+                if "," not in seg:
+                    continue
+                lng, lat = seg.split(",")
+                p = (float(lng), float(lat))
+                if not pts or pts[-1] != p:
+                    pts.append(p)
+        result = pts if len(pts) >= 2 else None
+        _amap_cache[key] = result
+        return result
+    except Exception:
+        _amap_cache[key] = None
+        return None
+
+
+def linestring_wkt(points):
+    """[(lng,lat),...] → EWKT LINESTRING（SRID 4326）。"""
+    body = ", ".join(f"{lng:.6f} {lat:.6f}" for lng, lat in points)
+    return f"'SRID=4326;LINESTRING({body})'"
+
+
+def polyline_length(points):
+    """折线总长度（米）。"""
+    total = 0.0
+    for p, q in zip(points, points[1:]):
+        total += dist_m(p, q)
+    return total
 
 # 经纬度每度的米数（颐和园纬度约 40°）
 M_PER_LAT = 111_000.0
@@ -170,31 +230,38 @@ def main():
         w(f"    SELECT f.name, f.location, 'facility', v_spot, f.id, 'demo', '{node_ref}'")
         w(f"    FROM facilities f WHERE f.source_ref = '{fac_ref}';")
     w("")
-    # 路径边用 source='osm'：系统以 'osm' 标记"可导航真实道路"（route_uses_real_road
-    # 据此放行内部路线规划，前端 SVG 据此画实线）。接入边用 'generated' 画虚线。
-    w("    -- 5. 步行路径边（双向，source='osm' 标记为可导航真实道路）")
-    for a, b in PATH_EDGES:
+    def emit_edge(a, b, mode, speed, congestion, ref):
+        """对无向边 (a,b) 取高德步行折线作几何，正反两向各插一条。
+        距离用折线实际长度（无折线则回退两点直线），几何让前端沿真实道路画线。"""
         ca, cb = node_coord(a), node_coord(b)
-        d = dist_m(ca, cb)
-        t = int(d / 1.2)
+        poly = amap_walk_polyline(ca, cb)
+        if poly:
+            d = polyline_length(poly)
+        else:
+            d = dist_m(ca, cb)
+        t = max(1, int(d / speed))
         for (x, y) in ((a, b), (b, a)):
             xref, yref = f"{SRC}:node:{x}", f"{SRC}:node:{y}"
+            if poly:
+                geom = linestring_wkt(poly if (x, y) == (a, b) else list(reversed(poly)))
+            else:
+                p1, p2 = (node_coord(x), node_coord(y))
+                geom = linestring_wkt([p1, p2])
             w("    INSERT INTO graph_edges (from_node, to_node, distance, travel_mode, travel_time, "
-              "base_weight, congestion_level, source, source_ref)")
-            w(f"    SELECT na.id, nb.id, {d:.1f}, 'walk', {t}, {d/100.0:.2f}, 2, 'osm', '{SRC}:edge'")
+              "base_weight, congestion_level, source, source_ref, geometry)")
+            w(f"    SELECT na.id, nb.id, {d:.1f}, '{mode}', {t}, {d/100.0:.2f}, {congestion}, 'osm', '{ref}', "
+              f"ST_GeomFromEWKT({geom})")
             w(f"    FROM graph_nodes na, graph_nodes nb WHERE na.source_ref='{xref}' AND nb.source_ref='{yref}';")
+
+    # 路径边/电瓶车边 source='osm'（可导航真实道路），几何取自高德步行折线，
+    # 前端据此沿真实道路画线（而非节点间直线）。接入边用 'generated' 画虚线。
+    w("    -- 5. 步行路径边（双向，几何来自高德步行折线，沿真实道路）")
+    for a, b in PATH_EDGES:
+        emit_edge(a, b, "walk", 1.2, 2, f"{SRC}:edge")
     w("")
     w("    -- 5b. 电瓶车线（双向，travel_mode='shuttle'，速度快、拥挤度低，验收 4c）")
     for a, b in SHUTTLE_EDGES:
-        ca, cb = node_coord(a), node_coord(b)
-        d = dist_m(ca, cb)
-        t = int(d / 5.0)  # 电瓶车 5 m/s
-        for (x, y) in ((a, b), (b, a)):
-            xref, yref = f"{SRC}:node:{x}", f"{SRC}:node:{y}"
-            w("    INSERT INTO graph_edges (from_node, to_node, distance, travel_mode, travel_time, "
-              "base_weight, congestion_level, source, source_ref)")
-            w(f"    SELECT na.id, nb.id, {d:.1f}, 'shuttle', {t}, {d/100.0:.2f}, 1, 'osm', '{SRC}:shuttle'")
-            w(f"    FROM graph_nodes na, graph_nodes nb WHERE na.source_ref='{xref}' AND nb.source_ref='{yref}';")
+        emit_edge(a, b, "shuttle", 5.0, 1, f"{SRC}:shuttle")
     w("")
     w("    -- 6. 设施接入边（双向，source='generated' 表示接入连接边）")
     for i, (name, ftype, near, rating, price) in enumerate(FACILITIES):
