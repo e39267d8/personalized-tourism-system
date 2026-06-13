@@ -132,6 +132,33 @@
             <div class="mt-0.5 font-semibold text-slate-900">{{ internalMapStats.routableFacilities }} 个</div>
           </div>
         </div>
+        <div
+          v-if="internalViewMode === 'graph'"
+          class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white px-5 py-3"
+        >
+          <div class="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              class="rounded-md border px-3 py-1.5 text-sm font-semibold"
+              :class="internalGraphScope === 'focus' ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-300 text-slate-700 hover:bg-slate-100'"
+              @click="internalGraphScope = 'focus'"
+            >
+              聚焦路网
+            </button>
+            <button
+              type="button"
+              class="rounded-md border px-3 py-1.5 text-sm font-semibold"
+              :class="internalGraphScope === 'full' ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-300 text-slate-700 hover:bg-slate-100'"
+              @click="internalGraphScope = 'full'"
+            >
+              全量数据
+            </button>
+          </div>
+          <label class="flex items-center gap-2 text-sm font-semibold text-slate-600">
+            <input v-model="showGraphConnectors" type="checkbox" class="h-4 w-4 accent-teal-700">
+            显示设施接入边
+          </label>
+        </div>
         <div class="relative">
           <div v-show="internalViewMode === 'graph'" class="internal-graph relative h-[420px] w-full overflow-hidden">
             <svg class="h-full w-full" :viewBox="internalGraphViewBox" preserveAspectRatio="xMidYMid meet" role="img" aria-label="内部道路图">
@@ -145,17 +172,17 @@
                 stroke-dasharray="5 5"
                 stroke-linecap="round"
                 stroke-linejoin="round"
-                opacity="0.42"
+                opacity="0.26"
               />
               <path
                 v-if="internalGraphRoadPath"
                 :d="internalGraphRoadPath"
                 fill="none"
-                stroke="#475569"
-                stroke-width="2.1"
+                stroke="#334155"
+                stroke-width="2.4"
                 stroke-linecap="round"
                 stroke-linejoin="round"
-                opacity="0.72"
+                opacity="0.82"
               />
               <path
                 v-if="internalGraphRoutePath"
@@ -174,37 +201,37 @@
                 class="cursor-pointer"
                 @click="selectInternalGraphFacility(item.facility)"
               >
-                <title>{{ item.facility.name }}</title>
+                  <title>{{ item.facility.name }}</title>
                 <circle
-                  :r="String(item.facility.id) === String(selectedFacilityId) ? 8 : item.facility.routable ? 5.5 : 4"
+                  :r="String(item.facility.id) === String(selectedFacilityId) ? 7.5 : 4.8"
                   :fill="markerColor(item.facility)"
                   stroke="#ffffff"
-                  stroke-width="2"
-                  :opacity="item.facility.routable ? 0.95 : 0.42"
+                  stroke-width="1.8"
+                  opacity="0.9"
                 />
               </g>
               <g v-if="selectedGraphFacilityPoint" :transform="`translate(${selectedGraphFacilityPoint.x} ${selectedGraphFacilityPoint.y})`">
                 <text
                   x="10"
                   y="-10"
-                  class="fill-slate-900 text-[18px] font-bold"
+                  class="fill-slate-900 text-[16px] font-bold"
                   paint-order="stroke"
                   stroke="#ffffff"
                   stroke-width="5"
                 >
-                  {{ selectedFacility?.name }}
+                  {{ graphFacilityLabel(selectedFacility) }}
                 </text>
               </g>
             </svg>
             <div class="pointer-events-none absolute left-3 top-3 rounded-md border border-white/80 bg-white/90 px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm">
-              数据库路网
+              {{ internalGraphScope === 'focus' ? '聚焦主路网' : '全量数据库路网' }}
             </div>
             <div class="pointer-events-none absolute right-3 top-3 flex flex-wrap gap-2 rounded-md border border-white/80 bg-white/90 px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm">
               <span class="inline-flex items-center gap-1.5">
                 <span class="h-0.5 w-5 rounded-full bg-slate-600"></span>
                 真实道路
               </span>
-              <span class="inline-flex items-center gap-1.5">
+              <span v-if="showGraphConnectors" class="inline-flex items-center gap-1.5">
                 <span class="h-0.5 w-5 rounded-full border-t border-dashed border-slate-400"></span>
                 设施接入
               </span>
@@ -218,6 +245,9 @@
               class="absolute inset-0 flex items-center justify-center text-sm font-semibold text-slate-500"
             >
               暂无可展示的内部路网数据
+            </div>
+            <div class="pointer-events-none absolute bottom-3 left-3 rounded-md border border-white/80 bg-white/90 px-3 py-2 text-xs font-semibold text-slate-600 shadow-sm">
+              当前显示 {{ internalGraphDisplayStats.roadEdges }} 条真实道路 · {{ internalGraphDisplayStats.facilities }} 个设施点
             </div>
           </div>
           <div
@@ -494,6 +524,8 @@ const selectedStartNodeId = ref('')
 const selectedStartPoint = ref(null)
 const showAllFacilities = ref(false)
 const internalViewMode = ref('graph')
+const internalGraphScope = ref('focus')
+const showGraphConnectors = ref(false)
 const amapReady = ref(false)
 const amapError = ref('')
 const internalMapContainer = ref(null)
@@ -518,8 +550,11 @@ let routeOverlays = []
 
 const GRAPH_WIDTH = 1000
 const GRAPH_HEIGHT = 560
-const GRAPH_PADDING = 34
+const GRAPH_PADDING = 48
 const internalGraphViewBox = `0 0 ${GRAPH_WIDTH} ${GRAPH_HEIGHT}`
+const GRAPH_FOCUS_EDGE_LIMIT = 1800
+const GRAPH_FULL_EDGE_LIMIT = 3600
+const GRAPH_FACILITY_LIMIT = 80
 
 const visibleFacilityPool = computed(() => {
   return showAllFacilities.value ? facilities.value : routableFacilities.value
@@ -970,14 +1005,68 @@ const graphCoordinate = (point) => {
   return null
 }
 
-const internalGraphBounds = computed(() => {
-  const coords = []
-  for (const edge of internalMap.value.edges || []) {
-    for (const coordinate of edge.coordinates || []) {
-      const point = graphCoordinate(coordinate)
-      if (point && Number.isFinite(point.latitude) && Number.isFinite(point.longitude)) coords.push(point)
-    }
+const edgeCoordinates = (edge) => {
+  return (edge?.coordinates || [])
+    .map(graphCoordinate)
+    .filter(point => point && Number.isFinite(point.latitude) && Number.isFinite(point.longitude))
+}
+
+const edgeMidpoint = (edge) => {
+  const coords = edgeCoordinates(edge)
+  if (!coords.length) return null
+  const middle = coords[Math.floor(coords.length / 2)]
+  return middle || coords[0]
+}
+
+const quantile = (values, q) => {
+  if (!values.length) return 0
+  const sorted = [...values].sort((left, right) => left - right)
+  const index = Math.min(sorted.length - 1, Math.max(0, Math.floor((sorted.length - 1) * q)))
+  return sorted[index]
+}
+
+const paddedBounds = (bounds, ratio = 0.08) => {
+  const latPad = Math.max((bounds.maxLat - bounds.minLat) * ratio, 0.00035)
+  const lngPad = Math.max((bounds.maxLng - bounds.minLng) * ratio, 0.00035)
+  return {
+    minLat: bounds.minLat - latPad,
+    maxLat: bounds.maxLat + latPad,
+    minLng: bounds.minLng - lngPad,
+    maxLng: bounds.maxLng + lngPad
   }
+}
+
+const pointInBounds = (point, bounds) => {
+  if (!point) return false
+  return point.latitude >= bounds.minLat &&
+    point.latitude <= bounds.maxLat &&
+    point.longitude >= bounds.minLng &&
+    point.longitude <= bounds.maxLng
+}
+
+const sanitizeGraphLabel = (value) => {
+  const text = String(value || '').trim()
+  if (!text) return ''
+  if (/^OSM\s+(服务设施|入口|建筑|路口)?\s*\d+/i.test(text)) return ''
+  if (/^OSM\s+/i.test(text)) return text.replace(/^OSM\s+/i, '')
+  return text.replace(/\s+/g, ' ').slice(0, 18)
+}
+
+const graphFacilityLabel = (facility) => {
+  return sanitizeGraphLabel(facility?.name) || facility?.typeLabel || '设施'
+}
+
+const realGraphEdges = computed(() => {
+  return (internalMap.value.edges || []).filter(edge => edge.source !== 'generated' && edge.coordinates?.length)
+})
+
+const connectorGraphEdges = computed(() => {
+  return (internalMap.value.edges || []).filter(edge => edge.source === 'generated' && edge.coordinates?.length)
+})
+
+const fullGraphBounds = computed(() => {
+  const coords = []
+  for (const edge of realGraphEdges.value) coords.push(...edgeCoordinates(edge))
   for (const facility of visibleFacilities.value) {
     const point = graphCoordinate(facility)
     if (point && Number.isFinite(point.latitude) && Number.isFinite(point.longitude)) coords.push(point)
@@ -989,12 +1078,51 @@ const internalGraphBounds = computed(() => {
   if (!coords.length) {
     return { minLat: 0, maxLat: 1, minLng: 0, maxLng: 1 }
   }
-  const latitudes = coords.map(point => point.latitude)
-  const longitudes = coords.map(point => point.longitude)
-  let minLat = Math.min(...latitudes)
-  let maxLat = Math.max(...latitudes)
-  let minLng = Math.min(...longitudes)
-  let maxLng = Math.max(...longitudes)
+  return paddedBounds({
+    minLat: Math.min(...coords.map(point => point.latitude)),
+    maxLat: Math.max(...coords.map(point => point.latitude)),
+    minLng: Math.min(...coords.map(point => point.longitude)),
+    maxLng: Math.max(...coords.map(point => point.longitude))
+  }, 0.04)
+})
+
+const focusGraphBounds = computed(() => {
+  const midpoints = realGraphEdges.value.map(edgeMidpoint).filter(Boolean)
+  if (midpoints.length < 20) return fullGraphBounds.value
+  const bounds = {
+    minLat: quantile(midpoints.map(point => point.latitude), 0.08),
+    maxLat: quantile(midpoints.map(point => point.latitude), 0.92),
+    minLng: quantile(midpoints.map(point => point.longitude), 0.08),
+    maxLng: quantile(midpoints.map(point => point.longitude), 0.92)
+  }
+  return paddedBounds(bounds, 0.1)
+})
+
+const graphBounds = computed(() => {
+  return internalGraphScope.value === 'full' ? fullGraphBounds.value : focusGraphBounds.value
+})
+
+const graphEdgeLength = (edge) => Number(edge.distance || 0)
+
+const displayedRoadEdges = computed(() => {
+  const bounds = graphBounds.value
+  const limit = internalGraphScope.value === 'full' ? GRAPH_FULL_EDGE_LIMIT : GRAPH_FOCUS_EDGE_LIMIT
+  return realGraphEdges.value
+    .filter(edge => internalGraphScope.value === 'full' || pointInBounds(edgeMidpoint(edge), bounds))
+    .sort((left, right) => graphEdgeLength(right) - graphEdgeLength(left))
+    .slice(0, limit)
+})
+
+const displayedConnectorEdges = computed(() => {
+  if (!showGraphConnectors.value) return []
+  const bounds = graphBounds.value
+  return connectorGraphEdges.value
+    .filter(edge => pointInBounds(edgeMidpoint(edge), bounds))
+    .slice(0, internalGraphScope.value === 'full' ? 800 : 260)
+})
+
+const internalGraphBounds = computed(() => {
+  let { minLat, maxLat, minLng, maxLng } = graphBounds.value
   if (Math.abs(maxLat - minLat) < 0.00001) {
     minLat -= 0.0005
     maxLat += 0.0005
@@ -1025,16 +1153,14 @@ const graphPathForCoordinates = (coordinates) => {
 }
 
 const internalGraphRoadPath = computed(() => {
-  return (internalMap.value.edges || [])
-    .filter(edge => edge.source !== 'generated')
+  return displayedRoadEdges.value
     .map(edge => graphPathForCoordinates(edge.coordinates))
     .filter(Boolean)
     .join(' ')
 })
 
 const internalGraphConnectorPath = computed(() => {
-  return (internalMap.value.edges || [])
-    .filter(edge => edge.source === 'generated')
+  return displayedConnectorEdges.value
     .map(edge => graphPathForCoordinates(edge.coordinates))
     .filter(Boolean)
     .join(' ')
@@ -1043,7 +1169,17 @@ const internalGraphConnectorPath = computed(() => {
 const internalGraphRoutePath = computed(() => graphPathForCoordinates(routeCoordinates()))
 
 const internalGraphFacilities = computed(() => {
+  const bounds = graphBounds.value
   return visibleFacilities.value
+    .filter(facility => pointInBounds(graphCoordinate(facility), bounds))
+    .sort((left, right) => {
+      const selectedDelta = Number(String(right.id) === String(selectedFacilityId.value)) - Number(String(left.id) === String(selectedFacilityId.value))
+      if (selectedDelta) return selectedDelta
+      const routableDelta = Number(Boolean(right.routable)) - Number(Boolean(left.routable))
+      if (routableDelta) return routableDelta
+      return Number(left.walkDistance ?? Number.MAX_SAFE_INTEGER) - Number(right.walkDistance ?? Number.MAX_SAFE_INTEGER)
+    })
+    .slice(0, internalGraphScope.value === 'full' ? GRAPH_FACILITY_LIMIT * 2 : GRAPH_FACILITY_LIMIT)
     .map(facility => {
       const point = projectGraphPoint(facility)
       return point ? { facility, ...point } : null
@@ -1066,6 +1202,11 @@ const selectInternalGraphFacility = (facility) => {
   internalRoute.value = null
   drawInternalMap()
 }
+
+const internalGraphDisplayStats = computed(() => ({
+  roadEdges: displayedRoadEdges.value.length,
+  facilities: internalGraphFacilities.value.length
+}))
 
 const drawInternalRoute = () => {
   if (!map || !AMapApi) return
@@ -1197,10 +1338,10 @@ onUnmounted(() => {
 }
 
 .internal-graph {
-  background-color: #f8fafc;
+  background-color: #f1f5f9;
   background-image:
-    linear-gradient(rgba(148, 163, 184, 0.18) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(148, 163, 184, 0.18) 1px, transparent 1px);
-  background-size: 32px 32px;
+    linear-gradient(rgba(148, 163, 184, 0.12) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.12) 1px, transparent 1px);
+  background-size: 48px 48px;
 }
 </style>
