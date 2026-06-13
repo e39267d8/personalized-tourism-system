@@ -20,7 +20,6 @@ using tourism::db::exec_params;
 using tourism::db::exec_sql;
 using tourism::services::current_user;
 using tourism::services::evaluate_user_achievements;
-using tourism::services::submit_achievement_review;
 using tourism::support::distance_number;
 using tourism::support::first_nonempty;
 using tourism::support::json_error;
@@ -1072,17 +1071,6 @@ void register_diary_routes(TourismApp& app) {
             data["total"] = static_cast<int>(items.size());
             data["items"] = std::move(items);
             return crow::response(ok(std::move(data)));
-        } catch (const std::exception& error) {
-            return json_error(500, error.what());
-        }
-    });
-
-    CROW_ROUTE(app, "/api/v1/diaries/<int>/achievement-review").methods("POST"_method)([](const crow::request& req, int id) -> crow::response {
-        try {
-            PgConnection db;
-            auto user = current_user(db, req);
-            if (!user) return json_error(401, "请先登录");
-            return crow::response(201, ok(submit_achievement_review(db, user->id, id)));
         } catch (const std::exception& error) {
             return json_error(500, error.what());
         }

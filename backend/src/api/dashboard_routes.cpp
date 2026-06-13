@@ -61,15 +61,13 @@ void register_dashboard_routes(TourismApp& app) {
                 SELECT
                     (SELECT COUNT(*) FROM scenic_spots WHERE status = 1)::text AS scenic_count,
                     (SELECT COUNT(*) FROM graph_edges)::text AS edge_count,
-                    (SELECT COUNT(*) FROM travel_diaries WHERE status <> 2)::text AS diary_count,
-                    (SELECT COUNT(*) FROM achievements)::text AS achievement_count
+                    (SELECT COUNT(*) FROM travel_diaries WHERE status <> 2)::text AS diary_count
             )SQL");
 
             crow::json::wvalue::list stats;
             stats.push_back(crow::json::wvalue{{"label", "景点数据"}, {"value", rows.value(0, "scenic_count")}, {"detail", "来自 scenic_spots 表"}});
             stats.push_back(crow::json::wvalue{{"label", "路线边数"}, {"value", rows.value(0, "edge_count")}, {"detail", "来自 graph_edges 表"}});
             stats.push_back(crow::json::wvalue{{"label", "旅行日记"}, {"value", rows.value(0, "diary_count")}, {"detail", "支持数据库持久化"}});
-            stats.push_back(crow::json::wvalue{{"label", "成就徽章"}, {"value", rows.value(0, "achievement_count")}, {"detail", "旅行护照与数字纪念凭证"}});
 
             crow::json::wvalue data;
             data["stats"] = std::move(stats);
