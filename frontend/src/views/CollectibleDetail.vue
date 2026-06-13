@@ -26,7 +26,7 @@
             <div class="text-xs text-slate-300">凭证编号</div>
             <div class="mt-1 break-all font-mono text-sm font-semibold">{{ collectible.tokenId }}</div>
           </div>
-          <div class="mt-6 text-xs text-slate-400">数字纪念凭证 / 模拟链上哈希，不代表真实区块链资产</div>
+          <div class="mt-6 text-xs text-slate-400">TourPilot 旅行纪念凭证</div>
         </div>
 
         <div class="p-6">
@@ -40,7 +40,7 @@
               <div class="mt-1 font-semibold text-slate-950">{{ collectible.tierLabel }}</div>
             </div>
             <div class="rounded-md bg-slate-50 p-4">
-              <div class="text-xs text-slate-500">凭证模式</div>
+              <div class="text-xs text-slate-500">凭证类型</div>
               <div class="mt-1 font-semibold text-slate-950">{{ collectible.chainMode }}</div>
             </div>
             <div class="rounded-md bg-slate-50 p-4">
@@ -50,7 +50,7 @@
           </div>
 
           <div class="mt-5 rounded-md border border-slate-200 p-4">
-            <div class="text-xs text-slate-500">模拟链上哈希</div>
+            <div class="text-xs text-slate-500">校验码</div>
             <div class="mt-2 break-all font-mono text-xs leading-6 text-slate-700">{{ collectible.blockchainHash }}</div>
           </div>
 
@@ -141,7 +141,7 @@ function downloadShareCard() {
 
   ctx.fillStyle = '#94a3b8'
   ctx.font = '28px Arial, sans-serif'
-  ctx.fillText('模拟链上哈希', 120, 1230)
+  ctx.fillText('校验码', 120, 1230)
   ctx.fillStyle = '#e2e8f0'
   ctx.font = '24px Consolas, monospace'
   drawWrappedText(ctx, collectible.value.blockchainHash || '-', 120, 1280, 820, 34)

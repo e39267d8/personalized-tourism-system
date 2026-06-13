@@ -309,15 +309,9 @@
         <span
           v-if="huffmanStats.saved > 0"
           class="text-xs text-teal-600"
-          title="存储时使用 Huffman 无损压缩"
+          title="发布后会自动优化正文存储"
         >
-          压缩节省 {{ huffmanStats.saved }}%
-          <router-link
-            to="/tools/huffman"
-            class="ml-0.5 underline underline-offset-2 opacity-60 hover:opacity-100 transition"
-            tabindex="-1"
-            title="了解 Huffman 压缩原理"
-          >了解</router-link>
+          内容优化存储 · 节省 {{ huffmanStats.saved }}%
         </span>
       </div>
       <div class="flex items-center gap-2.5">

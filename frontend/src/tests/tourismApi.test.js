@@ -124,19 +124,35 @@ describe('tourismApi - 美食推荐', () => {
   it('带筛选条件获取美食推荐', async () => {
     mockAxiosInstance.get.mockResolvedValue({ data: { data: [] } })
 
-    await tourismApi.foodRecommend({ city: '北京', cuisine: '川菜', limit: 10, sort: 'rating' })
+    await tourismApi.foodRecommend({
+      scenic_spot_id: 8,
+      q: '咖啡',
+      cuisine: 'coffee_shop',
+      limit: 10,
+      sort: 'distance',
+      lat: 39.9928,
+      lng: 116.3103
+    })
 
     const [, options] = mockAxiosInstance.get.mock.calls[0]
-    expect(options.params).toMatchObject({ cuisine: '川菜', sort: 'rating' })
+    expect(options.params).toMatchObject({
+      scenic_spot_id: 8,
+      q: '咖啡',
+      cuisine: 'coffee_shop',
+      limit: 10,
+      sort: 'distance',
+      lat: 39.9928,
+      lng: 116.3103
+    })
   })
 
-  it('获取菜系列表', async () => {
+  it('按景点或学校获取菜系列表', async () => {
     mockAxiosInstance.get.mockResolvedValue({ data: { data: ['川菜', '粤菜', '鲁菜'] } })
 
-    const result = await tourismApi.foodCuisines()
+    const result = await tourismApi.foodCuisines({ scenic_spot_id: 8 })
 
     expect(result).toEqual(['川菜', '粤菜', '鲁菜'])
-    expect(mockAxiosInstance.get).toHaveBeenCalledWith('/foods/cuisines', { params: undefined })
+    expect(mockAxiosInstance.get).toHaveBeenCalledWith('/foods/cuisines', { params: { scenic_spot_id: 8 } })
   })
 })
 

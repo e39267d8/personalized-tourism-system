@@ -259,7 +259,7 @@
         <div class="flex items-center justify-between gap-3">
           <h2 class="text-lg font-semibold text-slate-950">设施查询</h2>
           <div class="flex items-center gap-2">
-            <span v-if="facilitySortedByWalk" class="rounded-md bg-teal-50 px-2.5 py-1 text-xs font-semibold text-teal-700" title="按 Dijkstra 最短路径距离排序">步行距离排序</span>
+            <span v-if="facilitySortedByWalk" class="rounded-md bg-teal-50 px-2.5 py-1 text-xs font-semibold text-teal-700" title="按实际步行距离排序">步行距离排序</span>
             <span class="rounded-md bg-slate-100 px-2.5 py-1 text-sm font-semibold text-slate-700">{{ routableFacilities.length }}/{{ facilities.length }} 可导航</span>
           </div>
         </div>

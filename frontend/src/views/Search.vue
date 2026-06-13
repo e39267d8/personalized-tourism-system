@@ -106,8 +106,7 @@
                 <span>门票 ¥{{ spot.ticket }}</span>
                 <span>{{ spot.duration }}</span>
               </div>
-              <div class="mt-3 flex items-center justify-between text-xs">
-                <span class="rounded-md bg-teal-50 px-2 py-1 font-medium text-teal-800">{{ spot.matchReason || '综合推荐' }}</span>
+              <div class="mt-3 flex items-center justify-end text-xs">
                 <span class="font-semibold text-slate-500">相关度 {{ Math.round(Number(spot.score || 0)) }}</span>
               </div>
             </div>
