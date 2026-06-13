@@ -24,6 +24,7 @@ using tourism::services::create_scenic_checkin;
 using tourism::services::current_user;
 using tourism::services::decide_review_submission;
 using tourism::services::review_submissions;
+using tourism::services::submit_achievement_review;
 using tourism::services::user_badge_redemptions;
 using tourism::services::user_collectibles;
 using tourism::support::json_error;
@@ -150,6 +151,17 @@ void register_achievement_routes(TourismApp& app) {
             auto user = current_user(db, req);
             if (!user) return json_error(401, "请先登录");
             return crow::response(ok(user_badge_redemptions(db, user->id)));
+        } catch (const std::exception& error) {
+            return json_error(500, error.what());
+        }
+    });
+
+    CROW_ROUTE(app, "/api/v1/diaries/<int>/achievement-review").methods("POST"_method)([](const crow::request& req, int id) -> crow::response {
+        try {
+            PgConnection db;
+            auto user = current_user(db, req);
+            if (!user) return json_error(401, "请先登录");
+            return crow::response(201, ok(submit_achievement_review(db, user->id, id)));
         } catch (const std::exception& error) {
             return json_error(500, error.what());
         }
