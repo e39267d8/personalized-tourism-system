@@ -6,10 +6,10 @@
           <div>
             <h1 class="text-2xl font-bold text-slate-950">旅行智能助手</h1>
             <p class="mt-2 text-sm leading-6 text-slate-500">
-              输入目的地、预算和旅行偏好，助手会通过后端 API 调用真实大模型生成聊天回复和行程建议。
+              输入目的地、预算和旅行偏好，助手会生成聊天回复和行程建议。
             </p>
           </div>
-          <span class="rounded-md bg-teal-50 px-2.5 py-1 text-sm font-semibold text-teal-800">API</span>
+          <span class="rounded-md bg-teal-50 px-2.5 py-1 text-sm font-semibold text-teal-800">智能助手</span>
         </div>
 
         <div class="mt-5 space-y-4">
@@ -175,7 +175,7 @@ const quickPrompts = [
 ]
 
 const statusText = computed(() =>
-  apiAvailable.value ? '已连接旅行规划 API' : 'API 暂不可用，请检查后端服务或大模型密钥配置'
+  apiAvailable.value ? '助手已就绪' : '助手暂时不可用，请稍后再试'
 )
 
 const scrollToBottom = async () => {
@@ -211,12 +211,11 @@ const sendMessage = async () => {
       messages: messages.value.slice(-8).map(({ role, content }) => ({ role, content }))
     })
     apiAvailable.value = true
-    appendMessage('assistant', response.reply || '大模型接口没有返回可显示的回复，请稍后重试。')
+    appendMessage('assistant', response.reply || '助手暂时没有回复成功，请稍后再试。')
     latestSuggestions.value = response.suggestions?.length ? response.suggestions : latestSuggestions.value
-  } catch (error) {
+  } catch {
     apiAvailable.value = false
-    const serverMessage = error.response?.data?.message
-    appendMessage('assistant', `真实 API 请求失败：${serverMessage || error.message || '请检查后端服务和大模型密钥配置。'}`)
+    appendMessage('assistant', '助手暂时没有回复成功，请稍后再试。')
   } finally {
     loading.value = false
     await scrollToBottom()

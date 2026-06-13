@@ -129,7 +129,7 @@
       <aside class="space-y-6">
         <section class="rounded-md border border-slate-200 bg-white p-5">
           <h2 class="text-lg font-semibold text-slate-950">数字纪念凭证墙</h2>
-          <p class="mt-1 text-sm text-slate-500">模拟链上编号，可进入证书页生成分享卡。</p>
+          <p class="mt-1 text-sm text-slate-500">收藏已领取的旅行纪念凭证，可进入证书页生成分享卡。</p>
 
           <div v-if="collectibles.length" class="mt-4 space-y-3">
             <router-link
@@ -140,7 +140,6 @@
             >
               <div class="text-xs font-semibold text-slate-500">{{ item.tierLabel }}</div>
               <div class="mt-1 font-bold text-slate-950">{{ item.name }}</div>
-              <div class="mt-2 break-all text-xs text-slate-500">{{ item.tokenId }}</div>
             </router-link>
           </div>
           <div v-else class="mt-4 rounded-md border border-dashed border-slate-300 p-5 text-sm leading-6 text-slate-500">

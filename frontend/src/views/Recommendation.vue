@@ -132,8 +132,6 @@
                 <span v-if="!item.matchedTags.length" class="rounded-md bg-slate-100 px-2 py-1 text-xs text-slate-600">综合推荐</span>
               </div>
 
-              <p class="mt-3 text-sm leading-6 text-slate-600">{{ item.reason }}</p>
-
               <div class="mt-4 grid gap-2 border-t border-slate-100 pt-3 text-sm text-slate-500 sm:grid-cols-3">
                 <span>评分 {{ item.scenicSpot.rating }}</span>
                 <span>门票 ¥{{ item.scenicSpot.ticket }}</span>

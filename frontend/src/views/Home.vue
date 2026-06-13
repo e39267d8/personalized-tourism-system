@@ -69,18 +69,6 @@
       </div>
     </section>
 
-    <section class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-      <button
-        v-for="item in quickSearches"
-        :key="item.query"
-        class="rounded-md border border-slate-200 bg-white p-4 text-left transition hover:-translate-y-0.5 hover:border-teal-700 hover:shadow-sm"
-        @click="goSearch(item.query)"
-      >
-        <div class="font-semibold">{{ item.title }}</div>
-        <p class="mt-1 text-sm text-slate-500">{{ item.copy }}</p>
-      </button>
-    </section>
-
     <section class="grid gap-6 lg:grid-cols-[1.35fr_0.65fr]">
       <div>
         <div class="flex flex-wrap items-end justify-between gap-4">
@@ -135,7 +123,6 @@
                 <span v-for="tag in item.matchedTags" :key="tag" class="rounded-md bg-teal-50 px-2 py-1 text-xs font-medium text-teal-800">{{ tag }}</span>
                 <span v-if="!item.matchedTags.length" class="rounded-md bg-slate-100 px-2 py-1 text-xs text-slate-600">综合推荐</span>
               </div>
-              <p class="mt-3 text-sm leading-6 text-slate-600">{{ item.reason }}</p>
               <div class="mt-4 flex items-center justify-between border-t border-slate-100 pt-3 text-sm text-slate-500">
                 <span>门票 ¥{{ item.scenicSpot.ticket }}</span>
                 <span>{{ item.scenicSpot.duration }}</span>
@@ -243,13 +230,6 @@ const hasUserProfile = ref(false)
 const activeProfile = ref(null)
 const homeLoading = ref(true)
 
-const quickSearches = [
-  { title: '第一次来北京', copy: '经典地标和中轴线', query: '中轴线' },
-  { title: '雨天也能玩', copy: '博物馆和室内展览', query: '博物馆' },
-  { title: '适合拍照', copy: '日落、公园、城市漫步', query: '摄影' },
-  { title: '低预算路线', copy: '免费景点和步行路线', query: '低预算' }
-]
-
 const featuredRoute = computed(() => routes.value[0])
 const affordablePlans = computed(() => plans.value.filter(plan => plan.budget <= budget.value).slice(0, 2))
 const recommendationSubtitle = computed(() => {
@@ -258,11 +238,7 @@ const recommendationSubtitle = computed(() => {
 })
 
 const submitSearch = () => {
-  goSearch(searchQuery.value)
-}
-
-const goSearch = (query) => {
-  const q = query.trim()
+  const q = searchQuery.value.trim()
   router.push({ path: '/search', query: q ? { q } : {} })
 }
 

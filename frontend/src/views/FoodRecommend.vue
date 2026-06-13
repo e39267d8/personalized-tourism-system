@@ -5,7 +5,7 @@
       <div>
         <h1 class="text-2xl font-bold text-slate-900">美食推荐</h1>
         <p v-if="!loading" class="mt-1 text-sm text-slate-500">
-          共 {{ foods.length }} 家餐饮 · {{ cuisines.length }} 种菜系{{ selectedScenicName ? ' · ' + selectedScenicName : '' }}
+          返回前 {{ foods.length }} 家餐饮 · {{ cuisines.length }} 种菜系{{ selectedScenicName ? ' · ' + selectedScenicName : '' }}
         </p>
       </div>
       <!-- Sort -->
@@ -16,23 +16,28 @@
       >
         <option value="hot">热门推荐</option>
         <option value="rating">评分最高</option>
-        <option value="distance">距离最近</option>
+        <option value="distance" :disabled="!selectedScenicId">距离最近</option>
       </select>
     </div>
 
     <!-- Filters -->
     <div class="rounded-md border border-slate-200 bg-white p-5">
       <div class="flex flex-wrap items-center gap-4">
-        <!-- Scenic spot selector -->
+        <!-- Location selector -->
         <div class="flex items-center gap-2">
-          <label class="text-sm font-semibold text-slate-700">景区</label>
+          <label class="text-sm font-semibold text-slate-700">景点 / 学校</label>
           <select
             v-model="selectedScenic"
             class="rounded-md border border-slate-300 h-10 px-3 text-sm bg-white outline-none focus:border-teal-700"
             @change="onScenicChange"
           >
-            <option :value="0">全部景区</option>
-            <option v-for="spot in scenicSpots" :key="spot.id" :value="spot.id">{{ spot.name }}</option>
+            <option :value="0">全部景点 / 学校</option>
+            <optgroup v-if="campusScenicSpots.length" label="学校">
+              <option v-for="spot in campusScenicSpots" :key="spot.id" :value="spot.id">{{ spot.name }}</option>
+            </optgroup>
+            <optgroup label="景点">
+              <option v-for="spot in regularScenicSpots" :key="spot.id" :value="spot.id">{{ spot.name }}</option>
+            </optgroup>
           </select>
         </div>
 
@@ -73,6 +78,7 @@
           清除
         </button>
       </div>
+      <p v-if="!selectedScenicId" class="mt-3 text-xs text-slate-500">选择具体景点或学校后，可以按距离最近排序。</p>
     </div>
 
     <!-- Loading -->
@@ -113,7 +119,7 @@
                 <span
                   v-if="item.scenicName"
                   class="rounded-md bg-slate-100 px-2 py-0.5 text-xs text-slate-500"
-                >{{ item.scenicName }}</span>
+                >{{ item.locationTypeLabel || '景点' }} · {{ item.scenicName }}</span>
               </div>
             </div>
             <div class="flex items-center gap-1 flex-shrink-0">
@@ -193,11 +199,21 @@ const selectedCuisine = ref('')
 
 let searchTimer = null
 
+const selectedScenicId = computed(() => Number(selectedScenic.value) || 0)
+
 const selectedScenicName = computed(() => {
-  if (!selectedScenic.value) return ''
-  const s = scenicSpots.value.find(s => s.id === selectedScenic.value)
+  if (!selectedScenicId.value) return ''
+  const s = scenicSpots.value.find(s => Number(s.id) === selectedScenicId.value)
   return s ? s.name : ''
 })
+
+const campusScenicSpots = computed(() => scenicSpots.value.filter(isCampusSpot))
+const regularScenicSpots = computed(() => scenicSpots.value.filter(spot => !isCampusSpot(spot)))
+
+function isCampusSpot(spot) {
+  const text = `${spot.category || ''} ${(spot.tags || []).join(' ')} ${spot.name || ''}`
+  return /高校|校园|学校|大学/.test(text)
+}
 
 function formatRating(r) {
   return Number(r || 0).toFixed(1)
@@ -216,7 +232,7 @@ function formatDistance(meters) {
 
 function buildParams() {
   const params = { sort: sortBy.value, limit: 10 }
-  if (selectedScenic.value > 0) params.scenic_spot_id = selectedScenic.value
+  if (selectedScenicId.value > 0) params.scenic_spot_id = selectedScenicId.value
   if (searchQuery.value.trim()) params.q = searchQuery.value.trim()
   if (selectedCuisine.value) params.cuisine = selectedCuisine.value
   return params
@@ -228,6 +244,7 @@ async function loadFoods() {
     const data = await tourismApi.foodRecommend(buildParams())
     const items = data.items || data || []
     foods.value = items
+    if (data.sort && data.sort !== sortBy.value) sortBy.value = data.sort
   } catch {
     foods.value = []
   } finally {
@@ -238,7 +255,7 @@ async function loadFoods() {
 async function loadCuisines() {
   try {
     const params = {}
-    if (selectedScenic.value > 0) params.scenic_spot_id = selectedScenic.value
+    if (selectedScenicId.value > 0) params.scenic_spot_id = selectedScenicId.value
     const data = await tourismApi.foodCuisines(params)
     const raw = data.cuisines || data.items || data || []
     cuisines.value = raw.map(c => typeof c === 'string' ? { key: c, label: c } : { key: c.key || c.value || c, label: c.label || c.name || c })
@@ -249,10 +266,9 @@ async function loadCuisines() {
 
 async function loadScenicSpots() {
   try {
-    const data = await tourismApi.scenicSpots({ limit: 50 })
+    const data = await tourismApi.scenicSpots({ limit: 100 })
     const all = data.items || data || []
-    // Keep top 20 most relevant scenic spots
-    scenicSpots.value = all.slice(0, 20)
+    scenicSpots.value = all
   } catch {
     scenicSpots.value = []
   }
@@ -270,11 +286,15 @@ function clearCuisines() {
 
 function onScenicChange() {
   selectedCuisine.value = ''
+  if (!selectedScenicId.value && sortBy.value === 'distance') sortBy.value = 'hot'
   loadCuisines()
   loadFoods()
 }
 
-function onSortChange() { loadFoods() }
+function onSortChange() {
+  if (sortBy.value === 'distance' && !selectedScenicId.value) sortBy.value = 'hot'
+  loadFoods()
+}
 function debouncedSearch() {
   clearTimeout(searchTimer)
   searchTimer = setTimeout(loadFoods, 400)

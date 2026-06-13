@@ -95,7 +95,7 @@
             </div>
           </div>
 
-          <!-- TSP tour mode toggle -->
+          <!-- 环游模式开关 -->
           <div class="flex items-center gap-2 py-1">
             <input
               id="tourMode"
@@ -103,8 +103,8 @@
               type="checkbox"
               class="w-4 h-4 rounded border-slate-300 text-teal-700 focus:ring-teal-500"
             />
-            <label for="tourMode" class="text-sm font-semibold text-slate-700 cursor-pointer">环游模式 (TSP)</label>
-            <span class="text-xs text-slate-400">多点间最短回路，自动回到起点</span>
+            <label for="tourMode" class="text-sm font-semibold text-slate-700 cursor-pointer">环游模式</label>
+            <span class="text-xs text-slate-400">自动安排多个地点的游览顺序，并回到起点</span>
           </div>
 
           <!-- Congestion-aware routing toggle -->
@@ -165,20 +165,20 @@
         <template v-if="route">
           <div class="mt-4 grid grid-cols-3 gap-3">
             <div class="rounded-md bg-slate-50 p-3">
-              <div class="text-xs text-slate-500">{{ tourMode && !route.routeServiceFallback ? 'TSP 距离' : '距离' }}</div>
+              <div class="text-xs text-slate-500">{{ tourMode && !route.routeServiceFallback ? '环游距离' : '距离' }}</div>
               <div class="mt-1 text-lg font-bold">{{ route.distance }}</div>
             </div>
             <div class="rounded-md bg-slate-50 p-3">
-              <div class="text-xs text-slate-500">{{ tourMode && !route.routeServiceFallback ? 'TSP 时长' : '时长' }}</div>
+              <div class="text-xs text-slate-500">{{ tourMode && !route.routeServiceFallback ? '环游时长' : '时长' }}</div>
               <div class="mt-1 text-lg font-bold">{{ route.time }}</div>
             </div>
             <div class="rounded-md bg-slate-50 p-3">
-              <div class="text-xs text-slate-500">{{ tourMode && !route.routeServiceFallback ? '算法' : '预估费用' }}</div>
-              <div class="mt-1 text-base font-bold">{{ tourMode && !route.routeServiceFallback ? (route.algorithm || 'TSP') : ('¥' + route.cost) }}</div>
+              <div class="text-xs text-slate-500">{{ tourMode && !route.routeServiceFallback ? '路线类型' : '预估费用' }}</div>
+              <div class="mt-1 text-base font-bold">{{ tourMode && !route.routeServiceFallback ? (route.routeType || '环游路线') : ('¥' + route.cost) }}</div>
             </div>
           </div>
 
-          <!-- TSP visit order -->
+          <!-- 环游访问顺序 -->
           <div v-if="tourMode && !route.routeServiceFallback && route.visitOrder" class="mt-3 rounded-md bg-teal-50 px-3 py-2 text-sm text-teal-800">
             访问顺序: {{ route.visitOrder.join(' → ') }}
           </div>
@@ -364,7 +364,7 @@ const planRoute = async () => {
   loading.value = true
   error.value = ''
 
-  // TSP 环游模式：把输入地点解析为本地路网节点，后端跑真实 TSP + Dijkstra
+  // 环游模式：把输入地点解析为本地路网节点，后端生成多点访问顺序
   if (tourMode.value) {
     const texts = allStopTexts()
     try {
@@ -378,7 +378,7 @@ const planRoute = async () => {
       if (missing.length) {
         route.value = await routeServiceFallbackForStops(
           texts,
-          'TSP 环游',
+          '环游模式',
           graphNodeMissingMessage('环游模式', missing),
           '已按当前输入顺序显示真实道路路线'
         )
@@ -392,7 +392,7 @@ const planRoute = async () => {
         optimization: form.optimization
       })
 
-      // 分层渲染：TSP 只决定访问顺序，真实道路折线交给路线服务按所选交通方式规划
+      // 分层渲染：多点访问顺序由后端决定，真实道路折线交给路线服务按所选交通方式规划
       // （本地图的边没有道路几何，直接画会穿楼；环游闭环 = 末尾补回起点）
       const visitNames = tourResult.visitOrder || []
       const loopStops = visitNames.length >= 2 ? [...visitNames, visitNames[0]] : visitNames
@@ -400,8 +400,8 @@ const planRoute = async () => {
 
       route.value = {
         ...(amapRoute || tourResult),
-        title: 'TSP 环游路线',
-        algorithm: tourResult.algorithm || 'TSP',
+        title: '环游路线',
+        routeType: '环游路线',
         visitOrder: visitNames,
         transport: amapRoute?.transport || tourResult.transport || modeLabel(),
         usedTransportFallback: amapRoute ? false : tourResult.usedTransportFallback,
@@ -418,8 +418,8 @@ const planRoute = async () => {
       try {
         route.value = await routeServiceFallbackForStops(
           texts,
-          'TSP 环游',
-          routeErrorMessage(requestError, 'TSP 环游规划失败'),
+          '环游模式',
+          routeErrorMessage(requestError, '环游规划失败'),
           '已按当前输入顺序显示真实道路路线'
         )
         drawRoute()
@@ -464,7 +464,7 @@ const planRoute = async () => {
       route.value = {
         ...congestionResult,
         title: `拥挤度感知路线（${congestionResult.crowd_label || '中等'}敏感时段）`,
-        algorithm: `拥挤度感知 Dijkstra · ${modeLabel()}`,
+        routeType: '拥挤度感知路线',
         transport: congestionResult.transport || modeLabel(),
         // 拥挤度模式直接展示本地图算法选中的路径；如果再把中间节点交给外部路线服务
         // 二次重算，入口/换乘点这类非 scenic 节点会被抹掉，视觉上就像
@@ -526,7 +526,7 @@ const routeErrorMessage = (requestError, fallbackText) =>
 const routeServiceFallbackForStops = async (stopTexts, modeName, reason, routeLabel) => {
   const routeServiceRoute = await amapGeometryForStops(stopTexts)
   if (!routeServiceRoute) {
-    throw new Error(`${modeName}未生成可展示路线（${reason}），且路线服务兜底也不可用。`)
+    throw new Error(`${modeName}暂时无法生成完整路线，请调整地点或稍后再试。`)
   }
   const fallbackLabel =
     form.travelMode === 'transit' && stopTexts.length > 2
@@ -534,10 +534,10 @@ const routeServiceFallbackForStops = async (stopTexts, modeName, reason, routeLa
       : routeLabel
   return {
     ...routeServiceRoute,
-    title: `${modeName}兜底路线`,
-    algorithm: '真实道路路线服务',
+    title: `${modeName}备选路线`,
+    routeType: '备选路线',
     routeServiceFallback: true,
-    fallbackNotice: `${modeName}本地算法未生成可展示路线（${reason}），${fallbackLabel}；该路线不代表${modeName}算法结果。`,
+    fallbackNotice: `当前模式无法直接生成完整路线，已为你切换为可展示的备选路线。${fallbackLabel ? ` ${fallbackLabel}。` : ''}`,
     originalPlanningError: reason,
     usedTransportFallback: false
   }
