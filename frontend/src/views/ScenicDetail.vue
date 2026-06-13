@@ -85,9 +85,34 @@
             <h2 class="text-lg font-semibold text-slate-950">景区设施导航</h2>
             <p class="mt-1 text-sm text-slate-500">查看景区内部道路、建筑和服务设施，并规划步行路线。</p>
           </div>
-          <button type="button" class="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100" @click="fitInternalMap(true)">
-            定位地图
-          </button>
+          <div class="flex flex-wrap items-center gap-2">
+            <div class="inline-flex overflow-hidden rounded-md border border-slate-300 bg-white text-sm font-semibold">
+              <button
+                type="button"
+                class="px-3 py-2"
+                :class="internalViewMode === 'graph' ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'"
+                @click="setInternalViewMode('graph')"
+              >
+                内部路网
+              </button>
+              <button
+                type="button"
+                class="border-l border-slate-300 px-3 py-2"
+                :class="internalViewMode === 'map' ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'"
+                @click="setInternalViewMode('map')"
+              >
+                地图服务
+              </button>
+            </div>
+            <button
+              v-if="internalViewMode === 'map'"
+              type="button"
+              class="rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+              @click="fitInternalMap(true)"
+            >
+              定位地图
+            </button>
+          </div>
         </div>
         <div class="grid gap-3 border-b border-slate-200 bg-slate-50 px-5 py-3 text-sm sm:grid-cols-4">
           <div>
@@ -108,15 +133,103 @@
           </div>
         </div>
         <div class="relative">
+          <div v-show="internalViewMode === 'graph'" class="internal-graph relative h-[420px] w-full overflow-hidden">
+            <svg class="h-full w-full" :viewBox="internalGraphViewBox" preserveAspectRatio="xMidYMid meet" role="img" aria-label="内部道路图">
+              <rect :width="GRAPH_WIDTH" :height="GRAPH_HEIGHT" fill="transparent" />
+              <path
+                v-if="internalGraphConnectorPath"
+                :d="internalGraphConnectorPath"
+                fill="none"
+                stroke="#cbd5e1"
+                stroke-width="1.2"
+                stroke-dasharray="5 5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                opacity="0.42"
+              />
+              <path
+                v-if="internalGraphRoadPath"
+                :d="internalGraphRoadPath"
+                fill="none"
+                stroke="#475569"
+                stroke-width="2.1"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                opacity="0.72"
+              />
+              <path
+                v-if="internalGraphRoutePath"
+                :d="internalGraphRoutePath"
+                fill="none"
+                stroke="#0f766e"
+                stroke-width="7"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                opacity="0.95"
+              />
+              <g
+                v-for="item in internalGraphFacilities"
+                :key="item.facility.id"
+                :transform="`translate(${item.x} ${item.y})`"
+                class="cursor-pointer"
+                @click="selectInternalGraphFacility(item.facility)"
+              >
+                <title>{{ item.facility.name }}</title>
+                <circle
+                  :r="String(item.facility.id) === String(selectedFacilityId) ? 8 : item.facility.routable ? 5.5 : 4"
+                  :fill="markerColor(item.facility)"
+                  stroke="#ffffff"
+                  stroke-width="2"
+                  :opacity="item.facility.routable ? 0.95 : 0.42"
+                />
+              </g>
+              <g v-if="selectedGraphFacilityPoint" :transform="`translate(${selectedGraphFacilityPoint.x} ${selectedGraphFacilityPoint.y})`">
+                <text
+                  x="10"
+                  y="-10"
+                  class="fill-slate-900 text-[18px] font-bold"
+                  paint-order="stroke"
+                  stroke="#ffffff"
+                  stroke-width="5"
+                >
+                  {{ selectedFacility?.name }}
+                </text>
+              </g>
+            </svg>
+            <div class="pointer-events-none absolute left-3 top-3 rounded-md border border-white/80 bg-white/90 px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm">
+              数据库路网
+            </div>
+            <div class="pointer-events-none absolute right-3 top-3 flex flex-wrap gap-2 rounded-md border border-white/80 bg-white/90 px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm">
+              <span class="inline-flex items-center gap-1.5">
+                <span class="h-0.5 w-5 rounded-full bg-slate-600"></span>
+                真实道路
+              </span>
+              <span class="inline-flex items-center gap-1.5">
+                <span class="h-0.5 w-5 rounded-full border-t border-dashed border-slate-400"></span>
+                设施接入
+              </span>
+              <span class="inline-flex items-center gap-1.5">
+                <span class="h-1 w-5 rounded-full bg-teal-700"></span>
+                规划路线
+              </span>
+            </div>
+            <div
+              v-if="!internalGraphRoadPath && !internalGraphConnectorPath"
+              class="absolute inset-0 flex items-center justify-center text-sm font-semibold text-slate-500"
+            >
+              暂无可展示的内部路网数据
+            </div>
+          </div>
           <div
+            v-show="internalViewMode === 'map'"
             ref="internalMapContainer"
             class="internal-map h-[420px] w-full"
             :class="{ 'cursor-crosshair': selectedStartMode === 'map' && amapReady }"
           ></div>
-          <div class="pointer-events-none absolute left-3 top-3 rounded-md border border-white/80 bg-white/90 px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm">
+          <div v-if="internalViewMode === 'map'" class="pointer-events-none absolute left-3 top-3 rounded-md border border-white/80 bg-white/90 px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm">
             {{ mapStatusLabel }}
           </div>
-          <div class="pointer-events-none absolute right-3 top-3 flex flex-wrap gap-2 rounded-md border border-white/80 bg-white/90 px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm">
+          <div v-if="internalViewMode === 'map'" class="pointer-events-none absolute right-3 top-3 flex flex-wrap gap-2 rounded-md border border-white/80 bg-white/90 px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm">
             <span class="inline-flex items-center gap-1.5">
               <span class="h-0.5 w-5 rounded-full bg-slate-500"></span>
               内部道路
@@ -131,12 +244,12 @@
             </span>
           </div>
           <div
-            v-if="selectedStartMode === 'map'"
+            v-if="internalViewMode === 'map' && selectedStartMode === 'map'"
             class="pointer-events-none absolute left-3 top-14 rounded-md border border-slate-200 bg-white/90 px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm"
           >
             {{ selectedStartPoint ? `起点 ${selectedStartPointLabel}` : '点击地图选择起点' }}
           </div>
-          <div v-if="amapError" class="absolute inset-x-4 bottom-4 rounded-md border border-amber-200 bg-white/95 p-3 text-sm leading-6 text-amber-800 shadow-sm">
+          <div v-if="internalViewMode === 'map' && amapError" class="absolute inset-x-4 bottom-4 rounded-md border border-amber-200 bg-white/95 p-3 text-sm leading-6 text-amber-800 shadow-sm">
             {{ amapError }}。自动入口和下拉起点仍可规划路线，地图点选需要地图服务加载成功。
           </div>
         </div>
@@ -380,6 +493,7 @@ const selectedStartMode = ref('auto')
 const selectedStartNodeId = ref('')
 const selectedStartPoint = ref(null)
 const showAllFacilities = ref(false)
+const internalViewMode = ref('graph')
 const amapReady = ref(false)
 const amapError = ref('')
 const internalMapContainer = ref(null)
@@ -401,6 +515,11 @@ let roadOverlays = []
 let facilityOverlays = []
 let startOverlays = []
 let routeOverlays = []
+
+const GRAPH_WIDTH = 1000
+const GRAPH_HEIGHT = 560
+const GRAPH_PADDING = 34
+const internalGraphViewBox = `0 0 ${GRAPH_WIDTH} ${GRAPH_HEIGHT}`
 
 const visibleFacilityPool = computed(() => {
   return showAllFacilities.value ? facilities.value : routableFacilities.value
@@ -520,6 +639,17 @@ const initInternalMap = async () => {
   }
 }
 
+const setInternalViewMode = async (mode) => {
+  internalViewMode.value = mode
+  if (mode !== 'map') return
+  await nextTick()
+  await initInternalMap()
+  if (map) {
+    if (typeof map.resize === 'function') map.resize()
+    drawInternalMap(true)
+  }
+}
+
 function handleInternalMapClick(event) {
   if (selectedStartMode.value !== 'map') return
   selectedStartPoint.value = toBackendLatLng(event.lnglat)
@@ -633,7 +763,7 @@ const loadInternalNavigation = async () => {
   selectedStartPoint.value = null
   facilitySortedByWalk.value = false
   try {
-    // 先加载地图，获取入口节点 ID，再用 Dijkstra 实际步行距离排序设施
+    // 先加载内部路网，获取入口节点 ID，再用 Dijkstra 实际步行距离排序设施。
     const mapData = await tourismApi.scenicInternalMap(props.id)
     internalMap.value = {
       nodes: mapData.nodes || [],
@@ -830,6 +960,113 @@ const routeCoordinates = () => {
   return (internalRoute.value?.coordinates || []).filter(point => point?.length === 2)
 }
 
+const graphCoordinate = (point) => {
+  if (Array.isArray(point) && point.length === 2) {
+    return { latitude: Number(point[0]), longitude: Number(point[1]) }
+  }
+  if (point && point.latitude !== undefined && point.longitude !== undefined) {
+    return { latitude: Number(point.latitude), longitude: Number(point.longitude) }
+  }
+  return null
+}
+
+const internalGraphBounds = computed(() => {
+  const coords = []
+  for (const edge of internalMap.value.edges || []) {
+    for (const coordinate of edge.coordinates || []) {
+      const point = graphCoordinate(coordinate)
+      if (point && Number.isFinite(point.latitude) && Number.isFinite(point.longitude)) coords.push(point)
+    }
+  }
+  for (const facility of visibleFacilities.value) {
+    const point = graphCoordinate(facility)
+    if (point && Number.isFinite(point.latitude) && Number.isFinite(point.longitude)) coords.push(point)
+  }
+  for (const node of internalMap.value.nodes || []) {
+    const point = graphCoordinate(node)
+    if (point && Number.isFinite(point.latitude) && Number.isFinite(point.longitude)) coords.push(point)
+  }
+  if (!coords.length) {
+    return { minLat: 0, maxLat: 1, minLng: 0, maxLng: 1 }
+  }
+  const latitudes = coords.map(point => point.latitude)
+  const longitudes = coords.map(point => point.longitude)
+  let minLat = Math.min(...latitudes)
+  let maxLat = Math.max(...latitudes)
+  let minLng = Math.min(...longitudes)
+  let maxLng = Math.max(...longitudes)
+  if (Math.abs(maxLat - minLat) < 0.00001) {
+    minLat -= 0.0005
+    maxLat += 0.0005
+  }
+  if (Math.abs(maxLng - minLng) < 0.00001) {
+    minLng -= 0.0005
+    maxLng += 0.0005
+  }
+  return { minLat, maxLat, minLng, maxLng }
+})
+
+const projectGraphPoint = (pointLike) => {
+  const point = graphCoordinate(pointLike)
+  if (!point || !Number.isFinite(point.latitude) || !Number.isFinite(point.longitude)) return null
+  const bounds = internalGraphBounds.value
+  const xRatio = (point.longitude - bounds.minLng) / (bounds.maxLng - bounds.minLng)
+  const yRatio = (bounds.maxLat - point.latitude) / (bounds.maxLat - bounds.minLat)
+  return {
+    x: Number((GRAPH_PADDING + xRatio * (GRAPH_WIDTH - GRAPH_PADDING * 2)).toFixed(1)),
+    y: Number((GRAPH_PADDING + yRatio * (GRAPH_HEIGHT - GRAPH_PADDING * 2)).toFixed(1))
+  }
+}
+
+const graphPathForCoordinates = (coordinates) => {
+  const points = (coordinates || []).map(projectGraphPoint).filter(Boolean)
+  if (points.length < 2) return ''
+  return points.map((point, index) => `${index === 0 ? 'M' : 'L'}${point.x} ${point.y}`).join(' ')
+}
+
+const internalGraphRoadPath = computed(() => {
+  return (internalMap.value.edges || [])
+    .filter(edge => edge.source !== 'generated')
+    .map(edge => graphPathForCoordinates(edge.coordinates))
+    .filter(Boolean)
+    .join(' ')
+})
+
+const internalGraphConnectorPath = computed(() => {
+  return (internalMap.value.edges || [])
+    .filter(edge => edge.source === 'generated')
+    .map(edge => graphPathForCoordinates(edge.coordinates))
+    .filter(Boolean)
+    .join(' ')
+})
+
+const internalGraphRoutePath = computed(() => graphPathForCoordinates(routeCoordinates()))
+
+const internalGraphFacilities = computed(() => {
+  return visibleFacilities.value
+    .map(facility => {
+      const point = projectGraphPoint(facility)
+      return point ? { facility, ...point } : null
+    })
+    .filter(Boolean)
+})
+
+const selectedGraphFacilityPoint = computed(() => {
+  if (!selectedFacility.value) return null
+  return projectGraphPoint(selectedFacility.value)
+})
+
+const selectInternalGraphFacility = (facility) => {
+  if (!facility.routable) {
+    internalError.value = '该设施暂不能规划步行路线'
+    return
+  }
+  selectedFacilityId.value = String(facility.id)
+  internalError.value = ''
+  internalRoute.value = null
+  drawInternalMap()
+}
+
 const drawInternalRoute = () => {
   if (!map || !AMapApi) return
   clearOverlayGroup(routeOverlays)
@@ -938,7 +1175,6 @@ watch(() => props.id, loadDetail)
 
 onMounted(async () => {
   await nextTick()
-  await initInternalMap()
   await loadDetail()
 })
 
@@ -958,5 +1194,13 @@ onUnmounted(() => {
     linear-gradient(rgba(148, 163, 184, 0.16) 1px, transparent 1px),
     linear-gradient(90deg, rgba(148, 163, 184, 0.16) 1px, transparent 1px);
   background-size: 36px 36px;
+}
+
+.internal-graph {
+  background-color: #f8fafc;
+  background-image:
+    linear-gradient(rgba(148, 163, 184, 0.18) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.18) 1px, transparent 1px);
+  background-size: 32px 32px;
 }
 </style>
