@@ -14,6 +14,7 @@ struct RouteNode {
     int id = 0;
     std::string name;
     std::string type;
+    std::string source;
     std::string scenic_name;
     int scenic_spot_id = 0;
     int facility_id = 0;

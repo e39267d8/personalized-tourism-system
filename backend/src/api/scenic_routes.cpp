@@ -88,6 +88,7 @@ crow::json::wvalue graph_node_json(const RouteNode& node) {
     item["id"] = node.id;
     item["name"] = node.name;
     item["type"] = node.type;
+    item["source"] = node.source;
     item["facilityId"] = node.facility_id;
     item["facilityType"] = node.facility_type;
     item["facilityTypeLabel"] = facility_type_label(node.facility_type);
@@ -161,11 +162,15 @@ double json_double_value(const crow::json::rvalue& body, const std::string& key,
     return fallback;
 }
 
-bool has_osm_edge(const RouteGraphData& graph, int node_id) {
+bool is_formal_road_edge(const RouteEdge& edge) {
+    return edge.source != "generated";
+}
+
+bool has_formal_road_edge(const RouteGraphData& graph, int node_id) {
     auto edge_iter = graph.edges.find(node_id);
     if (edge_iter == graph.edges.end()) return false;
     return std::any_of(edge_iter->second.begin(), edge_iter->second.end(), [](const RouteEdge& edge) {
-        return edge.source == "osm";
+        return is_formal_road_edge(edge);
     });
 }
 
@@ -176,7 +181,7 @@ std::pair<int, double> nearest_node_with_distance(const RouteGraphData& graph,
     int best_id = 0;
     double best_rank_distance = std::numeric_limits<double>::infinity();
     for (const auto& [id, node] : graph.nodes) {
-        if (require_osm_edge && !has_osm_edge(graph, id)) continue;
+        if (require_osm_edge && !has_formal_road_edge(graph, id)) continue;
         double distance = squared_distance(latitude, longitude, node.latitude, node.longitude);
         if (distance < best_rank_distance) {
             best_rank_distance = distance;
@@ -190,7 +195,7 @@ std::pair<int, double> nearest_node_with_distance(const RouteGraphData& graph,
 
 bool route_uses_real_road(const std::vector<RouteEdge>& edges) {
     return std::any_of(edges.begin(), edges.end(), [](const RouteEdge& edge) {
-        return edge.source == "osm";
+        return is_formal_road_edge(edge);
     });
 }
 
@@ -237,7 +242,7 @@ std::vector<int> default_start_candidates(const RouteGraphData& graph) {
     }
     for (const auto& [id, node] : graph.nodes) {
         (void)node;
-        if (has_osm_edge(graph, id)) add(id);
+        if (has_formal_road_edge(graph, id)) add(id);
     }
     add(default_start_node_id(graph));
     return candidates;
@@ -268,7 +273,7 @@ crow::json::wvalue route_quality_json(const RouteGraphData& graph,
         if (edge.source == "generated") {
             connector_distance += edge.distance;
             ++connector_count;
-        } else if (edge.source == "osm") {
+        } else if (is_formal_road_edge(edge)) {
             real_distance += edge.distance;
         }
     }
@@ -784,6 +789,8 @@ void register_scenic_routes(TourismApp& app) {
             int limit = query_int(req, "limit", 80, 1, 200);
             // from_node_id: 若提供，按实际步行路径距离（Dijkstra）排序，否则按类型优先级排序
             int from_node_id = query_int(req, "from_node_id", 0, 0, 999999);
+            bool sorted_by_walk = (from_node_id > 0);
+            int candidate_limit = sorted_by_walk ? std::max(limit, 600) : limit;
 
             PgConnection db;
             auto rows = exec_params(db, R"SQL(
@@ -830,7 +837,7 @@ void register_scenic_routes(TourismApp& app) {
                     f.name,
                     f.id
                 LIMIT $4::int
-            )SQL", {std::to_string(id), type, query, std::to_string(limit)});
+            )SQL", {std::to_string(id), type, query, std::to_string(candidate_limit)});
 
             // 辅助结构：原始行下标 + 设施节点ID + Dijkstra步行距离（米）
             struct FacilityRow {
@@ -853,7 +860,6 @@ void register_scenic_routes(TourismApp& app) {
 
             // 若提供起点，使用 Dijkstra 计算实际步行距离并按距离升序排列
             // 优势：反映真实可行走路径，而非直线距离（满足评分加分项）
-            bool sorted_by_walk = (from_node_id > 0);
             if (sorted_by_walk) {
                 auto graph = load_route_graph(db, id);
                 for (auto& fr : facility_rows) {
@@ -873,7 +879,9 @@ void register_scenic_routes(TourismApp& app) {
             }
 
             crow::json::wvalue::list items;
+            int emitted = 0;
             for (const auto& fr : facility_rows) {
+                if (emitted >= limit) break;
                 auto item = facility_json(rows, fr.row);
                 if (sorted_by_walk) {
                     // walkDistance: 实际步行路径距离（米），-1 表示路网中无可达路径
@@ -882,6 +890,7 @@ void register_scenic_routes(TourismApp& app) {
                         : -1;
                 }
                 items.push_back(std::move(item));
+                ++emitted;
             }
 
             crow::json::wvalue::list types;

@@ -34,6 +34,7 @@ psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\internal_navig
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\imports\internal_navigation.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_campus_spots.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\imports\internal_navigation_pku.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_pku_curated_map.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\indoor_navigation_schema.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\achievement_module_schema.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\diary_compression_schema.sql
@@ -57,6 +58,7 @@ psql -U postgres -d tourism_system -f database\verify_demo.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\internal_navigation_schema.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_campus_spots.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\imports\internal_navigation_pku.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_pku_curated_map.sql
 ```
 
 已有数据库只补北大红楼室内导航：
@@ -128,7 +130,7 @@ psql -U postgres -d tourism_system -c "SELECT b.id, b.name, b.outdoor_node_id, g
 补完后验证北京大学校园内部道路图：
 
 ```powershell
-psql -U postgres -d tourism_system -c "WITH target AS (SELECT scenic_spot_id AS id FROM graph_nodes WHERE source_ref LIKE 'pku:%' GROUP BY scenic_spot_id ORDER BY COUNT(*) DESC LIMIT 1) SELECT (SELECT COUNT(*) FROM graph_nodes n WHERE n.scenic_spot_id=t.id AND n.source_ref LIKE 'pku:%') AS pku_graph_nodes, (SELECT COUNT(*) FROM graph_nodes n WHERE n.scenic_spot_id=t.id AND n.source_ref LIKE 'pku:%' AND n.node_type='building') AS building_nodes, (SELECT COUNT(*) FROM facilities f WHERE f.scenic_spot_id=t.id AND f.source_ref LIKE 'pku:%' AND f.type <> 'building') AS service_facilities, (SELECT COUNT(DISTINCT f.type) FROM facilities f WHERE f.scenic_spot_id=t.id AND f.source_ref LIKE 'pku:%' AND f.type <> 'building') AS service_facility_types, (SELECT COUNT(*) FROM graph_edges e JOIN graph_nodes a ON a.id=e.from_node JOIN graph_nodes b ON b.id=e.to_node WHERE a.scenic_spot_id=t.id AND b.scenic_spot_id=t.id AND a.source_ref LIKE 'pku:%' AND b.source_ref LIKE 'pku:%') AS graph_edges FROM target t;"
+psql -U postgres -d tourism_system -c "WITH target AS (SELECT scenic_spot_id AS id FROM graph_nodes WHERE source_ref LIKE 'pku:%' OR source_ref LIKE 'pku-curated:%' GROUP BY scenic_spot_id ORDER BY COUNT(*) DESC LIMIT 1) SELECT (SELECT COUNT(*) FROM graph_nodes n WHERE n.scenic_spot_id=t.id AND (n.source_ref LIKE 'pku:%' OR n.source_ref LIKE 'pku-curated:%')) AS pku_graph_nodes, (SELECT COUNT(*) FROM graph_nodes n WHERE n.scenic_spot_id=t.id AND (n.source_ref LIKE 'pku:%' OR n.source_ref LIKE 'pku-curated:%') AND n.node_type='building') AS building_nodes, (SELECT COUNT(*) FROM facilities f WHERE f.scenic_spot_id=t.id AND (f.source_ref LIKE 'pku:%' OR f.source_ref LIKE 'pku-curated:%') AND f.type <> 'building') AS service_facilities, (SELECT COUNT(DISTINCT f.type) FROM facilities f WHERE f.scenic_spot_id=t.id AND (f.source_ref LIKE 'pku:%' OR f.source_ref LIKE 'pku-curated:%') AND f.type <> 'building') AS service_facility_types, (SELECT COUNT(*) FROM graph_edges e JOIN graph_nodes a ON a.id=e.from_node JOIN graph_nodes b ON b.id=e.to_node WHERE a.scenic_spot_id=t.id AND b.scenic_spot_id=t.id AND (a.source_ref LIKE 'pku:%' OR a.source_ref LIKE 'pku-curated:%') AND (b.source_ref LIKE 'pku:%' OR b.source_ref LIKE 'pku-curated:%')) AS graph_edges FROM target t;"
 ```
 
 补完后验证北大红楼室内导航数据：

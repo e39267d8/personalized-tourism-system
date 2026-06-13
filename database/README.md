@@ -11,6 +11,7 @@
 - `imports/internal_navigation.sql`：故宫、北海、奥林匹克森林公园等景区内部导航数据。
 - `seeds/seed_campus_spots.sql`：北京大学校园主对象 seed，用于把校园作为 `scenic_spots` 中的正式对象接入系统。
 - `imports/internal_navigation_pku.sql`：北京大学校园内部道路图，使用现有 `graph_nodes`、`graph_edges`、`facilities`，不新建第二套校园图表。
+- `seeds/seed_pku_curated_map.sql`：北京大学校园人工校核连通主路网 seed，补足 OSM 内部路网碎片化导致的设施不可达问题；主路网来源标记为 `campus_curated`，设施接入短边标记为 `generated`。
 - `indoor_navigation_schema.sql`：室内导航领域表结构，包含 `indoor_buildings`、`indoor_floors`、`indoor_features`、`indoor_edges` 和 `indoor_route_audit`。
 - `seeds/seed_indoor_navigation.sql`：北大红楼首批正式室内图数据，使用 `local_indoor_graph` provider，不是独立数据库，也不是前端假 Demo。
 - `migrations/achievement_module_schema.sql`：成就系统正式结构迁移，补齐成就编码、景点打卡、游记评审、实体徽章申请与数字纪念凭证相关表和索引。
@@ -39,6 +40,7 @@ psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\internal_navig
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\imports\internal_navigation.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_campus_spots.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\imports\internal_navigation_pku.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_pku_curated_map.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\indoor_navigation_schema.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\achievement_module_schema.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\diary_compression_schema.sql
@@ -62,6 +64,7 @@ psql -U postgres -d tourism_system -f database\verify_demo.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\internal_navigation_schema.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_campus_spots.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\imports\internal_navigation_pku.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_pku_curated_map.sql
 ```
 
 已有 lxd/yhm 数据库只补北大红楼室内导航：
@@ -123,7 +126,7 @@ psql -U postgres -d tourism_system -c "SELECT b.scenic_spot_id, s.name, b.name, 
 补完后验证北京大学校园内部道路图：
 
 ```bat
-psql -U postgres -d tourism_system -c "WITH target AS (SELECT scenic_spot_id AS id FROM graph_nodes WHERE source_ref LIKE 'pku:%' GROUP BY scenic_spot_id ORDER BY COUNT(*) DESC LIMIT 1) SELECT (SELECT COUNT(*) FROM graph_nodes n WHERE n.scenic_spot_id=t.id AND n.source_ref LIKE 'pku:%') AS pku_graph_nodes, (SELECT COUNT(*) FROM graph_nodes n WHERE n.scenic_spot_id=t.id AND n.source_ref LIKE 'pku:%' AND n.node_type='building') AS building_nodes, (SELECT COUNT(*) FROM facilities f WHERE f.scenic_spot_id=t.id AND f.source_ref LIKE 'pku:%' AND f.type <> 'building') AS service_facilities, (SELECT COUNT(DISTINCT f.type) FROM facilities f WHERE f.scenic_spot_id=t.id AND f.source_ref LIKE 'pku:%' AND f.type <> 'building') AS service_facility_types, (SELECT COUNT(*) FROM graph_edges e JOIN graph_nodes a ON a.id=e.from_node JOIN graph_nodes b ON b.id=e.to_node WHERE a.scenic_spot_id=t.id AND b.scenic_spot_id=t.id AND a.source_ref LIKE 'pku:%' AND b.source_ref LIKE 'pku:%') AS graph_edges FROM target t;"
+psql -U postgres -d tourism_system -c "WITH target AS (SELECT scenic_spot_id AS id FROM graph_nodes WHERE source_ref LIKE 'pku:%' OR source_ref LIKE 'pku-curated:%' GROUP BY scenic_spot_id ORDER BY COUNT(*) DESC LIMIT 1) SELECT (SELECT COUNT(*) FROM graph_nodes n WHERE n.scenic_spot_id=t.id AND (n.source_ref LIKE 'pku:%' OR n.source_ref LIKE 'pku-curated:%')) AS pku_graph_nodes, (SELECT COUNT(*) FROM graph_nodes n WHERE n.scenic_spot_id=t.id AND (n.source_ref LIKE 'pku:%' OR n.source_ref LIKE 'pku-curated:%') AND n.node_type='building') AS building_nodes, (SELECT COUNT(*) FROM facilities f WHERE f.scenic_spot_id=t.id AND (f.source_ref LIKE 'pku:%' OR f.source_ref LIKE 'pku-curated:%') AND f.type <> 'building') AS service_facilities, (SELECT COUNT(DISTINCT f.type) FROM facilities f WHERE f.scenic_spot_id=t.id AND (f.source_ref LIKE 'pku:%' OR f.source_ref LIKE 'pku-curated:%') AND f.type <> 'building') AS service_facility_types, (SELECT COUNT(*) FROM graph_edges e JOIN graph_nodes a ON a.id=e.from_node JOIN graph_nodes b ON b.id=e.to_node WHERE a.scenic_spot_id=t.id AND b.scenic_spot_id=t.id AND (a.source_ref LIKE 'pku:%' OR a.source_ref LIKE 'pku-curated:%') AND (b.source_ref LIKE 'pku:%' OR b.source_ref LIKE 'pku-curated:%')) AS graph_edges FROM target t;"
 ```
 
 说明：北京大学校园内部道路图和北大红楼室内导航是两项不同能力。前者进入 `graph_nodes`、`graph_edges`、`facilities`，用于校园级道路图；后者进入 `indoor_*` 表，用于单体建筑室内拓扑。

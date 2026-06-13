@@ -214,7 +214,7 @@ RouteGraphData load_route_graph(tourism::db::PgConnection& db, int scenic_spot_i
     RouteGraphData graph;
 
     auto nodes = tourism::db::exec_params(db, R"SQL(
-        SELECT gn.id::text, gn.name, gn.node_type,
+        SELECT gn.id::text, gn.name, gn.node_type, COALESCE(gn.source, '') AS source,
                COALESCE(ss.name, '') AS scenic_name,
                COALESCE(gn.scenic_spot_id, f.scenic_spot_id, 0)::text AS scenic_spot_id,
                COALESCE(gn.facility_id, 0)::text AS facility_id,
@@ -239,6 +239,7 @@ RouteGraphData load_route_graph(tourism::db::PgConnection& db, int scenic_spot_i
         node.id = to_int(nodes.value(row, "id"));
         node.name = nodes.value(row, "name");
         node.type = nodes.value(row, "node_type");
+        node.source = nodes.value(row, "source");
         node.scenic_name = nodes.value(row, "scenic_name");
         node.scenic_spot_id = to_int(nodes.value(row, "scenic_spot_id"));
         node.facility_id = to_int(nodes.value(row, "facility_id"));
@@ -348,11 +349,11 @@ RouteQualityReport assess_route_quality(const RouteSearchResult& route) {
     if (!route.success || route.edges.empty()) return report;
 
     for (const auto& edge : route.edges) {
-        if (edge.source == "osm") {
-            report.real_road_edges += 1;
-        } else if (edge.source == "generated") {
+        if (edge.source == "generated") {
             report.generated_connector_edges += 1;
             report.max_generated_connector_meters = std::max(report.max_generated_connector_meters, edge.distance);
+        } else {
+            report.real_road_edges += 1;
         }
         if (edge.coordinates.empty()) report.missing_geometry_edges += 1;
     }
