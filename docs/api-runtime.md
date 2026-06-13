@@ -239,6 +239,39 @@ payload 常见字段：
 后端推荐不会先全量排序再截取前 10，而是使用小顶堆维护 Top-K 候选池：
 扫描候选景点/学校时只保留当前最好的 `limit` 个结果，复杂度约为 `O(n log k)`。
 
+## 美食
+
+### `GET /api/v1/foods`
+
+按景点或学校推荐附近餐饮。前端 `/food` 使用同一接口同时服务景点和高校校园；学校在数据库中仍复用
+`scenic_spots` 口径，例如“北京大学”属于“高校校园”分类。
+
+常见查询参数：
+
+- `scenic_spot_id`: 景点或学校 ID。传入后可按该位置中心点计算距离；省略时返回全局候选。
+- `q`: 模糊查询关键词，匹配餐饮名称、地址、菜系、景点/学校名称和导入元数据中的英文/中文别名。
+- `cuisine`: 菜系 key，例如 `coffee_shop`、`noodle`、`roast_duck`。
+- `sort`: `hot`、`rating`、`distance`。`distance` 需要 `lat/lng` 或 `scenic_spot_id`，否则后端会降级为 `hot` 并在响应 `sort` 中返回实际排序。
+- `lat` / `lng`: 用户当前位置，可用于距离排序。
+- `limit`: 返回数量，默认 10，上限 50。前端默认只取前 10 家。
+
+响应核心字段：
+
+- `items`: 推荐餐饮列表。
+- `matchedTotal`: Top-K 前的匹配候选数。
+- `returned` / `total`: 实际返回数量。
+- `sort`: 本次实际排序。
+- `items[].hotScore`: 综合热度分，来自评分、信息完整度、价格友好度和类型可信度的派生分。
+- `items[].distanceMeters`: 到用户位置或所选景点/学校中心点的直线距离。
+- `items[].locationTypeLabel`: `景点` 或 `学校`。
+- `items[].scenicSpotId` / `items[].scenicName`: 所属景点或学校。
+
+后端排序不会先全量排序再截取前 10，而是由 `TopKSelector` 扫描候选并维护前 K 个结果。
+
+### `GET /api/v1/foods/cuisines`
+
+返回可用菜系列表。支持同样的 `scenic_spot_id` 参数，用于按景点或学校收窄菜系 chips。
+
 ## 路线
 
 ### `GET /api/v1/route-nodes`
@@ -277,6 +310,34 @@ tourismApi.planRoute({
 ```
 
 文本地点模式会调用高德 Web Service。后端内置一个免费默认高德 key；如果设置了 `AMAP_WEB_SERVICE_KEY` 或 `AMAP_KEY`，环境变量会优先生效。
+
+### `POST /api/v1/routes/tour`
+
+多目标智能环游路线。第一个点是用户手动输入并解析出的当前位置 / 出发点；目标地点只在目标集合里编号，不包含出发点和最后返回出发点。
+
+推荐 payload：
+
+```js
+tourismApi.tourRoute({
+  startNodeId: 1,
+  targetNodeIds: [2, 3, 4, 5],
+  fixedOrders: [
+    { nodeId: 4, order: 2 }
+  ],
+  travelMode: 'walk',
+  optimization: 'balanced'
+})
+```
+
+语义：
+
+- `startNodeId`: 固定出发点，路线最后会返回这里。
+- `targetNodeIds`: 需要参观的目标景点 / 学校节点，至少 2 个。
+- `fixedOrders`: 可选。`order=2` 表示该目标是所有目标中的第 2 个到达，不把出发点算作第 1 站。
+- 未指定顺序的目标由后端在剩余位置中自动求最短闭环，不使用随机排列。
+- 旧 payload `{ nodeIds: [...] }` 仍兼容，解释为第一个节点是出发点，其余节点是目标。
+
+响应会包含 `returnToStart: true`、`startNodeId`、`targetNodeIds`、`fixedOrders`、`visitOrder`、`stops`、`distance`、`time` 和 `routeQuality`。`stops` 包含最后返回出发点，`visitOrder` 用于展示访问顺序。
 
 返回用途：
 
@@ -511,10 +572,28 @@ AI 旅游助手，调用真实大模型 API。
 
 ```js
 tourismApi.travelAgentChat({
+  message: '帮我规划北京一日游',
+  destination: '北京',
+  days: 1,
+  budget: 500,
+  style: 'balanced',
   messages: [
     { role: 'user', content: '帮我规划北京一日游' }
   ]
 })
+```
+
+后端会按 `destination` 从本地 `scenic_spots` 与餐饮 `facilities` 中取少量候选景点、学校和美食上下文，注入大模型提示词；该上下文只是 TourPilot 本地数据参考，不代表实时预约、营业或票务状态。
+
+响应核心字段：
+
+```json
+{
+  "reply": "建议第一天从前门出发...",
+  "provider": "deepseek",
+  "model": "deepseek-chat",
+  "suggestions": ["把这份计划改得更轻松", "按低预算重新安排"]
+}
 ```
 
 依赖环境变量：
@@ -532,6 +611,47 @@ tourismApi.travelAgentChat({
 ### `POST /api/v1/aigc/polish`
 
 文本润色。当前主流程不一定使用，但后端保留接口。
+
+### `POST /api/v1/aigc/image-prompt`
+
+日记编辑页的 AIGC 视觉方案接口。当前能力是生成“3D/照片转 2D 插画”的提示词和分格脚本，不在后端直接生成图片。
+
+请求示例：
+
+```json
+{
+  "title": "故宫一日游",
+  "content": "上午从午门进入，下午在角楼看日落。",
+  "mode": "3d_to_2d",
+  "visualStyle": "anime",
+  "panelLayout": "four-panel",
+  "imageCount": 3
+}
+```
+
+字段说明：
+
+- `visualStyle`：二维风格，可选 `anime`、`watercolor`、`flat`、`ink`、`pixel`。
+- `panelLayout`：分格布局，可选 `single`、`two-panel`、`four-panel`、`six-panel`、`vertical-comic`。
+- `imageCount`：前端已上传图片数量，用于提示词语境；图片二进制仍由日记保存流程处理。
+
+响应示例：
+
+```json
+{
+  "mode": "3d_to_2d",
+  "promptEn": "Convert the uploaded travel images into a 2D four-panel storyboard...",
+  "promptCn": "将已上传的旅行图片从 3D/写实观感转成日系动画的四格漫画...",
+  "style": "日系动画",
+  "visualStyle": "anime",
+  "panelLayout": "four-panel",
+  "colorPalette": "清爽旅行色调",
+  "negativePrompt": "photorealistic, 3D render, low quality...",
+  "panels": [
+    { "title": "开场", "description": "用远景交代目的地和天气。" }
+  ]
+}
+```
 
 ## 图片来源
 

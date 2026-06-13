@@ -28,13 +28,17 @@ constexpr double kMaxGeneratedConnectorMeters = 60.0;
 // 时间优先对拥挤最敏感（0.4/级），距离优先最不敏感（0.15/级，"我就要最短路程"）。
 double route_edge_weight(const RouteEdge& edge, const std::string& optimization, int crowd_tolerance) {
     double crowd_penalty = std::max(0, edge.congestion - crowd_tolerance);
-    if (optimization == "distance") return edge.distance * (1.0 + crowd_penalty * 0.15);
-    if (optimization == "time") return edge.duration * (1.0 + crowd_penalty * 0.4);
+    double source_factor = 1.0;
+    if (edge.source == "osm" || edge.source == "osm_stitch") source_factor = 0.86;
+    else if (edge.source.empty()) source_factor = 1.35;
+
+    if (optimization == "distance") return edge.distance * (1.0 + crowd_penalty * 0.15) * source_factor;
+    if (optimization == "time") return edge.duration * (1.0 + crowd_penalty * 0.4) * source_factor;
     if (optimization == "budget") {
         double mode_cost = edge.mode == "walk" ? 0.0 : edge.mode == "bike" ? 3.0 : edge.mode == "subway" ? 5.0 : 15.0;
-        return (edge.distance / 120.0 + edge.duration / 60.0) * (1.0 + crowd_penalty * 0.2) + mode_cost * 20.0;
+        return ((edge.distance / 120.0 + edge.duration / 60.0) * (1.0 + crowd_penalty * 0.2) + mode_cost * 20.0) * source_factor;
     }
-    return (edge.distance / 90.0 + edge.duration / 45.0 + edge.base_weight) * (1.0 + crowd_penalty * 0.3);
+    return (edge.distance / 90.0 + edge.duration / 45.0 + edge.base_weight) * (1.0 + crowd_penalty * 0.3) * source_factor;
 }
 
 int effective_edge_duration(const RouteEdge& edge, int crowd_tolerance) {
@@ -348,7 +352,7 @@ RouteQualityReport assess_route_quality(const RouteSearchResult& route) {
     if (!route.success || route.edges.empty()) return report;
 
     for (const auto& edge : route.edges) {
-        if (edge.source == "osm") {
+        if (edge.source == "osm" || edge.source == "osm_stitch") {
             report.real_road_edges += 1;
         } else if (edge.source == "generated") {
             report.generated_connector_edges += 1;
