@@ -3,16 +3,22 @@
 #include "db/postgres.h"
 #include "services/achievement_service.h"
 #include "services/auth_service.h"
+#include "services/badge_image_service.h"
 #include "support/api_helpers.h"
 
+#include <algorithm>
 #include <optional>
 #include <string>
+#include <utility>
 
 namespace tourism::api {
 namespace {
 
 using tourism::db::PgConnection;
+using tourism::db::exec_params;
+using tourism::db::exec_sql;
 using tourism::services::BadgeRedemptionInput;
+using tourism::services::BadgeImageRequest;
 using tourism::services::CheckinInput;
 using tourism::services::ReviewDecisionInput;
 using tourism::services::achievements_overview;
@@ -23,6 +29,7 @@ using tourism::services::create_badge_redemption;
 using tourism::services::create_scenic_checkin;
 using tourism::services::current_user;
 using tourism::services::decide_review_submission;
+using tourism::services::generate_badge_image;
 using tourism::services::review_submissions;
 using tourism::services::submit_achievement_review;
 using tourism::services::user_badge_redemptions;
@@ -107,6 +114,80 @@ void register_achievement_routes(TourismApp& app) {
             auto user = current_user(db, req);
             if (!user) return json_error(401, "请先登录");
             return crow::response(ok(user_collectibles(db, user->id)));
+        } catch (const std::exception& error) {
+            return json_error(500, error.what());
+        }
+    });
+
+    CROW_ROUTE(app, "/api/v1/collectibles/<int>/badge-image").methods("POST"_method)([](const crow::request& req, int id) -> crow::response {
+        try {
+            PgConnection db;
+            auto user = current_user(db, req);
+            if (!user) return json_error(401, "请先登录");
+            exec_sql(db, "ALTER TABLE digital_collectibles ALTER COLUMN image_url TYPE TEXT", PGRES_COMMAND_OK);
+
+            auto rows = exec_params(db, R"SQL(
+                SELECT dc.id::text, dc.name, COALESCE(dc.description, '') AS description,
+                       COALESCE(dc.image_url, '') AS image_url,
+                       COALESCE(a.name, '') AS achievement_name,
+                       COALESCE(a.code, '') AS achievement_code,
+                       COALESCE(a.tier, 1)::text AS tier
+                FROM digital_collectibles dc
+                LEFT JOIN achievements a ON a.id = dc.achievement_id
+                WHERE dc.user_id = $1 AND dc.id = $2
+                LIMIT 1
+            )SQL", {std::to_string(user->id), std::to_string(id)});
+            if (!rows.rows()) return json_error(404, "数字纪念凭证不存在");
+
+            std::string existing = rows.value(0, "image_url");
+            if (!existing.empty()) {
+                crow::json::wvalue data;
+                data["id"] = id;
+                data["imageUrl"] = existing;
+                data["provider"] = "existing";
+                return crow::response(ok(std::move(data)));
+            }
+
+            BadgeImageRequest input;
+            input.collectible_name = rows.value(0, "name");
+            input.description = rows.value(0, "description");
+            input.achievement_name = rows.value(0, "achievement_name").empty() ? input.collectible_name : rows.value(0, "achievement_name");
+            input.achievement_code = rows.value(0, "achievement_code");
+            input.tier = std::max(1, std::stoi(rows.value(0, "tier")));
+
+            auto generated = generate_badge_image(input);
+            exec_params(db, R"SQL(
+                UPDATE digital_collectibles
+                SET image_url = $2,
+                    metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object(
+                        'badgePrompt', $3::text,
+                        'badgeProvider', $4::text,
+                        'badgeModel', $5::text,
+                        'badgeTaskId', $6::text,
+                        'badgeStatus', $7::text,
+                        'badgeError', $8::text
+                    )
+                WHERE id = $1
+            )SQL", {
+                std::to_string(id),
+                generated.image_url,
+                generated.prompt,
+                generated.provider,
+                generated.model,
+                generated.task_id,
+                generated.status,
+                generated.error
+            }, PGRES_COMMAND_OK);
+
+            crow::json::wvalue data;
+            data["id"] = id;
+            data["imageUrl"] = generated.image_url;
+            data["prompt"] = generated.prompt;
+            data["provider"] = generated.provider;
+            data["model"] = generated.model;
+            data["taskId"] = generated.task_id;
+            data["status"] = generated.status;
+            return crow::response(ok(std::move(data)));
         } catch (const std::exception& error) {
             return json_error(500, error.what());
         }

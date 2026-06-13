@@ -81,6 +81,7 @@ set(SERVICE_SOURCES
     src/services/amap_route_service.cpp
     src/services/budget_service.cpp
     src/services/llm_service.cpp
+    src/services/badge_image_service.cpp
     src/services/auth_service.cpp
     src/services/scenic_service.cpp
     src/services/route_graph_service.cpp
@@ -141,7 +142,7 @@ endif()
 target_link_libraries(tourism_server PRIVATE ${PostgreSQL_LIBRARIES})
 
 if(WIN32)
-    target_link_libraries(tourism_server PRIVATE ws2_32 wsock32 wininet)
+    target_link_libraries(tourism_server PRIVATE ws2_32 wsock32 wininet bcrypt)
 endif()
 
 # ============================================

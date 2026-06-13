@@ -341,6 +341,7 @@ void ensure_achievement_schema(PgConnection& db) {
     exec_sql(db, "ALTER TABLE achievements ADD COLUMN IF NOT EXISTS tier INTEGER DEFAULT 1", PGRES_COMMAND_OK);
     exec_sql(db, "ALTER TABLE achievements ADD COLUMN IF NOT EXISTS display_order INTEGER DEFAULT 0", PGRES_COMMAND_OK);
     exec_sql(db, "ALTER TABLE achievements ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE", PGRES_COMMAND_OK);
+    exec_sql(db, "ALTER TABLE digital_collectibles ALTER COLUMN image_url TYPE TEXT", PGRES_COMMAND_OK);
     exec_sql(db, "UPDATE achievements SET code = 'legacy-' || id::text WHERE code IS NULL OR code = ''", PGRES_COMMAND_OK);
     exec_sql(db, "CREATE UNIQUE INDEX IF NOT EXISTS idx_achievements_code ON achievements(code)", PGRES_COMMAND_OK);
 

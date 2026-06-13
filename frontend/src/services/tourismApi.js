@@ -91,6 +91,7 @@ export const tourismApi = {
   claimAchievement: (id) => client.post(`/achievements/${id}/claim`).then(unwrap),
   collectibles: () => client.get('/collectibles').then(unwrap),
   collectibleDetail: (id) => client.get(`/collectibles/${id}`).then(unwrap),
+  generateCollectibleBadge: (id) => client.post(`/collectibles/${id}/badge-image`).then(unwrap),
   redeemBadge: (payload) => client.post('/badge-redemptions', payload).then(unwrap),
   badgeRedemptions: () => client.get('/badge-redemptions').then(unwrap),
   submitAchievementReview: (diaryId) => client.post(`/diaries/${diaryId}/achievement-review`).then(unwrap),
