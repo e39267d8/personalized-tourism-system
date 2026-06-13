@@ -36,6 +36,7 @@ psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_cam
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\imports\internal_navigation_pku.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_pku_curated_map.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_pku_bike_lanes.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\imports\internal_navigation_yiheyuan.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_yiheyuan_demo_map.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\indoor_navigation_schema.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\achievement_module_schema.sql

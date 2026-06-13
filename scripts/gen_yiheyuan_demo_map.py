@@ -234,11 +234,16 @@ def main():
         """对无向边 (a,b) 取高德步行折线作几何，正反两向各插一条。
         距离用折线实际长度（无折线则回退两点直线），几何让前端沿真实道路画线。"""
         ca, cb = node_coord(a), node_coord(b)
+        straight = dist_m(ca, cb)
         poly = amap_walk_polyline(ca, cb)
+        # 高德在景区内部缺步道时会绕远（如不知十七孔桥而绕整个湖）：折线远长于
+        # 直线则判定为绕路，回退两点直线，避免距离/时间虚高。
+        if poly and polyline_length(poly) > max(straight * 2.5, straight + 80):
+            poly = None
         if poly:
             d = polyline_length(poly)
         else:
-            d = dist_m(ca, cb)
+            d = straight
         t = max(1, int(d / speed))
         for (x, y) in ((a, b), (b, a)):
             xref, yref = f"{SRC}:node:{x}", f"{SRC}:node:{y}"
@@ -258,6 +263,12 @@ def main():
     w("    -- 5. 步行路径边（双向，几何来自高德步行折线，沿真实道路）")
     for a, b in PATH_EDGES:
         emit_edge(a, b, "walk", 1.2, 2, f"{SRC}:edge")
+    w("")
+    # 自行车与步行同路径同几何，速度更快（4 vs 1.2 m/s），验收 4c 校区自行车策略。
+    # 颐和园同时具备步行/自行车/电瓶车三种工具，可演示混合最短时间。
+    w("    -- 5a. 自行车道（双向，与步行同几何，速度更快，验收 4c）")
+    for a, b in PATH_EDGES:
+        emit_edge(a, b, "bike", 4.0, 2, f"{SRC}:bike")
     w("")
     w("    -- 5b. 电瓶车线（双向，travel_mode='shuttle'，速度快、拥挤度低，验收 4c）")
     for a, b in SHUTTLE_EDGES:

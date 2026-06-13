@@ -9,11 +9,12 @@
 - `imports/amap_pois_supplement.sql`：高德 POI 补充导入，补主导入缺失的北京核心地标（中国国家博物馆、军事博物馆、颐和园），幂等可重复执行。
 - `internal_navigation_schema.sql`：景区内部设施、道路和路网表结构。
 - `imports/internal_navigation.sql`：故宫、北海、奥林匹克森林公园等景区内部导航数据。
+- `imports/internal_navigation_yiheyuan.sql`：颐和园真实 OSM 内部道路图（2000 条道路边 + 1249 栋建筑，爬取自 OpenStreetMap），满足"单景区内部道路图 ≥200 条边、含建筑/设施"验收；导入末尾会删除 OSM 抓取的服务设施，避免设施查询被大量不可达 OSM 设施淹没（设施/路由演示用下方 curated seed 的连通设施）。
 - `seeds/seed_campus_spots.sql`：北京大学校园主对象 seed，用于把校园作为 `scenic_spots` 中的正式对象接入系统。
 - `imports/internal_navigation_pku.sql`：北京大学校园内部道路图，使用现有 `graph_nodes`、`graph_edges`、`facilities`，不新建第二套校园图表。
 - `seeds/seed_pku_curated_map.sql`：北京大学校园人工校核连通主路网 seed，补足 OSM 内部路网碎片化导致的设施不可达问题；主路网来源标记为 `campus_curated`，设施接入短边标记为 `generated`。
 - `seeds/seed_pku_bike_lanes.sql`：北京大学校园自行车道（`travel_mode='bike'`），供验收 4c 校区"自行车最短时间/混合交通"演示；依赖 `seed_pku_curated_map.sql`，按 `source_ref='pku-curated:bike'` 幂等重建。
-- `seeds/seed_yiheyuan_demo_map.sql`：颐和园内部步行演示图 + 电瓶车线（`travel_mode='shuttle'`），供场所查询和验收 4c 景区"电瓶车最短时间/混合交通"演示。
+- `seeds/seed_yiheyuan_demo_map.sql`：颐和园连通骨架（步行 + 自行车 + 电瓶车三种 `travel_mode`，几何取自地图服务步行折线、绕路自动回退直线）+ 16 个分类设施，供场所查询和验收 4c"步行/自行车/电瓶车混合最短时间"演示。与上面的真实 OSM 道路图叠加：OSM 提供 ≥200 边和建筑的丰富底图，本 seed 提供连通可路由的骨架。
 - `indoor_navigation_schema.sql`：室内导航领域表结构，包含 `indoor_buildings`、`indoor_floors`、`indoor_features`、`indoor_edges` 和 `indoor_route_audit`。
 - `seeds/seed_indoor_navigation.sql`：北大红楼首批正式室内图数据，使用 `local_indoor_graph` provider，不是独立数据库，也不是前端假 Demo。
 - `migrations/achievement_module_schema.sql`：成就系统正式结构迁移，补齐成就编码、景点打卡、游记评审、实体徽章申请与数字纪念凭证相关表和索引。
@@ -44,6 +45,7 @@ psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_cam
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\imports\internal_navigation_pku.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_pku_curated_map.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_pku_bike_lanes.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\imports\internal_navigation_yiheyuan.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_yiheyuan_demo_map.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\indoor_navigation_schema.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\achievement_module_schema.sql
@@ -75,6 +77,7 @@ psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_pku
 
 ```bat
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_pku_bike_lanes.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\imports\internal_navigation_yiheyuan.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_yiheyuan_demo_map.sql
 ```
 
