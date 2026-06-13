@@ -89,6 +89,24 @@
             定位地图
           </button>
         </div>
+        <div class="grid gap-3 border-b border-slate-200 bg-slate-50 px-5 py-3 text-sm sm:grid-cols-4">
+          <div>
+            <div class="text-xs text-slate-500">内部节点</div>
+            <div class="mt-0.5 font-semibold text-slate-900">{{ internalMapStats.nodes }} 个</div>
+          </div>
+          <div>
+            <div class="text-xs text-slate-500">内部道路</div>
+            <div class="mt-0.5 font-semibold text-slate-900">{{ internalMapStats.edges }} 条</div>
+          </div>
+          <div>
+            <div class="text-xs text-slate-500">服务设施</div>
+            <div class="mt-0.5 font-semibold text-slate-900">{{ internalMapStats.facilities }} 个</div>
+          </div>
+          <div>
+            <div class="text-xs text-slate-500">可导航设施</div>
+            <div class="mt-0.5 font-semibold text-slate-900">{{ internalMapStats.routableFacilities }} 个</div>
+          </div>
+        </div>
         <div class="relative">
           <div
             ref="internalMapContainer"
@@ -97,6 +115,20 @@
           ></div>
           <div class="pointer-events-none absolute left-3 top-3 rounded-md border border-white/80 bg-white/90 px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm">
             {{ mapStatusLabel }}
+          </div>
+          <div class="pointer-events-none absolute right-3 top-3 flex flex-wrap gap-2 rounded-md border border-white/80 bg-white/90 px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm">
+            <span class="inline-flex items-center gap-1.5">
+              <span class="h-0.5 w-5 rounded-full bg-slate-500"></span>
+              内部道路
+            </span>
+            <span class="inline-flex items-center gap-1.5">
+              <span class="h-2.5 w-2.5 rounded-full bg-slate-900"></span>
+              服务设施
+            </span>
+            <span class="inline-flex items-center gap-1.5">
+              <span class="h-1 w-5 rounded-full bg-teal-700"></span>
+              规划路线
+            </span>
           </div>
           <div
             v-if="selectedStartMode === 'map'"
@@ -338,7 +370,7 @@ const currentHour = new Date().getHours()
 // 图表只展示 6:00-22:00（夜间小时无信息量）
 const visiblePopularHours = computed(() =>
   (popularTimes.value?.hours || []).filter(item => item.hour >= 6 && item.hour <= 22))
-const internalMap = ref({ nodes: [], edges: [] })
+const internalMap = ref({ nodes: [], edges: [], nodeCount: 0, edgeCount: 0 })
 const internalRoute = ref(null)
 const internalError = ref('')
 const internalLoading = ref(false)
@@ -382,6 +414,17 @@ const visibleFacilities = computed(() => {
 })
 
 const routableFacilities = computed(() => facilities.value.filter(item => item.routable))
+
+const internalMapStats = computed(() => {
+  const nodes = Number(internalMap.value.nodeCount ?? internalMap.value.nodes?.length ?? 0)
+  const edges = Number(internalMap.value.edgeCount ?? internalMap.value.edges?.length ?? 0)
+  return {
+    nodes,
+    edges,
+    facilities: facilities.value.length,
+    routableFacilities: routableFacilities.value.length
+  }
+})
 
 const destinationFacilities = computed(() => visibleFacilities.value.filter(item => item.routable))
 
@@ -594,7 +637,9 @@ const loadInternalNavigation = async () => {
     const mapData = await tourismApi.scenicInternalMap(props.id)
     internalMap.value = {
       nodes: mapData.nodes || [],
-      edges: mapData.edges || []
+      edges: mapData.edges || [],
+      nodeCount: mapData.nodeCount ?? (mapData.nodes || []).length,
+      edgeCount: mapData.edgeCount ?? (mapData.edges || []).length
     }
 
     // 找入口节点（type='entrance' 优先，没有则取第一个节点）
@@ -612,7 +657,7 @@ const loadInternalNavigation = async () => {
   } catch (error) {
     facilities.value = []
     facilityTypes.value = []
-    internalMap.value = { nodes: [], edges: [] }
+    internalMap.value = { nodes: [], edges: [], nodeCount: 0, edgeCount: 0 }
     internalError.value = '内部导航数据暂不可用'
     drawInternalMap(true)
   }
