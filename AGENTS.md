@@ -61,9 +61,12 @@ DeepSeek key 必须放在环境变量中。后端内置一个免费的高德 Web
 - `database/imports/internal_navigation_pku.sql`
 - `database/indoor_navigation_schema.sql`
 - `database/migrations/diary_compression_schema.sql`
+- `database/migrations/diary_compression_legacy_cleanup.sql`
 - `database/migrations/diary_location_cover_schema.sql`
 - `database/migrations/diary_animation_schema.sql`
 - `database/migrations/cross_layer_navigation_schema.sql`
+- `database/migrations/route_tiantan_global_node.sql`
+- `database/migrations/route_global_osm_stitch_schema.sql`
 - `database/seeds/seed_demo.sql`
 - `database/seeds/seed_indoor_navigation.sql`
 - `database/seeds/seed_facilities.sql`
@@ -152,9 +155,11 @@ DeepSeek key 必须放在环境变量中。后端内置一个免费的高德 Web
 ## 美食推荐规则
 
 - `/api/v1/foods` 支持 `scenic_spot_id`、`q`、`cuisine`、`sort=hot|rating|distance`、`lat/lng` 和 `limit`。
+- 景点和学校共用 `scenic_spots` 口径；高校校园（如北京大学）通过分类/标签识别，前端统一显示为“景点 / 学校”位置筛选。
 - 美食候选来自 `facilities` 中 `restaurant`、`cafe`、`fast_food` 类型。
-- 菜系由 C++ 从设施名称推断。模糊搜索匹配名称、菜系 key/label、地址和景点名称。
+- 菜系由 C++ 优先读取导入元数据 `source_tags.cuisine`，再从设施名称推断。模糊搜索匹配名称、菜系 key/label、地址和景点/学校名称。
 - `sort=hot` 使用派生分数，不是数据库字段：评分 50%、信息完整度 20%、价格友好 15%、类型/名称可信度 15%。
+- `sort=distance` 需要 `lat/lng` 或 `scenic_spot_id` 提供参考点；没有参考点时后端降级为 `hot`，前端应避免误导用户。
 - 排名使用 `TopKSelector` 先保留前 K 个结果，再做最终有序返回。
 
 ## 成就与纪念凭证规则

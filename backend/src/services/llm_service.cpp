@@ -42,7 +42,7 @@ std::string llm_base_url() {
 }
 
 std::string llm_model() {
-    return env_value("TOURISM_LLM_MODEL", "DEEPSEEK_MODEL", "deepseek-v4-pro");
+    return env_value("TOURISM_LLM_MODEL", "DEEPSEEK_MODEL", "deepseek-chat");
 }
 
 std::string trim_text(const std::string& value) {
@@ -93,6 +93,79 @@ std::string travel_style_label(const std::string& style) {
     if (style == "photo") return "photo spots";
     if (style == "relaxed") return "relaxed slow travel";
     return "balanced";
+}
+
+std::string normalize_visual_style(std::string value) {
+    value = trim_text(value);
+    if (value == "watercolor" || value == "flat" || value == "ink" || value == "pixel") return value;
+    return "anime";
+}
+
+std::string visual_style_label(const std::string& value) {
+    if (value == "watercolor") return "水彩手绘";
+    if (value == "flat") return "扁平插画";
+    if (value == "ink") return "国风线稿";
+    if (value == "pixel") return "像素风";
+    return "日系动画";
+}
+
+std::string visual_style_prompt(const std::string& value) {
+    if (value == "watercolor") return "soft watercolor 2D illustration, paper texture, gentle brush strokes";
+    if (value == "flat") return "clean flat 2D vector illustration, simple shapes, crisp color blocks";
+    if (value == "ink") return "Chinese ink line art, elegant 2D illustration, restrained colors";
+    if (value == "pixel") return "pixel art travel comic, 2D sprite-like scene, limited color palette";
+    return "anime-style 2D travel illustration, clean line art, cinematic lighting";
+}
+
+std::string normalize_panel_layout(std::string value) {
+    value = trim_text(value);
+    if (value == "single" || value == "two-panel" || value == "six-panel" || value == "vertical-comic") return value;
+    return "four-panel";
+}
+
+int panel_count_for_layout(const std::string& value) {
+    if (value == "single") return 1;
+    if (value == "two-panel") return 2;
+    if (value == "six-panel") return 6;
+    if (value == "vertical-comic") return 5;
+    return 4;
+}
+
+std::string panel_layout_label(const std::string& value) {
+    if (value == "single") return "单幅主视觉";
+    if (value == "two-panel") return "上下两格";
+    if (value == "six-panel") return "六格漫画";
+    if (value == "vertical-comic") return "竖版长图";
+    return "四格漫画";
+}
+
+std::vector<std::pair<std::string, std::string>> fallback_panels(const std::string& title,
+                                                                 const std::string& content,
+                                                                 const std::string& layout) {
+    std::string subject = trim_text(title);
+    if (subject.empty()) subject = "这段旅行";
+    std::string detail = trim_text(content);
+    if (detail.size() > 80) detail = detail.substr(0, 80);
+    if (detail.empty()) detail = "保留照片中的主要景点、人物和旅行氛围。";
+
+    std::vector<std::pair<std::string, std::string>> seeds = {
+        {"开场", "用远景交代目的地和天气，让画面像旅行故事的第一页。"},
+        {"抵达", "突出人物或背影进入景点的瞬间，保留原图主体位置。"},
+        {"高光", "放大最有记忆点的建筑、街景或自然景观，强化色彩和光影。"},
+        {"细节", "加入票根、路牌、食物或随身物件等小元素，让日记更有生活感。"},
+        {"转场", "用道路、门洞、楼梯或水面反射连接前后画面。"},
+        {"收束", "用傍晚光线或回望视角结束，呈现完成旅行后的余韵。"}
+    };
+
+    int count = panel_count_for_layout(layout);
+    std::vector<std::pair<std::string, std::string>> panels;
+    panels.reserve(static_cast<size_t>(count));
+    for (int index = 0; index < count; ++index) {
+        auto item = seeds[static_cast<size_t>(index) % seeds.size()];
+        item.second = subject + "：" + item.second + " 参考正文：" + detail;
+        panels.push_back(std::move(item));
+    }
+    return panels;
 }
 
 std::string http_post_json_text(const std::string& url, const std::string& body,
@@ -217,6 +290,11 @@ std::string build_payload(const TravelChatRequest& request) {
            << ", days=" << request.days
            << ", budget=" << request.budget << " CNY"
            << ", style=" << travel_style_label(request.style) << ".";
+    if (!request.local_context.empty()) {
+        system << " TourPilot local database context follows. Prefer these spots, food options, ratings and prices when relevant, "
+               << "but treat the list as incomplete and do not claim live availability: "
+               << request.local_context;
+    }
 
     std::ostringstream payload;
     payload << "{";
@@ -385,6 +463,114 @@ ImagePromptResponse generate_image_prompt(const std::string& title, const std::s
         result.style = "写实摄影";
         result.color_palette = "自然色调";
     }
+    return result;
+}
+
+ImagePromptResponse generate_image_prompt(const std::string& title, const std::string& content,
+                                          const std::string& visual_style,
+                                          const std::string& panel_layout,
+                                          int image_count) {
+    ImagePromptResponse result;
+    result.mode = "3d_to_2d";
+    result.visual_style = normalize_visual_style(visual_style);
+    result.panel_layout = normalize_panel_layout(panel_layout);
+    result.style = visual_style_label(result.visual_style);
+    result.color_palette = "清爽旅行色调";
+    result.panels = fallback_panels(title, content, result.panel_layout);
+    result.negative_prompt =
+        "photorealistic, 3D render, low quality, blurry, distorted landmarks, extra limbs, unreadable text, watermark, logo";
+
+    const std::string style_prompt = visual_style_prompt(result.visual_style);
+    const std::string layout_label = panel_layout_label(result.panel_layout);
+    const int panel_count = panel_count_for_layout(result.panel_layout);
+    std::string subject = trim_text(title);
+    if (subject.empty()) subject = "travel diary";
+
+    auto build_fallback_prompt = [&]() {
+        std::ostringstream en;
+        en << "Convert the uploaded 3D-rendered or photo-like travel images into a 2D "
+           << layout_label << " storyboard, " << style_prompt
+           << ", preserve the original landmarks, route mood, clothing silhouettes and composition, "
+           << panel_count << " panels, diary title: " << subject
+           << ", coherent visual narrative, clean details, no fake text";
+        result.prompt_en = en.str();
+        result.prompt_cn = "将已上传的旅行图片从 3D/写实观感转成" + result.style + "的" + layout_label +
+                           "，保留真实景点、人物位置和日记氛围，按每格脚本组织画面。";
+    };
+
+    build_fallback_prompt();
+
+    try {
+        TravelChatRequest req;
+        req.style = "photo";
+        req.message =
+            "你是旅行日记的视觉分镜助手。请把下面日记和已上传图片的语境，整理成“3D/写实图片转 2D 插画”的生成提示词。"
+            "用户选择的二维风格是：" +
+            result.style + "；分格布局是：" + layout_label + "，共 " + std::to_string(panel_count) +
+            " 格。如果有上传图片，应强调保留原图里的景点、人物姿态、服装轮廓、构图和旅行氛围，只改变为 2D 插画/漫画表现。"
+            "不要要求生成真实照片，不要改变景点身份。回复格式严格使用：\n"
+            "英文prompt: ...\n中文建议: ...\n色调: ...\n"
+            "分格1: 标题 - 画面说明\n分格2: 标题 - 画面说明\n反向提示词: ...\n\n"
+            "日记标题：" +
+            title + "\n图片数量：" + std::to_string(std::max(0, image_count)) +
+            "\n日记内容：" + content.substr(0, std::min<size_t>(content.size(), 700));
+        auto resp = chat_with_travel_agent(req);
+
+        const std::string reply = resp.reply;
+        auto extract = [&](const std::string& key) -> std::string {
+            size_t pos = reply.find(key);
+            if (pos == std::string::npos) return "";
+            pos += key.size();
+            size_t end = reply.find('\n', pos);
+            if (end == std::string::npos) end = reply.size();
+            return trim_text(reply.substr(pos, end - pos));
+        };
+
+        std::string prompt_en = extract("英文prompt:");
+        if (!prompt_en.empty()) result.prompt_en = prompt_en;
+
+        std::string prompt_cn = extract("中文建议:");
+        if (!prompt_cn.empty()) result.prompt_cn = prompt_cn;
+
+        std::string color_palette = extract("色调:");
+        if (!color_palette.empty()) result.color_palette = color_palette;
+
+        std::string negative_prompt = extract("反向提示词:");
+        if (!negative_prompt.empty()) result.negative_prompt = negative_prompt;
+
+        std::vector<std::pair<std::string, std::string>> parsed_panels;
+        parsed_panels.reserve(static_cast<size_t>(panel_count));
+        for (int index = 1; index <= panel_count; ++index) {
+            std::string line = extract("分格" + std::to_string(index) + ":");
+            if (line.empty()) line = extract("分格" + std::to_string(index) + "：");
+            if (line.empty()) continue;
+            std::string panel_title = "分格" + std::to_string(index);
+            std::string panel_description = line;
+            size_t split = line.find(" - ");
+            size_t split_size = 3;
+            if (split == std::string::npos) {
+                split = line.find("：");
+                split_size = 3;
+            }
+            if (split == std::string::npos) {
+                split = line.find(":");
+                split_size = 1;
+            }
+            if (split != std::string::npos) {
+                panel_title = trim_text(line.substr(0, split));
+                panel_description = trim_text(line.substr(split + split_size));
+            }
+            if (panel_title.empty()) panel_title = "分格" + std::to_string(index);
+            if (panel_description.empty()) panel_description = line;
+            parsed_panels.push_back({panel_title, panel_description});
+        }
+        if (static_cast<int>(parsed_panels.size()) == panel_count) {
+            result.panels = std::move(parsed_panels);
+        }
+    } catch (const std::exception&) {
+        build_fallback_prompt();
+    }
+
     return result;
 }
 

@@ -85,6 +85,7 @@ set(SERVICE_SOURCES
     src/services/auth_service.cpp
     src/services/scenic_service.cpp
     src/services/route_graph_service.cpp
+    src/services/tour_order_solver.cpp
     src/services/food_service.cpp
     src/services/achievement_service.cpp
     src/services/huffman_compressor.cpp
@@ -154,6 +155,8 @@ add_executable(test_algorithms
     src/graph/graph.cpp
     src/graph/dijkstra.cpp
     src/graph/congestion.cpp
+    src/services/tour_order_solver.cpp
+    src/services/food_service.cpp
     src/services/huffman_compressor.cpp
     src/services/inverted_index.cpp
 )
@@ -162,7 +165,7 @@ target_include_directories(test_algorithms PRIVATE
     ${CMAKE_SOURCE_DIR}/include/graph
     ${ASIO_INCLUDE_DIR}
 )
-target_compile_definitions(test_algorithms PRIVATE ASIO_STANDALONE _WIN32_WINNT=0x0601)
+target_compile_definitions(test_algorithms PRIVATE ASIO_STANDALONE _WIN32_WINNT=0x0601 TOURISM_FOOD_SERVICE_NO_DB)
 if(MSVC)
     set_target_properties(test_algorithms PROPERTIES MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
 endif()

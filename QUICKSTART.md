@@ -37,6 +37,7 @@ psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\imports\intern
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\indoor_navigation_schema.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\achievement_module_schema.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\diary_compression_schema.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\diary_compression_legacy_cleanup.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\cross_layer_navigation_schema.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\diary_location_cover_schema.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\diary_animation_schema.sql
@@ -45,6 +46,8 @@ psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_ext
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_facilities.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_foods.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_demo.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\route_tiantan_global_node.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\route_global_osm_stitch_schema.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_achievements.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_indoor_navigation.sql
 psql -U postgres -d tourism_system -f database\maintenance\repair_data_quality.sql
@@ -77,6 +80,7 @@ psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_ach
 
 ```powershell
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\diary_compression_schema.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\diary_compression_legacy_cleanup.sql
 ```
 
 已有数据库只补日记地点与封面（新增 `cover_image`、`location_*` 六列，存量日记封面自动回填）：
@@ -94,6 +98,7 @@ psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\dia
 已有数据库只补美食推荐演示数据：
 
 ```powershell
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\internal_navigation_schema.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_facilities.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_foods.sql
 ```
@@ -102,6 +107,8 @@ psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_foo
 
 ```powershell
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_demo.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\route_tiantan_global_node.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\route_global_osm_stitch_schema.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_achievements.sql
 ```
 
@@ -166,16 +173,16 @@ cmake -S backend -B backend\build-codex-verify-mingw
 cmake --build backend\build-codex-verify-mingw
 ```
 
-如果后端启动后立刻退出，先把 PostgreSQL 的 DLL 目录加到当前窗口 PATH：
+如果后端启动后立刻退出，先把 MinGW 和 PostgreSQL 的 DLL 目录加到当前窗口 PATH：
 
 ```powershell
-$env:PATH="C:\Program Files\PostgreSQL\15\bin;$env:PATH"
+$env:PATH="D:\mingw64\bin;C:\Program Files\PostgreSQL\15\bin;$env:PATH"
 ```
 
 ## 5. 启动后端
 
 ```powershell
-backend\build-mingw\bin\tourism_server.exe --host 127.0.0.1 --port 8080
+.\backend\build-codex-verify-mingw\bin\tourism_server.exe --host 127.0.0.1 --port 8080
 ```
 
 正常情况下，这个窗口会一直被后端服务占用，不会立刻回到 PowerShell 提示符。
@@ -312,14 +319,14 @@ Invoke-WebRequest `
 检查退出码：
 
 ```powershell
-backend\build-mingw\bin\tourism_server.exe --help
+.\backend\build-codex-verify-mingw\bin\tourism_server.exe --help
 $LASTEXITCODE
 ```
 
 如果是 `-1073741515`，通常是缺少运行时 DLL。执行：
 
 ```powershell
-$env:PATH="C:\Program Files\PostgreSQL\15\bin;$env:PATH"
+$env:PATH="D:\mingw64\bin;C:\Program Files\PostgreSQL\15\bin;$env:PATH"
 ```
 
 ### 前端页面能打开，但接口报错

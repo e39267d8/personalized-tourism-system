@@ -32,12 +32,6 @@
           <span class="text-sm text-slate-400">{{ diary.stats?.views || 0 }}</span>
         </div>
 
-        <!-- 压缩存储标记：正文以 Huffman 压缩字节存储于数据库 -->
-        <span
-          v-if="diary.compressedStorage"
-          class="rounded-full bg-teal-50 px-2.5 py-0.5 text-xs font-medium text-teal-700"
-          :title="`正文以 Huffman 无损压缩存储，节省 ${diary.spaceSavedPercent}% 空间`"
-        >已压缩存储 · 省 {{ diary.spaceSavedPercent }}%</span>
       </div>
 
       <!-- 重走这条路线：提取日记景点，跳转路线规划自动生成 -->
@@ -92,24 +86,7 @@
       </div>
     </div>
 
-    <div class="mt-4 grid gap-4 lg:grid-cols-2">
-      <div class="rounded-xl border border-slate-100 bg-white px-5 py-4 shadow-sm">
-        <div class="flex items-start justify-between gap-3">
-          <div>
-            <div class="text-sm font-semibold text-slate-900">Huffman 无损压缩存储</div>
-            <div class="mt-1 text-sm text-slate-500">
-              {{ compressionText }}
-            </div>
-          </div>
-          <button
-            class="rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50"
-            @click="loadCompression"
-          >
-            刷新
-          </button>
-        </div>
-      </div>
-
+    <div class="mt-4 grid gap-4">
       <div class="rounded-xl border border-teal-100 bg-teal-50 px-5 py-4">
         <div class="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -203,7 +180,6 @@ const userRating = ref(0)
 const newComment = ref('')
 const reviewSubmitting = ref(false)
 const reviewMessage = ref('')
-const compression = ref(null)
 const animationStoryboard = ref(null)
 const animationLoading = ref(false)
 const animationMessage = ref('')
@@ -248,13 +224,6 @@ const ratingCount = computed(() => diary.value.ratingCount || 0)
 const canSubmitReview = computed(() => {
   return isAuthenticated() && Number(diary.value.author?.id) === Number(authStore.user?.id)
 })
-const compressionText = computed(() => {
-  if (!compression.value) return '读取压缩统计中...'
-  const ratio = Number(compression.value.compressionRatio || 0).toFixed(2)
-  const status = compression.value.verified ? '解压校验通过' : '等待校验'
-  return `${compression.value.algorithm || 'huffman'} · 原始 ${compression.value.originalBytes || 0} bytes · 压缩 ${compression.value.compressedBytes || 0} bytes · 压缩比 ${ratio}% · ${status}`
-})
-
 function ensureAuth() {
   if (isAuthenticated()) return true
   router.push({ path: '/login', query: { redirect: route.fullPath } })
@@ -406,20 +375,6 @@ function rateDiary(score) {
   tourismApi.rateDiary(props.id, score).catch(() => {})
 }
 
-async function loadCompression() {
-  try {
-    compression.value = await tourismApi.diaryCompression(props.id)
-  } catch {
-    compression.value = {
-      algorithm: 'huffman',
-      originalBytes: 0,
-      compressedBytes: 0,
-      compressionRatio: 0,
-      verified: false
-    }
-  }
-}
-
 async function generateAnimation() {
   animationLoading.value = true
   animationMessage.value = ''
@@ -471,6 +426,5 @@ function formatTime(time) {
 onMounted(() => {
   loadDiary()
   loadComments()
-  loadCompression()
 })
 </script>

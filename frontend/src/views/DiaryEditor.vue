@@ -267,6 +267,51 @@
             {{ aiMessage.text }}
           </div>
 
+          <div class="mb-3 rounded-lg border border-teal-100 bg-teal-50/50 p-3">
+            <div class="flex flex-col gap-2 sm:flex-row sm:items-end">
+              <div class="min-w-0 flex-1">
+                <div class="text-xs font-semibold text-teal-800">3D/照片转 2D 分格</div>
+                <div class="mt-0.5 text-xs text-teal-700">根据日记正文和已上传图片，生成二维转绘提示词与分格脚本。</div>
+              </div>
+              <label class="text-xs text-slate-600">
+                二维风格
+                <select v-model="imagePromptOptions.visualStyle" class="mt-1 w-full rounded-md border border-teal-100 bg-white px-2 py-1.5 text-xs text-slate-700 outline-none focus:border-teal-400 sm:w-28">
+                  <option v-for="option in imagePromptStyleOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
+                </select>
+              </label>
+              <label class="text-xs text-slate-600">
+                分格
+                <select v-model="imagePromptOptions.panelLayout" class="mt-1 w-full rounded-md border border-teal-100 bg-white px-2 py-1.5 text-xs text-slate-700 outline-none focus:border-teal-400 sm:w-28">
+                  <option v-for="option in imagePromptLayoutOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
+                </select>
+              </label>
+              <button
+                class="rounded-md bg-teal-700 px-3 py-2 text-xs font-medium text-white hover:bg-teal-800 disabled:opacity-50"
+                :disabled="aiBusy"
+                @click="aiImagePrompt"
+              >
+                生成方案
+              </button>
+            </div>
+            <div v-if="imagePromptResult" class="mt-3 space-y-2 text-xs text-slate-700">
+              <div class="rounded-md bg-white/80 p-2">
+                <div class="font-semibold text-slate-900">中文建议</div>
+                <p class="mt-1 leading-relaxed">{{ imagePromptResult.promptCn }}</p>
+              </div>
+              <div v-if="imagePromptResult.panels?.length" class="grid gap-2 sm:grid-cols-2">
+                <div v-for="(panel, index) in imagePromptResult.panels" :key="`${panel.title}-${index}`" class="rounded-md bg-white/80 p-2">
+                  <div class="font-semibold text-slate-900">{{ index + 1 }}. {{ panel.title }}</div>
+                  <p class="mt-1 leading-relaxed">{{ panel.description }}</p>
+                </div>
+              </div>
+              <details class="rounded-md bg-white/80 p-2">
+                <summary class="cursor-pointer font-semibold text-slate-900">生成提示词</summary>
+                <p class="mt-2 whitespace-pre-wrap leading-relaxed">{{ imagePromptResult.promptEn }}</p>
+                <p v-if="imagePromptResult.negativePrompt" class="mt-2 whitespace-pre-wrap text-slate-500">避免：{{ imagePromptResult.negativePrompt }}</p>
+              </details>
+            </div>
+          </div>
+
           <!-- Writing area -->
           <div class="flex-1 rounded-lg bg-slate-50/50 focus-within:bg-white focus-within:shadow-inner transition-all">
             <div
@@ -309,15 +354,9 @@
         <span
           v-if="huffmanStats.saved > 0"
           class="text-xs text-teal-600"
-          title="存储时使用 Huffman 无损压缩"
+          title="发布后会自动优化正文存储"
         >
-          压缩节省 {{ huffmanStats.saved }}%
-          <router-link
-            to="/tools/huffman"
-            class="ml-0.5 underline underline-offset-2 opacity-60 hover:opacity-100 transition"
-            tabindex="-1"
-            title="了解 Huffman 压缩原理"
-          >了解</router-link>
+          内容优化存储 · 节省 {{ huffmanStats.saved }}%
         </span>
       </div>
       <div class="flex items-center gap-2.5">
@@ -409,6 +448,11 @@ const editorHtml = ref('')
 const editorPlainText = ref('')
 const aiBusy = ref(false)
 const aiMessage = ref(null) // { type: 'loading'|'success', text: string }
+const imagePromptResult = ref(null)
+const imagePromptOptions = reactive({
+  visualStyle: 'anime',
+  panelLayout: 'four-panel'
+})
 const draftDiaryId = ref(props.id || 0)
 const draggedImageIdx = ref(-1)
 const dragOverImageIdx = ref(-1)
@@ -424,6 +468,22 @@ const activeFormats = reactive({
   orderedList: false,
   blockquote: false
 })
+
+const imagePromptStyleOptions = [
+  { value: 'anime', label: '日系动画' },
+  { value: 'watercolor', label: '水彩手绘' },
+  { value: 'flat', label: '扁平插画' },
+  { value: 'ink', label: '国风线稿' },
+  { value: 'pixel', label: '像素风' }
+]
+
+const imagePromptLayoutOptions = [
+  { value: 'single', label: '单幅' },
+  { value: 'two-panel', label: '两格' },
+  { value: 'four-panel', label: '四格' },
+  { value: 'six-panel', label: '六格' },
+  { value: 'vertical-comic', label: '竖版' }
+]
 
 // Mood options
 const moodOptions = [
@@ -614,21 +674,41 @@ async function aiGenerateTitle() {
 }
 
 async function aiImagePrompt() {
-  if (!form.value.title.trim()) { aiMessage.value = { type: 'success', text: '请先输入标题' }; return }
+  if (!form.value.title.trim()) {
+    aiMessage.value = { type: 'success', text: '请先输入标题' }
+    return
+  }
+
   const text = editorEl.value?.textContent || ''
   aiBusy.value = true
-  aiMessage.value = { type: 'loading', text: 'AI 正在生成配图建议...' }
+  aiMessage.value = { type: 'loading', text: 'AI 正在生成 2D 分格方案...' }
+
   try {
-    const data = await tourismApi.imagePrompt({ title: form.value.title, content: text })
-    const promptCn = data.promptCn || '旅行风景'
-    const style = data.style || '写实摄影'
-    const palette = data.colorPalette || '自然色调'
-    aiMessage.value = { type: 'success', text: '配图建议: ' + promptCn + ' | ' + style + ' | ' + palette }
+    const data = await tourismApi.imagePrompt({
+      title: form.value.title,
+      content: text,
+      mode: '3d_to_2d',
+      visualStyle: imagePromptOptions.visualStyle,
+      panelLayout: imagePromptOptions.panelLayout,
+      imageCount: form.value.images.length
+    })
+
+    imagePromptResult.value = {
+      ...data,
+      promptCn: data.promptCn || '将旅行图片转成二维分格画面。',
+      promptEn: data.promptEn || '',
+      panels: Array.isArray(data.panels) ? data.panels : []
+    }
+
+    const panelCount = imagePromptResult.value.panels.length
+    aiMessage.value = { type: 'success', text: panelCount ? `2D 分格方案已生成，共 ${panelCount} 格` : '2D 分格方案已生成' }
     setTimeout(() => { aiMessage.value = null }, 8000)
   } catch {
     aiMessage.value = { type: 'success', text: 'AI 暂不可用' }
     setTimeout(() => { aiMessage.value = null }, 3000)
-  } finally { aiBusy.value = false }
+  } finally {
+    aiBusy.value = false
+  }
 }
 
 function execEditorCommand(command, value = null) {

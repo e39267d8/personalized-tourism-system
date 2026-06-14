@@ -1,19 +1,25 @@
 #include "services/food_service.h"
 
 #include "services/topk_selector.h"
+#ifndef TOURISM_FOOD_SERVICE_NO_DB
 #include "support/api_helpers.h"
+#endif
 
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <initializer_list>
+#include <string>
 #include <unordered_map>
 
 namespace tourism::services {
 namespace {
 
-using tourism::db::exec_sql;
+#ifndef TOURISM_FOOD_SERVICE_NO_DB
+using tourism::db::exec_params;
 using tourism::support::to_double;
 using tourism::support::to_int;
+#endif
 
 double haversine_meters(double lat1, double lng1, double lat2, double lng2) {
     constexpr double earth_radius = 6371000.0;
@@ -59,6 +65,13 @@ bool contains_text(const std::string& text, const std::string& query) {
     return lowercase_ascii(text).find(lowercase_ascii(query)) != std::string::npos;
 }
 
+bool contains_any(const std::string& text, std::initializer_list<const char*> candidates) {
+    for (const char* candidate : candidates) {
+        if (text.find(candidate) != std::string::npos) return true;
+    }
+    return false;
+}
+
 double price_score(int price_level) {
     if (price_level == 2) return 15.0;
     if (price_level == 3) return 12.0;
@@ -92,15 +105,6 @@ double derived_hot_score(const FoodItem& item) {
            trust_score(item);
 }
 
-bool matches_query(const FoodItem& item, const std::string& query) {
-    if (query.empty()) return true;
-    return contains_text(item.name, query) ||
-           contains_text(item.cuisine, query) ||
-           contains_text(item.cuisine_label, query) ||
-           contains_text(item.address, query) ||
-           contains_text(item.scenic_name, query);
-}
-
 std::string match_reason(const FoodItem& item, const FoodQuery& query) {
     if (query.search.empty()) return "";
     if (contains_text(item.name, query.search)) return "名称匹配 \"" + query.search + "\"";
@@ -112,12 +116,81 @@ std::string match_reason(const FoodItem& item, const FoodQuery& query) {
     return "";
 }
 
+#ifndef TOURISM_FOOD_SERVICE_NO_DB
+bool matches_query(const FoodItem& item, const std::string& query) {
+    if (query.empty()) return true;
+    return contains_text(item.name, query) ||
+           contains_text(item.cuisine, query) ||
+           contains_text(item.cuisine_label, query) ||
+           contains_text(item.source_cuisine, query) ||
+           contains_text(item.address, query) ||
+           contains_text(item.scenic_name, query) ||
+           contains_text(item.scenic_category, query);
+}
+
 bool cuisine_matches(const FoodItem& item, const std::string& cuisine) {
     if (cuisine.empty()) return true;
     return item.cuisine == cuisine ||
            item.cuisine_label == cuisine ||
            contains_text(item.cuisine_label, cuisine);
 }
+#endif
+
+std::string cuisine_from_source(const std::string& source_cuisine) {
+    std::string value = lowercase_ascii(source_cuisine);
+    if (value.empty()) return "";
+    if (contains_any(value, {"coffee", "coffee_shop", "cafe"})) return "coffee_shop";
+    if (contains_any(value, {"bubble_tea", "tea"})) return "tea";
+    if (contains_any(value, {"ice_cream", "cake", "dessert"})) return "dessert";
+    if (contains_any(value, {"japanese", "sushi"})) return "japanese";
+    if (contains_any(value, {"korean"})) return "korean";
+    if (contains_any(value, {"italian", "pizza"})) return "italian";
+    if (contains_any(value, {"burger", "hamburger"})) return "burger";
+    if (contains_any(value, {"sandwich", "steak", "western"})) return "western";
+    if (contains_any(value, {"noodle", "noodles", "ramen"})) return "noodle";
+    if (contains_any(value, {"dumpling", "dumplings"})) return "dumplings";
+    if (contains_any(value, {"hot_pot", "hotpot"})) return "hot_pot";
+    if (contains_any(value, {"bbq", "barbecue", "grill"})) return "bbq";
+    if (contains_any(value, {"seafood"})) return "seafood";
+    if (contains_any(value, {"fast_food"})) return "fast_food";
+    if (contains_any(value, {"chinese", "asian", "oriental", "local"})) return "chinese";
+    return "";
+}
+
+#ifndef TOURISM_FOOD_SERVICE_NO_DB
+std::string cuisine_key_from_search(const std::string& search) {
+    std::string value = lowercase_ascii(search);
+    if (value.empty()) return "";
+    if (contains_any(search, {"咖啡", "拿铁", "美式"}) || contains_any(value, {"coffee", "cafe"})) return "coffee_shop";
+    if (contains_any(search, {"茶", "奶茶", "茶饮"}) || contains_any(value, {"tea", "bubble_tea"})) return "tea";
+    if (contains_any(search, {"甜品", "蛋糕", "冰淇淋"}) || contains_any(value, {"dessert", "cake", "ice_cream"})) return "dessert";
+    if (contains_any(search, {"日料", "寿司"}) || contains_any(value, {"japanese", "sushi"})) return "japanese";
+    if (contains_any(search, {"韩餐"}) || contains_any(value, {"korean"})) return "korean";
+    if (contains_any(search, {"西餐", "牛排"}) || contains_any(value, {"western", "steak"})) return "western";
+    if (contains_any(search, {"意大利", "披萨", "意面"}) || contains_any(value, {"italian", "pizza"})) return "italian";
+    if (contains_any(search, {"汉堡"}) || contains_any(value, {"burger", "hamburger"})) return "burger";
+    if (contains_any(search, {"面", "面馆", "拉面", "米线"}) || contains_any(value, {"noodle", "noodles", "ramen"})) return "noodle";
+    if (contains_any(search, {"饺子", "馄饨"}) || contains_any(value, {"dumpling", "dumplings"})) return "dumplings";
+    if (contains_any(search, {"火锅", "涮肉"}) || contains_any(value, {"hot_pot", "hotpot"})) return "hot_pot";
+    if (contains_any(search, {"烧烤", "烤肉"}) || contains_any(value, {"bbq", "barbecue", "grill"})) return "bbq";
+    if (contains_any(search, {"海鲜"}) || contains_any(value, {"seafood"})) return "seafood";
+    if (contains_any(search, {"快餐"}) || contains_any(value, {"fast_food"})) return "fast_food";
+    if (contains_any(search, {"小吃", "夜市"}) || contains_any(value, {"snack", "street_food"})) return "snack";
+    if (contains_any(search, {"中餐", "食堂", "家常菜"}) || contains_any(value, {"chinese", "canteen"})) return "chinese";
+    return "";
+}
+
+std::string location_type_label(const FoodItem& item) {
+    std::string text = item.scenic_category + " " + item.scenic_name;
+    if (text.find("高校") != std::string::npos ||
+        text.find("校园") != std::string::npos ||
+        text.find("学校") != std::string::npos ||
+        text.find("大学") != std::string::npos) {
+        return "学校";
+    }
+    return "景点";
+}
+#endif
 
 } // namespace
 
@@ -132,7 +205,8 @@ std::string infer_cuisine(const std::string& name) {
         {"面", "noodle"}, {"粉", "noodle"}, {"米线", "noodle"},
         {"饺子", "dumplings"}, {"馄饨", "dumplings"}, {"包子", "dumplings"},
         {"海鲜", "seafood"}, {"鱼", "seafood"}, {"虾", "seafood"},
-        {"咖啡", "coffee_shop"}, {"茶", "tea"}, {"奶茶", "tea"},
+        {"咖啡", "coffee_shop"}, {"星巴克", "coffee_shop"}, {"瑞幸", "coffee_shop"},
+        {"茶", "tea"}, {"奶茶", "tea"},
         {"甜品", "dessert"}, {"蛋糕", "dessert"}, {"冰淇淋", "dessert"},
         {"小吃", "snack"}, {"夜市", "street_food"}, {"街", "street_food"},
         {"汉堡", "burger"}, {"披萨", "italian"}, {"意面", "italian"},
@@ -147,20 +221,22 @@ std::string infer_cuisine(const std::string& name) {
     return "chinese";
 }
 
+std::string infer_cuisine(const std::string& name, const std::string& source_cuisine) {
+    std::string from_source = cuisine_from_source(source_cuisine);
+    return from_source.empty() ? infer_cuisine(name) : from_source;
+}
+
 std::string cuisine_label(const std::string& cuisine_key) {
     return cuisine_label_map(cuisine_key);
 }
 
+#ifndef TOURISM_FOOD_SERVICE_NO_DB
 std::vector<FoodItem> query_food_items(tourism::db::PgConnection& db, const FoodQuery& query) {
     // Join facilities with graph_nodes to support both curated food seed data and imported POI data.
-    std::string scenic_filter;
-    if (query.scenic_spot_id > 0) {
-        scenic_filter = " AND COALESCE(f.scenic_spot_id, gn.scenic_spot_id, 0) = " + std::to_string(query.scenic_spot_id);
-    }
-
     std::string sql = R"SQL(
         SELECT DISTINCT ON (f.id)
                f.id::text, f.name, f.type,
+               COALESCE(f.source_tags->>'cuisine', '') AS source_cuisine,
                COALESCE(f.rating, 0)::text AS rating,
                COALESCE(f.price_level, 0)::text AS price_level,
                ST_X(f.location::geometry)::text AS longitude,
@@ -169,18 +245,34 @@ std::vector<FoodItem> query_food_items(tourism::db::PgConnection& db, const Food
                COALESCE(f.opening_hours, '') AS opening_hours,
                COALESCE(f.phone, '') AS phone,
                COALESCE(f.scenic_spot_id, gn.scenic_spot_id, 0)::text AS scenic_spot_id,
-               COALESCE(s.name, '') AS scenic_name
+               COALESCE(s.name, '') AS scenic_name,
+               COALESCE(c.name, '') AS scenic_category
         FROM facilities f
         LEFT JOIN graph_nodes gn ON gn.facility_id = f.id
         LEFT JOIN scenic_spots s ON s.id = COALESCE(f.scenic_spot_id, gn.scenic_spot_id)
+        LEFT JOIN categories c ON c.id = s.category_id
         WHERE f.location IS NOT NULL
           AND (f.type = 'restaurant' OR f.type = 'cafe' OR f.type = 'fast_food')
-    )SQL" + scenic_filter + R"SQL(
+          AND ($1::int <= 0 OR COALESCE(f.scenic_spot_id, gn.scenic_spot_id, 0) = $1::int)
+          AND (
+              $2 = ''
+              OR lower(f.name) LIKE '%' || lower($2) || '%'
+              OR lower(COALESCE(f.address, '')) LIKE '%' || lower($2) || '%'
+              OR lower(COALESCE(s.name, '')) LIKE '%' || lower($2) || '%'
+              OR lower(COALESCE(c.name, '')) LIKE '%' || lower($2) || '%'
+              OR lower(COALESCE(f.source_tags->>'cuisine', '')) LIKE '%' || lower($2) || '%'
+              OR ($3 <> '' AND lower(COALESCE(f.source_tags->>'cuisine', '')) LIKE '%' || lower($3) || '%')
+              OR lower(COALESCE(f.source_tags->>'name:en', '')) LIKE '%' || lower($2) || '%'
+              OR lower(COALESCE(f.source_tags->>'name:zh', '')) LIKE '%' || lower($2) || '%'
+          )
         ORDER BY f.id, COALESCE(f.rating, 0) DESC, f.name
-        LIMIT 1000
     )SQL";
 
-    auto rows = exec_sql(db, sql);
+    auto rows = exec_params(db, sql, {
+        std::to_string(query.scenic_spot_id),
+        query.search,
+        cuisine_key_from_search(query.search),
+    });
 
     std::vector<FoodItem> items;
     for (int row = 0; row < rows.rows(); ++row) {
@@ -188,7 +280,8 @@ std::vector<FoodItem> query_food_items(tourism::db::PgConnection& db, const Food
         item.id = to_int(rows.value(row, "id"));
         item.name = rows.value(row, "name");
         item.type = rows.value(row, "type");
-        item.cuisine = infer_cuisine(item.name);
+        item.source_cuisine = rows.value(row, "source_cuisine");
+        item.cuisine = infer_cuisine(item.name, item.source_cuisine);
         item.cuisine_label = cuisine_label(item.cuisine);
         item.rating = to_double(rows.value(row, "rating"));
         item.price_level = to_int(rows.value(row, "price_level"));
@@ -199,6 +292,8 @@ std::vector<FoodItem> query_food_items(tourism::db::PgConnection& db, const Food
         item.phone = rows.value(row, "phone");
         item.scenic_spot_id = to_int(rows.value(row, "scenic_spot_id"));
         item.scenic_name = rows.value(row, "scenic_name");
+        item.scenic_category = rows.value(row, "scenic_category");
+        item.location_type_label = location_type_label(item);
         item.reviews = 0; // reviews are per scenic spot, not per facility
         item.hot_score = derived_hot_score(item);
         item.popularity = static_cast<int>(std::round(item.hot_score));
@@ -210,6 +305,7 @@ std::vector<FoodItem> query_food_items(tourism::db::PgConnection& db, const Food
 
     return items;
 }
+#endif
 
 std::vector<FoodScore> rank_foods(const std::vector<FoodItem>& items,
                                   const FoodQuery& query,
@@ -269,6 +365,7 @@ std::vector<FoodScore> rank_foods(const std::vector<FoodItem>& items,
     return scored;
 }
 
+#ifndef TOURISM_FOOD_SERVICE_NO_DB
 crow::json::wvalue food_json(const FoodItem& food) {
     crow::json::wvalue item;
     item["id"] = food.id;
@@ -276,6 +373,7 @@ crow::json::wvalue food_json(const FoodItem& food) {
     item["type"] = food.type;
     item["cuisine"] = food.cuisine;
     item["cuisineLabel"] = food.cuisine_label;
+    item["sourceCuisine"] = food.source_cuisine;
     item["rating"] = food.rating;
     item["priceLevel"] = food.price_level;
     item["longitude"] = food.longitude;
@@ -285,11 +383,14 @@ crow::json::wvalue food_json(const FoodItem& food) {
     item["phone"] = food.phone;
     item["scenicSpotId"] = food.scenic_spot_id;
     item["scenicName"] = food.scenic_name;
+    item["scenicCategory"] = food.scenic_category;
+    item["locationTypeLabel"] = food.location_type_label;
     item["popularity"] = food.popularity;
     item["reviews"] = food.reviews;
     item["distanceMeters"] = food.distance_meters;
     item["hotScore"] = food.hot_score;
     return item;
 }
+#endif
 
 } // namespace tourism::services

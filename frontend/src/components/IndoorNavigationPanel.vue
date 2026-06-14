@@ -338,7 +338,7 @@
                 <div class="mt-1 font-bold text-slate-950">{{ durationLabel(route.durationSeconds) }}</div>
               </div>
               <div>
-                <div class="text-xs text-slate-500">算法</div>
+                <div class="text-xs text-slate-500">路线类型</div>
                 <div class="mt-1 font-bold text-slate-950">{{ algorithmLabel(route.algorithm) }}</div>
               </div>
             </div>
@@ -365,8 +365,8 @@
               </li>
             </ol>
 
-            <div class="mt-4 rounded-md border border-slate-200 bg-white p-3 text-xs leading-5 text-slate-500">
-              策略={{ strategyLabel(route.strategy) }} · 提供方={{ providerStatusLabel(route.configuredProvider) }} · 兜底={{ fallbackLabel(route.fallbackUsed) }}
+            <div v-if="route.fallbackUsed" class="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-800">
+              当前路线已切换为可用的备选方案。
             </div>
           </div>
         </div>
@@ -653,23 +653,16 @@ const edgeTypeText = (type) => {
 }
 
 const providerStatusLabel = (provider) => {
-  if (provider === 'local_indoor_graph') return '本地图计算引擎'
-  if (provider === 'amap_indoor') return '室内地图服务'
-  return provider || '未知提供方'
+  if (provider === 'local_indoor_graph') return '数据已接入'
+  if (provider === 'amap_indoor') return '室内导航已接入'
+  return '室内导航可用'
 }
 
 const algorithmLabel = (algorithm) => {
-  if (algorithm === 'indoor-dijkstra') return 'Dijkstra 最短路径'
-  if (algorithm === 'cross-layer-dijkstra') return '跨层 Dijkstra'
-  if (algorithm === 'amap-indoor-routePath') return '室内路线服务'
-  return algorithm || '未返回算法'
+  if (algorithm === 'cross-layer-dijkstra') return '跨楼层路线'
+  if (algorithm === 'indoor-dijkstra' || algorithm === 'amap-indoor-routePath') return '室内路线'
+  return '路线已生成'
 }
-
-const strategyLabel = (value) => {
-  return strategyOptions.find(item => item.value === value)?.label || value || '默认策略'
-}
-
-const fallbackLabel = (value) => value ? '是' : '否'
 
 const stepText = (step) => {
   if (step.fromFloorCode !== step.toFloorCode) {

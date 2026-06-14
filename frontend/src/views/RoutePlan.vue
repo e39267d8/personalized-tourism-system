@@ -29,7 +29,7 @@
             >
           </div>
 
-          <div class="space-y-3">
+          <div v-if="!tourMode" class="space-y-3">
             <div class="rounded-md border border-slate-200 bg-slate-50 p-3">
               <div class="mb-2 text-xs font-semibold text-slate-500">出发点</div>
               <input
@@ -75,6 +75,53 @@
             </div>
           </div>
 
+          <div v-else class="space-y-3">
+            <div class="rounded-md border border-slate-200 bg-slate-50 p-3">
+              <div class="mb-2 text-xs font-semibold text-slate-500">当前位置 / 出发点</div>
+              <input
+                v-model.trim="form.startText"
+                class="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm outline-none focus:border-teal-700"
+                placeholder="例如：前门大街、北京大学东门"
+              >
+            </div>
+
+            <div class="rounded-md border border-teal-100 bg-teal-50 px-3 py-2 text-xs leading-5 text-teal-800">
+              目标地点可填写景点或学校名称；“第几个到达”只计算目标地点，不包含出发点和最后返回出发点。留空则由系统自动安排。
+            </div>
+
+            <div v-for="(target, index) in tourTargets" :key="target.id" class="rounded-md border border-slate-200 bg-white p-3">
+              <div class="mb-2 flex items-center justify-between gap-2">
+                <div class="text-xs font-semibold text-slate-500">目标地点 {{ index + 1 }}</div>
+                <button type="button" class="rounded-md px-2 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50" @click="removeTourTarget(index)">删除</button>
+              </div>
+              <div class="grid gap-2 sm:grid-cols-[1fr_8.5rem]">
+                <input
+                  v-model.trim="target.name"
+                  class="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm outline-none focus:border-teal-700"
+                  placeholder="例如：故宫博物院"
+                >
+                <input
+                  v-model.number="target.order"
+                  type="number"
+                  min="1"
+                  :max="tourTargets.length"
+                  class="h-10 w-full rounded-md border border-slate-300 bg-white px-3 text-sm outline-none focus:border-teal-700"
+                  placeholder="第几个到达"
+                >
+              </div>
+            </div>
+
+            <div class="flex gap-2">
+              <input
+                v-model.trim="newWaypoint"
+                class="h-10 min-w-0 flex-1 rounded-md border border-slate-300 px-3 text-sm outline-none focus:border-teal-700"
+                placeholder="添加目标地点，例如：国家博物馆"
+                @keydown.enter.prevent="addWaypoint"
+              >
+              <button type="button" class="h-10 rounded-md border border-slate-300 px-4 text-sm font-semibold text-slate-700 hover:bg-slate-100" @click="addWaypoint">添加</button>
+            </div>
+          </div>
+
           <div class="grid grid-cols-2 gap-3">
             <div>
               <label class="text-sm font-semibold text-slate-700">交通方式</label>
@@ -95,7 +142,7 @@
             </div>
           </div>
 
-          <!-- TSP tour mode toggle -->
+          <!-- 环游模式开关 -->
           <div class="flex items-center gap-2 py-1">
             <input
               id="tourMode"
@@ -103,8 +150,8 @@
               type="checkbox"
               class="w-4 h-4 rounded border-slate-300 text-teal-700 focus:ring-teal-500"
             />
-            <label for="tourMode" class="text-sm font-semibold text-slate-700 cursor-pointer">环游模式 (TSP)</label>
-            <span class="text-xs text-slate-400">多点间最短回路，自动回到起点</span>
+            <label for="tourMode" class="text-sm font-semibold text-slate-700 cursor-pointer">环游模式</label>
+            <span class="text-xs text-slate-400">自动安排多个地点的游览顺序，并回到起点</span>
           </div>
 
           <!-- Congestion-aware routing toggle -->
@@ -113,10 +160,11 @@
               id="congestionMode"
               v-model="useCongestion"
               type="checkbox"
+              :disabled="tourMode"
               class="w-4 h-4 rounded border-slate-300 text-teal-700 focus:ring-teal-500"
             />
             <label for="congestionMode" class="text-sm font-semibold text-slate-700 cursor-pointer">拥挤度感知</label>
-            <span class="text-xs text-slate-400">实时避开拥堵路段</span>
+            <span class="text-xs text-slate-400">{{ tourMode ? '环游模式会优先优化多目标访问顺序' : '实时避开拥堵路段' }}</span>
           </div>
           <div v-if="useCongestion" class="grid grid-cols-2 gap-3">
             <div>
@@ -165,22 +213,22 @@
         <template v-if="route">
           <div class="mt-4 grid grid-cols-3 gap-3">
             <div class="rounded-md bg-slate-50 p-3">
-              <div class="text-xs text-slate-500">{{ tourMode && !route.routeServiceFallback ? 'TSP 距离' : '距离' }}</div>
+              <div class="text-xs text-slate-500">{{ tourMode && !route.routeServiceFallback ? '环游距离' : '距离' }}</div>
               <div class="mt-1 text-lg font-bold">{{ route.distance }}</div>
             </div>
             <div class="rounded-md bg-slate-50 p-3">
-              <div class="text-xs text-slate-500">{{ tourMode && !route.routeServiceFallback ? 'TSP 时长' : '时长' }}</div>
+              <div class="text-xs text-slate-500">{{ tourMode && !route.routeServiceFallback ? '环游时长' : '时长' }}</div>
               <div class="mt-1 text-lg font-bold">{{ route.time }}</div>
             </div>
             <div class="rounded-md bg-slate-50 p-3">
-              <div class="text-xs text-slate-500">{{ tourMode && !route.routeServiceFallback ? '算法' : '预估费用' }}</div>
-              <div class="mt-1 text-base font-bold">{{ tourMode && !route.routeServiceFallback ? (route.algorithm || 'TSP') : ('¥' + route.cost) }}</div>
+              <div class="text-xs text-slate-500">{{ tourMode && !route.routeServiceFallback ? '路线类型' : '预估费用' }}</div>
+              <div class="mt-1 text-base font-bold">{{ tourMode && !route.routeServiceFallback ? (route.routeType || '环游路线') : ('¥' + route.cost) }}</div>
             </div>
           </div>
 
-          <!-- TSP visit order -->
+          <!-- 环游访问顺序 -->
           <div v-if="tourMode && !route.routeServiceFallback && route.visitOrder" class="mt-3 rounded-md bg-teal-50 px-3 py-2 text-sm text-teal-800">
-            访问顺序: {{ route.visitOrder.join(' → ') }}
+            访问顺序: {{ route.visitOrder.join(' → ') }} → 返回出发点
           </div>
 
           <div class="mt-5 space-y-3">
@@ -232,7 +280,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import L from 'leaflet'
 import { tourismApi } from '@/services/tourismApi'
@@ -244,6 +292,7 @@ const loading = ref(false)
 const error = ref('')
 const newWaypoint = ref('')
 const waypoints = ref([])
+const tourTargets = ref([])
 const tourMode = ref(false)
 const useCongestion = ref(false)
 const timeOfDay = ref(12)
@@ -327,12 +376,20 @@ onMounted(async () => {
 
 const addWaypoint = () => {
   if (!newWaypoint.value) return
-  waypoints.value.push({ id: Date.now() + Math.random(), name: newWaypoint.value })
+  if (tourMode.value) {
+    tourTargets.value.push({ id: Date.now() + Math.random(), name: newWaypoint.value, order: '' })
+  } else {
+    waypoints.value.push({ id: Date.now() + Math.random(), name: newWaypoint.value })
+  }
   newWaypoint.value = ''
 }
 
 const removeWaypoint = (index) => {
   waypoints.value.splice(index, 1)
+}
+
+const removeTourTarget = (index) => {
+  tourTargets.value.splice(index, 1)
 }
 
 const moveWaypoint = (index, direction) => {
@@ -355,8 +412,63 @@ const waypointTexts = () => {
     })
 }
 
+const tourTargetRows = () => {
+  const seen = new Set([form.startText.trim()])
+  return tourTargets.value
+    .map(item => ({
+      ...item,
+      name: String(item.name || '').trim(),
+      order: item.order === '' || item.order === null || Number.isNaN(Number(item.order))
+        ? null
+        : Number(item.order)
+    }))
+    .filter(item => {
+      if (!item.name || seen.has(item.name)) return false
+      seen.add(item.name)
+      return true
+    })
+}
+
+const ensureTourTargetsFromRouteFields = () => {
+  if (tourTargets.value.length) return
+  const names = [
+    ...waypoints.value.map(item => item.name).filter(Boolean),
+    form.endText
+  ].map(name => String(name || '').trim()).filter(Boolean)
+  tourTargets.value = names.map((name, index) => ({ id: Date.now() + index, name, order: '' }))
+}
+
+const validateTourInput = (targets) => {
+  if (!form.startText.trim()) return '请输入当前位置 / 出发点。'
+  if (targets.length < 2) return '环游模式至少需要两个目标地点。'
+  const usedOrders = new Set()
+  for (const target of targets) {
+    if (target.order === null) continue
+    if (!Number.isInteger(target.order) || target.order < 1 || target.order > targets.length) {
+      return `“${target.name}”的到达序号必须在 1 到 ${targets.length} 之间。`
+    }
+    if (usedOrders.has(target.order)) return `第 ${target.order} 个到达的位置被重复指定。`
+    usedOrders.add(target.order)
+  }
+  return ''
+}
+
+watch(tourMode, (enabled) => {
+  error.value = ''
+  route.value = null
+  if (enabled) {
+    ensureTourTargetsFromRouteFields()
+    useCongestion.value = false
+  } else if (tourTargets.value.length) {
+    const names = tourTargets.value.map(item => String(item.name || '').trim()).filter(Boolean)
+    waypoints.value = names.slice(0, -1).map((name, index) => ({ id: Date.now() + index, name }))
+    if (names.length) form.endText = names[names.length - 1]
+  }
+  drawRoute()
+})
+
 const planRoute = async () => {
-  if (!form.startText || !form.endText) {
+  if (!tourMode.value && (!form.startText || !form.endText)) {
     error.value = '请输入出发点和目的地。'
     return
   }
@@ -364,21 +476,28 @@ const planRoute = async () => {
   loading.value = true
   error.value = ''
 
-  // TSP 环游模式：把输入地点解析为本地路网节点，后端跑真实 TSP + Dijkstra
+  // 环游模式：把输入地点解析为本地路网节点，后端生成多点访问顺序
   if (tourMode.value) {
-    const texts = allStopTexts()
+    const targets = tourTargetRows()
+    const validationMessage = validateTourInput(targets)
+    if (validationMessage) {
+      error.value = validationMessage
+      loading.value = false
+      return
+    }
+    const texts = tourStopTexts(targets)
     try {
-      if (texts.length < 2) {
-        error.value = '环游模式至少需要两个地点。'
-        return
-      }
       const nodes = await loadRouteNodes()
-      const resolved = texts.map(text => ({ text, node: resolveGraphNode(nodes, text) }))
-      const missing = resolved.filter(item => !item.node).map(item => item.text)
+      const startNode = resolveGraphNode(nodes, form.startText)
+      const resolvedTargets = targets.map(target => ({ ...target, node: resolveGraphNode(nodes, target.name) }))
+      const missing = [
+        !startNode && form.startText,
+        ...resolvedTargets.filter(item => !item.node).map(item => item.name)
+      ].filter(Boolean)
       if (missing.length) {
         route.value = await routeServiceFallbackForStops(
           texts,
-          'TSP 环游',
+          '环游模式',
           graphNodeMissingMessage('环游模式', missing),
           '已按当前输入顺序显示真实道路路线'
         )
@@ -387,39 +506,54 @@ const planRoute = async () => {
       }
 
       const tourResult = await tourismApi.tourRoute({
-        nodeIds: resolved.map(item => item.node.id),
+        startNodeId: startNode.id,
+        targetNodeIds: resolvedTargets.map(item => item.node.id),
+        fixedOrders: resolvedTargets
+          .filter(item => item.order !== null)
+          .map(item => ({ nodeId: item.node.id, order: item.order })),
         travelMode: localGraphTravelMode(),
         optimization: form.optimization
       })
 
-      // 分层渲染：TSP 只决定访问顺序，真实道路折线交给路线服务按所选交通方式规划
-      // （本地图的边没有道路几何，直接画会穿楼；环游闭环 = 末尾补回起点）
+      // 分层渲染：多点访问顺序由后端决定；若本地路网已通过质量检查且包含真实道路，
+      // 优先使用本地几何，否则再交给路线服务按用户停靠点生成折线。
       const visitNames = tourResult.visitOrder || []
-      const loopStops = visitNames.length >= 2 ? [...visitNames, visitNames[0]] : visitNames
-      const amapRoute = await amapGeometryForStops(loopStops)
+      const displayStops = visitNames.length >= 2 ? [...visitNames, visitNames[0]] : visitNames
+      const routeNodesByName = [startNode, ...resolvedTargets.map(item => item.node)]
+      const displayPlaces = displayStops
+        .map(name => {
+          const node = routeNodesByName.find(item =>
+            item.name === name || item.nodeName === name || name.includes(item.name) || item.name.includes(name)
+          )
+          if (!node) return null
+          return { latitude: node.latitude, longitude: node.longitude, name }
+        })
+        .filter(Boolean)
+      const localRouteUsable = hasLocalRoadGeometry(tourResult)
+      const amapRoute = localRouteUsable ? null : await amapGeometryForStops(displayStops)
+      if (!localRouteUsable && !amapRoute) {
+        throw new Error(localRouteGeometryIssue(tourResult))
+      }
 
       route.value = {
         ...(amapRoute || tourResult),
-        title: 'TSP 环游路线',
-        algorithm: tourResult.algorithm || 'TSP',
+        title: '环游路线',
+        routeType: '环游路线',
         visitOrder: visitNames,
+        returnToStart: true,
+        fixedOrders: tourResult.fixedOrders || [],
+        stops: displayStops,
         transport: amapRoute?.transport || tourResult.transport || modeLabel(),
         usedTransportFallback: amapRoute ? false : tourResult.usedTransportFallback,
-        requestedPlaces: amapRoute?.requestedPlaces?.length
-          ? amapRoute.requestedPlaces
-          : resolved.map(item => ({
-              latitude: item.node.latitude,
-              longitude: item.node.longitude,
-              name: item.node.name
-            }))
+        requestedPlaces: displayPlaces.length === displayStops.length ? displayPlaces : []
       }
       drawRoute()
     } catch (requestError) {
       try {
         route.value = await routeServiceFallbackForStops(
           texts,
-          'TSP 环游',
-          routeErrorMessage(requestError, 'TSP 环游规划失败'),
+          '环游模式',
+          routeErrorMessage(requestError, '环游规划失败'),
           '已按当前输入顺序显示真实道路路线'
         )
         drawRoute()
@@ -464,7 +598,7 @@ const planRoute = async () => {
       route.value = {
         ...congestionResult,
         title: `拥挤度感知路线（${congestionResult.crowd_label || '中等'}敏感时段）`,
-        algorithm: `拥挤度感知 Dijkstra · ${modeLabel()}`,
+        routeType: '拥挤度感知路线',
         transport: congestionResult.transport || modeLabel(),
         // 拥挤度模式直接展示本地图算法选中的路径；如果再把中间节点交给外部路线服务
         // 二次重算，入口/换乘点这类非 scenic 节点会被抹掉，视觉上就像
@@ -520,13 +654,23 @@ const allStopTexts = () => [
   form.endText.trim()
 ].filter(Boolean)
 
+const tourStopTexts = (targets = tourTargetRows()) => [
+  form.startText.trim(),
+  ...targets.map(item => item.name),
+  form.startText.trim()
+].filter(Boolean)
+
 const routeErrorMessage = (requestError, fallbackText) =>
   requestError?.response?.data?.message || requestError?.message || fallbackText
 
+let lastRouteServiceError = ''
+
 const routeServiceFallbackForStops = async (stopTexts, modeName, reason, routeLabel) => {
+  lastRouteServiceError = ''
   const routeServiceRoute = await amapGeometryForStops(stopTexts)
   if (!routeServiceRoute) {
-    throw new Error(`${modeName}未生成可展示路线（${reason}），且路线服务兜底也不可用。`)
+    const detail = lastRouteServiceError ? `原因：${lastRouteServiceError}` : '请确认后端服务已启动，并检查地点名称。'
+    throw new Error(`${modeName}暂时无法生成完整路线。${detail}`)
   }
   const fallbackLabel =
     form.travelMode === 'transit' && stopTexts.length > 2
@@ -534,10 +678,10 @@ const routeServiceFallbackForStops = async (stopTexts, modeName, reason, routeLa
       : routeLabel
   return {
     ...routeServiceRoute,
-    title: `${modeName}兜底路线`,
-    algorithm: '真实道路路线服务',
+    title: `${modeName}备选路线`,
+    routeType: '备选路线',
     routeServiceFallback: true,
-    fallbackNotice: `${modeName}本地算法未生成可展示路线（${reason}），${fallbackLabel}；该路线不代表${modeName}算法结果。`,
+    fallbackNotice: `当前模式无法直接生成完整路线，已为你切换为可展示的备选路线。${fallbackLabel ? ` ${fallbackLabel}。` : ''}`,
     originalPlanningError: reason,
     usedTransportFallback: false
   }
@@ -551,9 +695,18 @@ let routeNodesCache = null
 const loadRouteNodes = async () => {
   if (routeNodesCache) return routeNodesCache
   const data = await tourismApi.routeNodes()
-  routeNodesCache = (data.items || []).filter(node => node.name && node.type !== 'junction')
+  routeNodesCache = (data.items || []).filter(node => (node.name || node.nodeName) && node.type !== 'junction')
   return routeNodesCache
 }
+
+const routeNodeTypeBonus = (type) => ({
+  scenic: 40,
+  school: 40,
+  entrance: 30,
+  building: 15,
+  facility: 5,
+  junction: 0
+}[type] || 0)
 
 const resolveGraphNode = (nodes, text) => {
   const query = String(text || '').trim()
@@ -561,13 +714,19 @@ const resolveGraphNode = (nodes, text) => {
   let best = null
   let bestScore = 0
   for (const node of nodes) {
+    const name = String(node.name || '')
+    const nodeName = String(node.nodeName || '')
     let score = -1
-    if (node.name === query || node.nodeName === query) score = 100
-    else if (node.name.includes(query) || query.includes(node.name)) score = 60
-    else if (node.nodeName && (node.nodeName.includes(query) || query.includes(node.nodeName))) score = 50
+    if (name === query) score = 320
+    else if (nodeName === query) score = 260
+    else if (name.startsWith(query)) score = 170
+    else if (nodeName.startsWith(query)) score = 150
+    else if (query.startsWith(name) && name.length >= 2) score = 130
+    else if (nodeName && query.startsWith(nodeName) && nodeName.length >= 2) score = 120
+    else if (name.includes(query)) score = 100
+    else if (nodeName.includes(query)) score = 90
     if (score < 0) continue
-    if (node.type === 'scenic') score += 20
-    else if (node.type === 'entrance') score += 10
+    score += routeNodeTypeBonus(node.type)
     if (score > bestScore) {
       best = node
       bestScore = score
@@ -594,6 +753,145 @@ const localGraphTravelMode = () => {
   return form.travelMode
 }
 
+const maxLocalConnectorMeters = 80
+
+const localEdgeSource = (edge) => String(edge?.source ?? '')
+const localEdgeDistance = (edge) => Number(edge?.distance || 0)
+
+const isTrustedLocalGeometryEdge = (edge) => {
+  const source = localEdgeSource(edge)
+  if (source === 'osm' || source === 'osm_stitch') return true
+  if (source === 'global_connector') return localEdgeDistance(edge) <= maxLocalConnectorMeters
+  return false
+}
+
+const hasLocalRoadGeometry = (result) => {
+  const coordinates = Array.isArray(result?.coordinates) ? result.coordinates : []
+  const pathEdges = Array.isArray(result?.pathEdges) ? result.pathEdges : []
+  const realRoadEdges = Number(result?.routeQuality?.realRoadEdges || 0)
+  return coordinates.length >= 2 &&
+    realRoadEdges > 0 &&
+    pathEdges.length > 0 &&
+    pathEdges.every(isTrustedLocalGeometryEdge)
+}
+
+const localRouteGeometryIssue = (result) => {
+  const pathEdges = Array.isArray(result?.pathEdges) ? result.pathEdges : []
+  const hasDemoEdge = pathEdges.some(edge => !localEdgeSource(edge))
+  const hasLongConnector = pathEdges.some(edge =>
+    localEdgeSource(edge) === 'global_connector' &&
+    localEdgeDistance(edge) > maxLocalConnectorMeters
+  )
+  if (hasDemoEdge || hasLongConnector) {
+    return '当前本地路网仍包含演示连接段，未直接绘制为真实道路路线。'
+  }
+  return '当前本地路网路线暂不满足真实道路展示条件。'
+}
+
+const sameStopText = (left, right) =>
+  String(left || '').trim() === String(right || '').trim()
+
+const numericRouteDistance = (item) => {
+  const direct = Number(item?.total_distance_meters)
+  if (Number.isFinite(direct) && direct > 0) return direct
+  const text = String(item?.distance || '').trim().toLowerCase()
+  const match = text.match(/(\d+(?:\.\d+)?)/)
+  if (!match) return 0
+  const value = Number(match[1])
+  if (!Number.isFinite(value)) return 0
+  if (text.includes('km') || text.includes('公里')) return value * 1000
+  return value
+}
+
+const numericRouteDuration = (item) => {
+  const direct = Number(item?.total_duration_seconds)
+  if (Number.isFinite(direct) && direct > 0) return direct
+  const text = String(item?.time || '').trim()
+  let seconds = 0
+  const hour = text.match(/(\d+(?:\.\d+)?)\s*(小时|hour|h)/i)
+  const minute = text.match(/(\d+(?:\.\d+)?)\s*(分钟|minute|min|m)/i)
+  const second = text.match(/(\d+(?:\.\d+)?)\s*(秒|second|sec|s)/i)
+  if (hour) seconds += Number(hour[1]) * 3600
+  if (minute) seconds += Number(minute[1]) * 60
+  if (second) seconds += Number(second[1])
+  return Number.isFinite(seconds) ? seconds : 0
+}
+
+const mergeRequestedPlaces = (routes) => {
+  const places = []
+  routes.forEach((item, index) => {
+    const legPlaces = Array.isArray(item?.requestedPlaces) ? item.requestedPlaces : []
+    if (index === 0 && legPlaces[0]) places.push(legPlaces[0])
+    const lastPlace = legPlaces[legPlaces.length - 1]
+    if (lastPlace) places.push(lastPlace)
+  })
+  return places.length >= 2 ? places : []
+}
+
+const mergeRouteServiceSegments = (routes, stops) => {
+  const coordinates = []
+  const segments = []
+  let totalDistance = 0
+  let totalDuration = 0
+  let totalCost = 0
+
+  routes.forEach(item => {
+    totalDistance += numericRouteDistance(item)
+    totalDuration += numericRouteDuration(item)
+    totalCost += Number(item?.cost || 0)
+    if (Array.isArray(item?.segments)) segments.push(...item.segments)
+    if (Array.isArray(item?.coordinates)) {
+      item.coordinates.forEach((point, index) => {
+        if (!Array.isArray(point) || point.length < 2) return
+        const previous = coordinates[coordinates.length - 1]
+        if (index > 0 || !previous || previous[0] !== point[0] || previous[1] !== point[1]) {
+          coordinates.push(point)
+        }
+      })
+    }
+  })
+
+  if (!coordinates.length) return null
+  return {
+    ...routes[routes.length - 1],
+    id: 0,
+    route_id: 'amap-loop-route',
+    title: routes[0]?.title || '环游路线',
+    stops,
+    requestedPlaces: mergeRequestedPlaces(routes),
+    segments,
+    coordinates,
+    distance: formatDistance(totalDistance),
+    time: formatDuration(totalDuration),
+    cost: Math.round(totalCost),
+    total_distance_meters: Math.round(totalDistance),
+    total_duration_seconds: Math.round(totalDuration),
+    usedAmap: true,
+    usedTransportFallback: false
+  }
+}
+
+const planTextRoute = (startText, endText, waypointTexts = []) => tourismApi.planRoute({
+  city: form.city || '北京',
+  startText,
+  endText,
+  waypointTexts,
+  travelMode: form.travelMode,
+  optimization: form.optimization
+})
+
+const amapGeometryForClosedLoop = async (stops) => {
+  const routes = []
+  for (let index = 0; index < stops.length - 1; index += 1) {
+    const startText = stops[index]
+    const endText = stops[index + 1]
+    if (sameStopText(startText, endText)) continue
+    routes.push(await planTextRoute(startText, endText))
+  }
+  if (!routes.length) return null
+  return mergeRouteServiceSegments(routes, stops)
+}
+
 // 分层渲染的几何层：把算法层（TSP/拥挤度 Dijkstra）决定的停靠点序列
 // 交给路线服务按所选交通方式取真实道路折线。路线服务不可用时返回 null，
 // 调用方会优先展示通过后端质量闸门的本地路线；本地算法不可展示时可用
@@ -603,18 +901,17 @@ const localGraphTravelMode = () => {
 const amapGeometryForStops = async (stopTexts) => {
   if (!stopTexts || stopTexts.length < 2) return null
   const isTransit = form.travelMode === 'transit'
-  const stops = isTransit ? [stopTexts[0], stopTexts[stopTexts.length - 1]] : stopTexts
-  const request = (travelMode) => tourismApi.planRoute({
-    city: form.city || '北京',
-    startText: stops[0],
-    endText: stops[stops.length - 1],
-    waypointTexts: stops.slice(1, -1),
-    travelMode,
-    optimization: form.optimization
-  })
+  const stops = stopTexts.map(item => String(item || '').trim()).filter(Boolean)
+  if (stops.length < 2) return null
+  const isClosedLoop = stops.length > 2 && sameStopText(stops[0], stops[stops.length - 1])
+  if (isTransit && isClosedLoop) return null
   try {
-    return await request(form.travelMode)
-  } catch {
+    if (isClosedLoop) return await amapGeometryForClosedLoop(stops)
+    const routeStops = isTransit ? [stops[0], stops[stops.length - 1]] : stops
+    if (sameStopText(routeStops[0], routeStops[routeStops.length - 1])) return null
+    return await planTextRoute(routeStops[0], routeStops[routeStops.length - 1], routeStops.slice(1, -1))
+  } catch (requestError) {
+    lastRouteServiceError = routeErrorMessage(requestError, '真实道路路线服务暂时不可用')
     return null
   }
 }
@@ -701,7 +998,9 @@ const fitRoute = ({ pulse = true } = {}) => {
 const requestedStopLabel = (index) => {
   if (!route.value) return ''
   if (index === 0) return '出发点'
+  if (route.value.returnToStart && index === route.value.stops.length - 1) return '返回出发点'
   if (index === route.value.stops.length - 1) return '目的地'
+  if (tourMode.value) return `第 ${index} 个目标`
   return '你添加的途经点'
 }
 

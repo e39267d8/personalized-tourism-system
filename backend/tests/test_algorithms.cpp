@@ -9,8 +9,10 @@
 #include "graph/dijkstra.h"
 #include "graph/graph.h"
 #include "services/huffman_compressor.h"
+#include "services/food_service.h"
 #include "services/inverted_index.h"
 #include "services/topk_selector.h"
+#include "services/tour_order_solver.h"
 
 #include <algorithm>
 #include <cassert>
@@ -138,6 +140,137 @@ TEST(topk_k_larger_than_n) {
     ASSERT_EQ(result[0], 3);
     ASSERT_EQ(result[1], 2);
     ASSERT_EQ(result[2], 1);
+}
+
+// =====================================================
+// Food ranking tests
+// =====================================================
+
+static tourism::services::FoodItem food_item(int id, const std::string& name,
+                                             double rating, double lat, double lng) {
+    tourism::services::FoodItem item;
+    item.id = id;
+    item.name = name;
+    item.type = "restaurant";
+    item.cuisine = tourism::services::infer_cuisine(name);
+    item.cuisine_label = tourism::services::cuisine_label(item.cuisine);
+    item.rating = rating;
+    item.price_level = 2;
+    item.latitude = lat;
+    item.longitude = lng;
+    item.address = "测试地址";
+    item.scenic_spot_id = 1;
+    item.scenic_name = "测试景点";
+    return item;
+}
+
+TEST(food_ranking_keeps_top_k_by_rating) {
+    std::vector<tourism::services::FoodItem> items = {
+        food_item(1, "普通餐厅", 3.8, 39.90, 116.30),
+        food_item(2, "高分餐厅", 4.9, 39.91, 116.31),
+        food_item(3, "次高分餐厅", 4.6, 39.92, 116.32),
+        food_item(4, "低分餐厅", 3.2, 39.93, 116.33),
+    };
+    tourism::services::FoodQuery query;
+    query.sort = "rating";
+    query.limit = 2;
+
+    auto ranked = tourism::services::rank_foods(items, query);
+
+    ASSERT_EQ(ranked.size(), 2u);
+    ASSERT_EQ(ranked[0].food.id, 2);
+    ASSERT_EQ(ranked[1].food.id, 3);
+}
+
+TEST(food_ranking_sorts_by_distance_when_location_available) {
+    std::vector<tourism::services::FoodItem> items = {
+        food_item(1, "远处餐厅", 4.9, 39.95, 116.35),
+        food_item(2, "近处餐厅", 4.1, 39.9005, 116.3005),
+        food_item(3, "中距离餐厅", 4.5, 39.91, 116.31),
+    };
+    tourism::services::FoodQuery query;
+    query.sort = "distance";
+    query.limit = 2;
+    query.has_user_location = true;
+    query.user_lat = 39.90;
+    query.user_lng = 116.30;
+
+    auto ranked = tourism::services::rank_foods(items, query);
+
+    ASSERT_EQ(ranked.size(), 2u);
+    ASSERT_EQ(ranked[0].food.id, 2);
+    ASSERT_EQ(ranked[1].food.id, 3);
+    ASSERT_TRUE(ranked[0].food.distance_meters < ranked[1].food.distance_meters);
+}
+
+TEST(food_cuisine_prefers_imported_metadata) {
+    ASSERT_EQ(tourism::services::infer_cuisine("餐厅", "japanese"), "japanese");
+    ASSERT_EQ(tourism::services::infer_cuisine("星巴克", ""), "coffee_shop");
+}
+
+// =====================================================
+// Ordered tour planning tests
+// =====================================================
+
+static tourism::services::TspDistanceMatrix linear_tour_matrix(int target_count) {
+    tourism::services::TspDistanceMatrix matrix;
+    matrix.size = target_count + 1;
+    matrix.distance.assign(matrix.size, std::vector<double>(matrix.size, 0.0));
+    matrix.duration.assign(matrix.size, std::vector<int>(matrix.size, 0));
+    matrix.weight.assign(matrix.size, std::vector<double>(matrix.size, 0.0));
+    for (int i = 0; i < matrix.size; ++i) {
+        for (int j = 0; j < matrix.size; ++j) {
+            if (i == j) continue;
+            double value = std::abs(i - j);
+            matrix.distance[i][j] = value * 100.0;
+            matrix.duration[i][j] = static_cast<int>(value * 60.0);
+            matrix.weight[i][j] = value;
+        }
+    }
+    return matrix;
+}
+
+TEST(ordered_tour_respects_fifth_target_constraint) {
+    auto matrix = linear_tour_matrix(9);
+    std::vector<tourism::services::TourOrderConstraint> constraints = {
+        {7, 5}
+    };
+
+    auto result = tourism::services::solve_ordered_tsp(matrix, constraints);
+
+    ASSERT_TRUE(result.success);
+    ASSERT_EQ(result.best_order.size(), 10u);
+    ASSERT_EQ(result.best_order[0], 0);
+    ASSERT_EQ(result.best_order[5], 7);
+}
+
+TEST(ordered_tour_auto_sorts_unfixed_targets_stably) {
+    auto matrix = linear_tour_matrix(4);
+
+    auto first = tourism::services::solve_ordered_tsp(matrix, {});
+    auto second = tourism::services::solve_ordered_tsp(matrix, {});
+
+    ASSERT_TRUE(first.success);
+    ASSERT_TRUE(second.success);
+    ASSERT_EQ(first.best_order.size(), second.best_order.size());
+    for (size_t i = 0; i < first.best_order.size(); ++i) {
+        ASSERT_EQ(first.best_order[i], second.best_order[i]);
+    }
+    ASSERT_EQ(first.best_order[0], 0);
+    ASSERT_EQ(first.best_order[1], 1);
+    ASSERT_EQ(first.best_order[2], 2);
+}
+
+TEST(ordered_tour_rejects_duplicate_fixed_order) {
+    auto matrix = linear_tour_matrix(3);
+    std::vector<tourism::services::TourOrderConstraint> constraints = {
+        {1, 2},
+        {2, 2}
+    };
+
+    auto result = tourism::services::solve_ordered_tsp(matrix, constraints);
+
+    ASSERT_FALSE(result.success);
 }
 
 // =====================================================

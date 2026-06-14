@@ -58,8 +58,7 @@
           <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
           检索中...
         </div>
-        <span v-if="searchAlgo && searchTotal > 0" class="text-xs text-teal-600 bg-teal-50 px-2 py-1 rounded-full">{{ searchAlgo }} · {{ searchTotal }} 篇</span>
-        <span v-if="sortAlgorithm" class="text-xs text-slate-500 bg-slate-100 px-2 py-1 rounded-full">{{ sortAlgorithm }}</span>
+        <span v-if="searchTotal > 0" class="text-xs text-teal-600 bg-teal-50 px-2 py-1 rounded-full">{{ searchTotal }} 篇</span>
       </div>
     </div>
 
@@ -233,9 +232,7 @@ const currentPage = ref(1)
 const pinJustPublished = ref(!!diaryStore.justPublished)
 const searchMode = ref('fulltext')
 const loading = ref(false)
-const searchAlgo = ref('')
 const searchTotal = ref(0)
-const sortAlgorithm = ref('')
 let searchDebounce = null
 
 const searchModes = [
@@ -403,7 +400,6 @@ function onSearchInput() {
 function onSearchChange() {
   query.value = ''
   currentPage.value = 1
-  searchAlgo.value = ''
   searchTotal.value = 0
   if (searchMode.value !== 'fulltext' && searchMode.value !== 'title' && searchMode.value !== 'spot') {
     diaries.value = [] // use demo fallback below
@@ -433,7 +429,6 @@ function switchView(mode) {
   viewMode.value = mode
   currentPage.value = 1
   query.value = ''
-  searchAlgo.value = ''
   searchTotal.value = 0
   router.replace({ path: '/diary', query: mode === 'mine' ? { view: 'mine' } : {} })
   loadAllDiaries()
@@ -449,14 +444,12 @@ async function doSearch() {
 
   // Local mode: no backend call needed
   if (searchMode.value === 'local') {
-    searchAlgo.value = ''
     searchTotal.value = 0
     return
   }
 
   if (!q) {
     // Empty query: fall back to all diaries
-    searchAlgo.value = ''
     searchTotal.value = 0
     loadAllDiaries()
     return
@@ -467,17 +460,14 @@ async function doSearch() {
     let data
     if (searchMode.value === 'fulltext') {
       data = await tourismApi.searchDiaries({ q, mode: 'any', limit: 50 })
-      searchAlgo.value = data.algorithm || 'inverted-index'
       searchTotal.value = data.total || (data.items ? data.items.length : 0)
       diaries.value = data.items || data || []
     } else if (searchMode.value === 'title') {
       data = await tourismApi.searchDiaryByTitle({ title: q })
-      searchAlgo.value = data.algorithm || 'hash-index'
       searchTotal.value = data.total || (data.items ? data.items.length : 0)
       diaries.value = data.items || data || []
     } else if (searchMode.value === 'spot') {
       data = await tourismApi.searchDiaryBySpot({ q, sort: sort.value, limit: 50 })
-      searchAlgo.value = data.algorithm || 'spot-index'
       searchTotal.value = data.total || (data.items ? data.items.length : 0)
       diaries.value = data.items || data || []
     }
@@ -486,7 +476,6 @@ async function doSearch() {
       diaries.value = demoDiaries
     }
   } catch {
-    searchAlgo.value = ''
     searchTotal.value = 0
     diaries.value = demoDiaries
   } finally {
@@ -512,11 +501,9 @@ async function loadAllDiaries() {
       ? await tourismApi.myDiaries({ sort: sort.value, status: mineStatus.value })
       : await tourismApi.diaries({ sort: sort.value })
     diaries.value = data.items || data || []
-    sortAlgorithm.value = data.sortAlgorithm || (sort.value === 'popular' ? '热度排序：浏览+点赞+评论+收藏+评分' : '')
     if (diaries.value.length === 0 && viewMode.value === 'public') diaries.value = demoDiaries
   } catch {
     diaries.value = viewMode.value === 'public' ? demoDiaries : []
-    sortAlgorithm.value = ''
   }
 }
 
