@@ -87,15 +87,21 @@ describe('tourismApi - 路线规划', () => {
     expect(mockAxiosInstance.post).toHaveBeenCalledWith('/routes/plan', payload)
   })
 
-  it('规划 TSP 多点路线', async () => {
+  it('规划多目标智能环游路线', async () => {
     mockAxiosInstance.post.mockResolvedValue({
-      data: { data: { route: [1, 2, 3], distance: 5000, algorithm: 'nearest_neighbor' } }
+      data: { data: { route: [1, 2, 3], distance: 5000, returnToStart: true } }
     })
 
-    const payload = { nodeIds: [1, 2, 3], travelMode: 'walking', optimization: 'nearest_neighbor' }
+    const payload = {
+      startNodeId: 1,
+      targetNodeIds: [2, 3, 4],
+      fixedOrders: [{ nodeId: 3, order: 2 }],
+      travelMode: 'walk',
+      optimization: 'balanced'
+    }
     const result = await tourismApi.tourRoute(payload)
 
-    expect(result.algorithm).toBe('nearest_neighbor')
+    expect(result.returnToStart).toBe(true)
     expect(mockAxiosInstance.post).toHaveBeenCalledWith('/routes/tour', payload)
   })
 
@@ -303,5 +309,51 @@ describe('tourismApi - AIGC', () => {
     const result = await tourismApi.imagePrompt({ title: '北京', content: '' })
 
     expect(result.promptEn).toBe('Beautiful scene')
+  })
+
+  it('生成 3D/照片转 2D 分格提示词', async () => {
+    mockAxiosInstance.post.mockResolvedValue({
+      data: {
+        data: {
+          mode: '3d_to_2d',
+          promptEn: 'Convert travel photos into 2D panels',
+          promptCn: '二维分格方案',
+          panels: [{ title: '开场', description: '保留景点主体' }]
+        }
+      }
+    })
+
+    const payload = {
+      title: '北京',
+      content: '',
+      mode: '3d_to_2d',
+      visualStyle: 'anime',
+      panelLayout: 'four-panel',
+      imageCount: 2
+    }
+    const result = await tourismApi.imagePrompt(payload)
+
+    expect(mockAxiosInstance.post).toHaveBeenCalledWith('/aigc/image-prompt', payload)
+    expect(result.promptEn).toBe('Convert travel photos into 2D panels')
+    expect(result.panels).toHaveLength(1)
+  })
+
+  it('旅行助手聊天返回追问建议', async () => {
+    mockAxiosInstance.post.mockResolvedValue({
+      data: { data: { reply: '建议第一天走中轴线。', suggestions: ['把路线改轻松', '推荐雨天方案'] } }
+    })
+
+    const payload = {
+      message: '帮我规划北京三日游',
+      destination: '北京',
+      days: 3,
+      budget: 1000,
+      style: 'balanced',
+      messages: [{ role: 'user', content: '帮我规划北京三日游' }]
+    }
+    const result = await tourismApi.travelAgentChat(payload)
+
+    expect(result.suggestions).toContain('把路线改轻松')
+    expect(mockAxiosInstance.post).toHaveBeenCalledWith('/aigc/travel-chat', payload)
   })
 })

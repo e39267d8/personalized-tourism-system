@@ -1,7 +1,9 @@
 #pragma once
 
+#ifndef TOURISM_FOOD_SERVICE_NO_DB
 #include "crow.h"
 #include "db/postgres.h"
+#endif
 
 #include <string>
 #include <vector>
@@ -14,6 +16,7 @@ struct FoodItem {
     std::string type;
     std::string cuisine;
     std::string cuisine_label;
+    std::string source_cuisine;
     double rating = 0.0;
     int price_level = 0;
     double longitude = 0.0;
@@ -27,6 +30,8 @@ struct FoodItem {
     double hot_score = 0.0;
     int scenic_spot_id = 0;
     std::string scenic_name;
+    std::string scenic_category;
+    std::string location_type_label;
 };
 
 struct FoodQuery {
@@ -42,11 +47,11 @@ struct FoodQuery {
 
 std::string cuisine_label(const std::string& cuisine_key);
 
+// Infer cuisine type from imported cuisine metadata first, then facility name.
+std::string infer_cuisine(const std::string& name, const std::string& source_cuisine);
+
 // Infer cuisine type from facility name (keyword matching)
 std::string infer_cuisine(const std::string& name);
-
-// Query food items from database
-std::vector<FoodItem> query_food_items(tourism::db::PgConnection& db, const FoodQuery& query);
 
 // Score and rank food items (supports partial sorting)
 struct FoodScore {
@@ -59,7 +64,12 @@ std::vector<FoodScore> rank_foods(const std::vector<FoodItem>& items,
                                   const FoodQuery& query,
                                   bool use_topk = true);
 
+#ifndef TOURISM_FOOD_SERVICE_NO_DB
+// Query food items from database
+std::vector<FoodItem> query_food_items(tourism::db::PgConnection& db, const FoodQuery& query);
+
 // Format as JSON
 crow::json::wvalue food_json(const FoodItem& food);
+#endif
 
 } // namespace tourism::services

@@ -7,7 +7,9 @@
 #include "support/api_helpers.h"
 
 #include <algorithm>
+#include <set>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -30,6 +32,8 @@ using tourism::services::route_json;
 using tourism::services::route_node_json;
 using tourism::services::solve_tsp;
 using tourism::services::tour_route_json;
+using tourism::services::solve_ordered_tsp;
+using tourism::services::TourOrderConstraint;
 using tourism::support::json_error;
 using tourism::support::json_int;
 using tourism::support::json_int_array;
@@ -95,6 +99,23 @@ void attach_route_quality(crow::json::wvalue& data, const tourism::services::Rou
     item["missingGeometryEdges"] = quality.missing_geometry_edges;
     item["maxGeneratedConnectorMeters"] = quality.max_generated_connector_meters;
     data["routeQuality"] = std::move(item);
+}
+
+crow::json::wvalue::list int_list_json(const std::vector<int>& values) {
+    crow::json::wvalue::list items;
+    for (int value : values) items.push_back(value);
+    return items;
+}
+
+crow::json::wvalue::list fixed_orders_json(const std::vector<std::pair<int, int>>& fixed_orders) {
+    crow::json::wvalue::list items;
+    for (const auto& [node_id, order] : fixed_orders) {
+        crow::json::wvalue item;
+        item["nodeId"] = node_id;
+        item["order"] = order;
+        items.push_back(std::move(item));
+    }
+    return items;
 }
 
 } // namespace
@@ -235,40 +256,91 @@ void register_route_routes(TourismApp& app) {
             auto body = crow::json::load(req.body);
             if (!body) return json_error(400, "Invalid JSON");
 
-            std::vector<int> waypoints = json_int_array(body, "nodeIds");
+            int start_node_id = json_int(body, "startNodeId", 0);
+            std::vector<int> target_node_ids = json_int_array(body, "targetNodeIds");
+            std::vector<int> legacy_node_ids = json_int_array(body, "nodeIds");
             std::string raw_transport = json_string(body, "travelMode", "walk");
             std::string transport = normalize_transport(raw_transport);
             std::string optimization = normalize_optimization(json_string(body, "optimization", "balanced"));
             int crowd_tolerance = std::max(1, std::min(4, json_int(body, "crowdTolerance", 3)));
+            bool new_payload = start_node_id > 0 || body.has("targetNodeIds") || body.has("fixedOrders");
 
-            if (waypoints.size() < 2) {
-                return json_error(400, "环游至少需要2个点位");
-            }
-            if (waypoints.size() > 30) {
-                return json_error(400, "环游最多支持30个点位");
+            std::vector<int> points;
+            if (new_payload) {
+                if (start_node_id <= 0) return json_error(400, "请输入有效出发点");
+                if (target_node_ids.size() < 2) return json_error(400, "环游至少需要2个目标地点");
+                if (target_node_ids.size() > 30) return json_error(400, "环游最多支持30个目标地点");
+                std::unordered_set<int> seen_targets;
+                for (int target : target_node_ids) {
+                    if (target == start_node_id) return json_error(400, "目标地点不能和出发点重复");
+                    if (!seen_targets.insert(target).second) return json_error(400, "目标地点不能重复");
+                }
+                points.push_back(start_node_id);
+                points.insert(points.end(), target_node_ids.begin(), target_node_ids.end());
+            } else {
+                if (legacy_node_ids.size() < 2) return json_error(400, "环游至少需要2个点位");
+                if (legacy_node_ids.size() > 30) return json_error(400, "环游最多支持30个点位");
+                std::unordered_set<int> seen_points;
+                for (int node_id : legacy_node_ids) {
+                    if (!seen_points.insert(node_id).second) return json_error(400, "环游点位不能重复");
+                }
+                points = legacy_node_ids;
+                start_node_id = points.front();
+                target_node_ids.assign(points.begin() + 1, points.end());
             }
 
             PgConnection db;
             auto graph = load_route_graph(db);
 
             // Verify all points exist in graph
-            for (int node_id : waypoints) {
+            for (int node_id : points) {
                 if (!graph.nodes.count(node_id)) {
                     return json_error(400, "点位 " + std::to_string(node_id) + " 不在路网中");
                 }
             }
 
-            // Build TSP distance matrix
-            auto matrix = build_tsp_matrix(graph, waypoints, transport, optimization, crowd_tolerance);
+            std::unordered_map<int, int> point_index_by_node;
+            for (int index = 0; index < static_cast<int>(points.size()); ++index) {
+                point_index_by_node[points[index]] = index;
+            }
 
-            // Solve TSP
-            auto tsp_result = solve_tsp(matrix);
+            std::vector<TourOrderConstraint> constraints;
+            std::vector<std::pair<int, int>> fixed_orders;
+            if (body.has("fixedOrders")) {
+                std::set<int> used_orders;
+                std::set<int> used_nodes;
+                try {
+                    for (const auto& item : body["fixedOrders"]) {
+                        int node_id = json_int(item, "nodeId", 0);
+                        int order = json_int(item, "order", 0);
+                        if (node_id <= 0 || order <= 0) return json_error(400, "指定顺序格式无效");
+                        if (!point_index_by_node.count(node_id) || node_id == start_node_id) {
+                            return json_error(400, "指定顺序只能引用目标地点");
+                        }
+                        if (order > static_cast<int>(target_node_ids.size())) {
+                            return json_error(400, "指定到达序号超出目标数量范围");
+                        }
+                        if (!used_orders.insert(order).second) return json_error(400, "不能重复指定同一个到达序号");
+                        if (!used_nodes.insert(node_id).second) return json_error(400, "不能为同一个目标重复指定顺序");
+                        constraints.push_back({point_index_by_node[node_id], order});
+                        fixed_orders.push_back({node_id, order});
+                    }
+                } catch (...) {
+                    return json_error(400, "指定顺序格式无效");
+                }
+            }
+
+            // Build TSP distance matrix
+            auto matrix = build_tsp_matrix(graph, points, transport, optimization, crowd_tolerance);
+
+            // Solve TSP: new payload supports fixed target arrival orders, legacy payload keeps old behavior.
+            auto tsp_result = new_payload ? solve_ordered_tsp(matrix, constraints) : solve_tsp(matrix);
             if (!tsp_result.success) {
                 return json_error(422, tsp_result.error.empty() ? "无法找到环游路线" : tsp_result.error);
             }
 
             // Compose full route from TSP result
-            auto route = compose_tsp_route(graph, tsp_result, waypoints, transport, optimization, crowd_tolerance);
+            auto route = compose_tsp_route(graph, tsp_result, points, transport, optimization, crowd_tolerance);
             if (!route.success) {
                 return json_error(422, route.error.empty() ? "无法规划路线" : route.error);
             }
@@ -276,12 +348,16 @@ void register_route_routes(TourismApp& app) {
             if (!quality.displayable) return json_error(422, quality.error);
 
             std::vector<int> visit_order;
-            for (int idx : tsp_result.best_order) visit_order.push_back(waypoints[idx]);
+            for (int idx : tsp_result.best_order) visit_order.push_back(points[idx]);
 
             crow::json::wvalue data = tour_route_json(graph, route, visit_order, optimization, transport, tsp_result.algorithm_used);
             attach_route_quality(data, quality);
             data["tspDistance"] = static_cast<int>(tsp_result.total_distance);
             data["tspDuration"] = tsp_result.total_duration;
+            data["returnToStart"] = true;
+            data["startNodeId"] = start_node_id;
+            data["targetNodeIds"] = int_list_json(target_node_ids);
+            data["fixedOrders"] = fixed_orders_json(fixed_orders);
             return crow::response(ok(std::move(data)));
         } catch (const std::exception& error) {
             return json_error(500, error.what());

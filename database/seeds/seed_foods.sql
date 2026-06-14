@@ -93,80 +93,130 @@ VALUES
 ON CONFLICT (id) DO NOTHING;
 
 -- =====================================================
+-- 北京大学校园餐饮  IDs 98-107
+-- =====================================================
+INSERT INTO facilities (id, name, type, location, address, rating, price_level, opening_hours, phone, scenic_spot_id, source, source_ref, source_tags)
+VALUES
+    (98, '北京大学农园食堂', 'restaurant', ST_SetSRID(ST_MakePoint(116.3056, 39.9944), 4326)::geography, '北京大学农园区域', 4.50, 1, '06:30-20:30', NULL, (SELECT id FROM scenic_spots WHERE name LIKE '%北京大学%' LIMIT 1), 'seed', 'pku-food-nongyuan', '{"cuisine":"chinese;canteen"}'::jsonb),
+    (99, '北京大学燕南美食', 'restaurant', ST_SetSRID(ST_MakePoint(116.3042, 39.9904), 4326)::geography, '北京大学燕南园附近', 4.30, 1, '07:00-20:00', NULL, (SELECT id FROM scenic_spots WHERE name LIKE '%北京大学%' LIMIT 1), 'seed', 'pku-food-yannan', '{"cuisine":"chinese;snack"}'::jsonb),
+    (100, '北京大学学一食堂', 'restaurant', ST_SetSRID(ST_MakePoint(116.3007, 39.9910), 4326)::geography, '北京大学学生宿舍一区附近', 4.10, 1, '06:30-19:30', NULL, (SELECT id FROM scenic_spots WHERE name LIKE '%北京大学%' LIMIT 1), 'seed', 'pku-food-xueyi', '{"cuisine":"chinese;canteen"}'::jsonb),
+    (101, '北京大学家园食堂', 'restaurant', ST_SetSRID(ST_MakePoint(116.3018, 39.9888), 4326)::geography, '北京大学家园区域', 4.20, 1, '06:30-20:00', NULL, (SELECT id FROM scenic_spots WHERE name LIKE '%北京大学%' LIMIT 1), 'seed', 'pku-food-jiayuan', '{"cuisine":"chinese;canteen"}'::jsonb),
+    (102, '北大西门咖啡', 'cafe', ST_SetSRID(ST_MakePoint(116.2998, 39.9929), 4326)::geography, '北京大学西门附近', 4.20, 2, '08:00-21:00', NULL, (SELECT id FROM scenic_spots WHERE name LIKE '%北京大学%' LIMIT 1), 'seed', 'pku-food-westgate-coffee', '{"cuisine":"coffee_shop;cake"}'::jsonb),
+    (103, '未名湖畔茶饮', 'cafe', ST_SetSRID(ST_MakePoint(116.3052, 39.9931), 4326)::geography, '未名湖东侧步行区', 4.00, 2, '09:00-20:00', NULL, (SELECT id FROM scenic_spots WHERE name LIKE '%北京大学%' LIMIT 1), 'seed', 'pku-food-weiming-tea', '{"cuisine":"tea;bubble_tea"}'::jsonb),
+    (104, '畅春园快餐', 'fast_food', ST_SetSRID(ST_MakePoint(116.3104, 39.9905), 4326)::geography, '畅春园宿舍区附近', 3.90, 1, '07:00-22:00', NULL, (SELECT id FROM scenic_spots WHERE name LIKE '%北京大学%' LIMIT 1), 'seed', 'pku-food-changchunyuan', '{"cuisine":"fast_food;chinese"}'::jsonb),
+    (105, '北大东门面馆', 'restaurant', ST_SetSRID(ST_MakePoint(116.3142, 39.9923), 4326)::geography, '北京大学东门外', 4.10, 1, '10:00-21:00', NULL, (SELECT id FROM scenic_spots WHERE name LIKE '%北京大学%' LIMIT 1), 'seed', 'pku-food-eastgate-noodle', '{"cuisine":"noodles;chinese"}'::jsonb),
+    (106, '中关园咖啡', 'cafe', ST_SetSRID(ST_MakePoint(116.3132, 39.9895), 4326)::geography, '中关园社区附近', 4.00, 2, '08:00-20:00', NULL, (SELECT id FROM scenic_spots WHERE name LIKE '%北京大学%' LIMIT 1), 'seed', 'pku-food-zhongguanyuan-coffee', '{"cuisine":"coffee_shop"}'::jsonb),
+    (107, '北大南门小吃', 'fast_food', ST_SetSRID(ST_MakePoint(116.3070, 39.9866), 4326)::geography, '北京大学南门附近', 4.00, 1, '09:00-22:00', NULL, (SELECT id FROM scenic_spots WHERE name LIKE '%北京大学%' LIMIT 1), 'seed', 'pku-food-southgate-snack', '{"cuisine":"snack;street_food"}'::jsonb)
+ON CONFLICT (id) DO UPDATE SET
+    name = EXCLUDED.name,
+    type = EXCLUDED.type,
+    location = EXCLUDED.location,
+    address = EXCLUDED.address,
+    rating = EXCLUDED.rating,
+    price_level = EXCLUDED.price_level,
+    opening_hours = EXCLUDED.opening_hours,
+    phone = EXCLUDED.phone,
+    scenic_spot_id = EXCLUDED.scenic_spot_id,
+    source = EXCLUDED.source,
+    source_ref = EXCLUDED.source_ref,
+    source_tags = EXCLUDED.source_tags;
+
+-- =====================================================
 -- 创建 graph_nodes 关联设施到景点
--- graph_nodes IDs 108-152 (接续现有 max=107)
+-- graph_nodes IDs 108-162 (接续现有 max=107)
 -- =====================================================
 INSERT INTO graph_nodes (id, name, location, node_type, facility_id, scenic_spot_id)
-VALUES
+SELECT v.id, v.name, v.location, v.node_type, v.facility_id, f.scenic_spot_id
+FROM (VALUES
     -- 故宫片区 (scenic_spot_id=12)
-    (108, '故宫冰窖餐厅节点', ST_SetSRID(ST_MakePoint(116.3950, 39.9190), 4326)::geography, 'facility', 53, 12),
-    (109, '角楼咖啡神武门店节点', ST_SetSRID(ST_MakePoint(116.3990, 39.9245), 4326)::geography, 'facility', 54, 12),
-    (110, '午门西侧快餐节点', ST_SetSRID(ST_MakePoint(116.3960, 39.9135), 4326)::geography, 'facility', 97, 17),
+    (108, '故宫冰窖餐厅节点', ST_SetSRID(ST_MakePoint(116.3950, 39.9190), 4326)::geography, 'facility', 53),
+    (109, '角楼咖啡神武门店节点', ST_SetSRID(ST_MakePoint(116.3990, 39.9245), 4326)::geography, 'facility', 54),
+    (110, '午门西侧快餐节点', ST_SetSRID(ST_MakePoint(116.3960, 39.9135), 4326)::geography, 'facility', 97),
 
     -- 天安门片区 (scenic_spot_id=10)
-    (111, '国家大剧院咖啡节点', ST_SetSRID(ST_MakePoint(116.3930, 39.9045), 4326)::geography, 'facility', 59, 10),
-    (112, '前门M餐厅节点', ST_SetSRID(ST_MakePoint(116.3990, 39.9020), 4326)::geography, 'facility', 60, 15),
+    (111, '国家大剧院咖啡节点', ST_SetSRID(ST_MakePoint(116.3930, 39.9045), 4326)::geography, 'facility', 59),
+    (112, '前门M餐厅节点', ST_SetSRID(ST_MakePoint(116.3990, 39.9020), 4326)::geography, 'facility', 60),
 
     -- 景山 (scenic_spot_id=14)
-    (113, '景山小吃节点', ST_SetSRID(ST_MakePoint(116.3960, 39.9280), 4326)::geography, 'facility', 61, 14),
-    (114, '景山茶社节点', ST_SetSRID(ST_MakePoint(116.3965, 39.9250), 4326)::geography, 'facility', 62, 14),
+    (113, '景山小吃节点', ST_SetSRID(ST_MakePoint(116.3960, 39.9280), 4326)::geography, 'facility', 61),
+    (114, '景山茶社节点', ST_SetSRID(ST_MakePoint(116.3965, 39.9250), 4326)::geography, 'facility', 62),
 
     -- 中山公园 (scenic_spot_id=15)
-    (115, '来今雨轩节点', ST_SetSRID(ST_MakePoint(116.3940, 39.9110), 4326)::geography, 'facility', 63, 15),
+    (115, '来今雨轩节点', ST_SetSRID(ST_MakePoint(116.3940, 39.9110), 4326)::geography, 'facility', 63),
 
     -- 北海公园 (scenic_spot_id=16)
-    (116, '仿膳饭庄节点', ST_SetSRID(ST_MakePoint(116.3910, 39.9260), 4326)::geography, 'facility', 64, 16),
-    (117, '烤肉季节点', ST_SetSRID(ST_MakePoint(116.3890, 39.9340), 4326)::geography, 'facility', 65, 16),
-    (118, '庆云楼节点', ST_SetSRID(ST_MakePoint(116.3885, 39.9335), 4326)::geography, 'facility', 66, 16),
-    (119, '孔乙己酒家节点', ST_SetSRID(ST_MakePoint(116.3880, 39.9330), 4326)::geography, 'facility', 67, 16),
-    (120, '茶家傅节点', ST_SetSRID(ST_MakePoint(116.3870, 39.9320), 4326)::geography, 'facility', 68, 16),
-    (121, '云南菜节点', ST_SetSRID(ST_MakePoint(116.3875, 39.9350), 4326)::geography, 'facility', 79, 16),
-    (122, '静一餐厅节点', ST_SetSRID(ST_MakePoint(116.3870, 39.9345), 4326)::geography, 'facility', 80, 16),
+    (116, '仿膳饭庄节点', ST_SetSRID(ST_MakePoint(116.3910, 39.9260), 4326)::geography, 'facility', 64),
+    (117, '烤肉季节点', ST_SetSRID(ST_MakePoint(116.3890, 39.9340), 4326)::geography, 'facility', 65),
+    (118, '庆云楼节点', ST_SetSRID(ST_MakePoint(116.3885, 39.9335), 4326)::geography, 'facility', 66),
+    (119, '孔乙己酒家节点', ST_SetSRID(ST_MakePoint(116.3880, 39.9330), 4326)::geography, 'facility', 67),
+    (120, '茶家傅节点', ST_SetSRID(ST_MakePoint(116.3870, 39.9320), 4326)::geography, 'facility', 68),
+    (121, '云南菜节点', ST_SetSRID(ST_MakePoint(116.3875, 39.9350), 4326)::geography, 'facility', 79),
+    (122, '静一餐厅节点', ST_SetSRID(ST_MakePoint(116.3870, 39.9345), 4326)::geography, 'facility', 80),
 
     -- 南锣鼓巷 (scenic_spot_id=18)
-    (123, '文宇奶酪节点', ST_SetSRID(ST_MakePoint(116.4020, 39.9375), 4326)::geography, 'facility', 69, 18),
-    (124, '鬼味烤翅节点', ST_SetSRID(ST_MakePoint(116.4025, 39.9380), 4326)::geography, 'facility', 70, 18),
+    (123, '文宇奶酪节点', ST_SetSRID(ST_MakePoint(116.4020, 39.9375), 4326)::geography, 'facility', 69),
+    (124, '鬼味烤翅节点', ST_SetSRID(ST_MakePoint(116.4025, 39.9380), 4326)::geography, 'facility', 70),
 
     -- 天坛 (scenic_spot_id=13)
-    (125, '回音壁咖啡节点', ST_SetSRID(ST_MakePoint(116.4100, 39.8820), 4326)::geography, 'facility', 81, 13),
-    (126, '炒肝赵节点', ST_SetSRID(ST_MakePoint(116.4110, 39.8850), 4326)::geography, 'facility', 82, 13),
-    (127, '红桥美食节点', ST_SetSRID(ST_MakePoint(116.4130, 39.8830), 4326)::geography, 'facility', 83, 13),
+    (125, '回音壁咖啡节点', ST_SetSRID(ST_MakePoint(116.4100, 39.8820), 4326)::geography, 'facility', 81),
+    (126, '炒肝赵节点', ST_SetSRID(ST_MakePoint(116.4110, 39.8850), 4326)::geography, 'facility', 82),
+    (127, '红桥美食节点', ST_SetSRID(ST_MakePoint(116.4130, 39.8830), 4326)::geography, 'facility', 83),
 
     -- 前门片区 (天安门-广场 10)
-    (128, '全聚德节点', ST_SetSRID(ST_MakePoint(116.3965, 39.8975), 4326)::geography, 'facility', 55, 10),
-    (129, '都一处节点', ST_SetSRID(ST_MakePoint(116.3968, 39.8980), 4326)::geography, 'facility', 56, 10),
-    (130, '东来顺节点', ST_SetSRID(ST_MakePoint(116.3970, 39.8990), 4326)::geography, 'facility', 57, 10),
-    (131, '爆肚冯节点', ST_SetSRID(ST_MakePoint(116.3960, 39.8970), 4326)::geography, 'facility', 58, 10),
-    (132, '鲜鱼口美食节点', ST_SetSRID(ST_MakePoint(116.3980, 39.8985), 4326)::geography, 'facility', 84, 10),
-    (133, '陈记卤煮节点', ST_SetSRID(ST_MakePoint(116.3955, 39.8975), 4326)::geography, 'facility', 85, 10),
-    (134, 'Soloist咖啡节点', ST_SetSRID(ST_MakePoint(116.3940, 39.8960), 4326)::geography, 'facility', 86, 10),
-    (135, '门框卤煮节点', ST_SetSRID(ST_MakePoint(116.3950, 39.8970), 4326)::geography, 'facility', 87, 10),
-    (136, '炸酱面大王节点', ST_SetSRID(ST_MakePoint(116.3975, 39.8990), 4326)::geography, 'facility', 88, 10),
+    (128, '全聚德节点', ST_SetSRID(ST_MakePoint(116.3965, 39.8975), 4326)::geography, 'facility', 55),
+    (129, '都一处节点', ST_SetSRID(ST_MakePoint(116.3968, 39.8980), 4326)::geography, 'facility', 56),
+    (130, '东来顺节点', ST_SetSRID(ST_MakePoint(116.3970, 39.8990), 4326)::geography, 'facility', 57),
+    (131, '爆肚冯节点', ST_SetSRID(ST_MakePoint(116.3960, 39.8970), 4326)::geography, 'facility', 58),
+    (132, '鲜鱼口美食节点', ST_SetSRID(ST_MakePoint(116.3980, 39.8985), 4326)::geography, 'facility', 84),
+    (133, '陈记卤煮节点', ST_SetSRID(ST_MakePoint(116.3955, 39.8975), 4326)::geography, 'facility', 85),
+    (134, 'Soloist咖啡节点', ST_SetSRID(ST_MakePoint(116.3940, 39.8960), 4326)::geography, 'facility', 86),
+    (135, '门框卤煮节点', ST_SetSRID(ST_MakePoint(116.3950, 39.8970), 4326)::geography, 'facility', 87),
+    (136, '炸酱面大王节点', ST_SetSRID(ST_MakePoint(116.3975, 39.8990), 4326)::geography, 'facility', 88),
 
     -- 国家博物馆 (国家博物院暂无直接ID，用天安门=10 代替)
-    (137, '国博咖啡节点', ST_SetSRID(ST_MakePoint(116.4005, 39.9050), 4326)::geography, 'facility', 89, 10),
+    (137, '国博咖啡节点', ST_SetSRID(ST_MakePoint(116.4005, 39.9050), 4326)::geography, 'facility', 89),
 
     -- 王府井 / 灯市口 (天安门东片区)
-    (138, '东来顺总店节点', ST_SetSRID(ST_MakePoint(116.4130, 39.9155), 4326)::geography, 'facility', 90, 11),
-    (139, '狗不理节点', ST_SetSRID(ST_MakePoint(116.4120, 39.9150), 4326)::geography, 'facility', 91, 11),
-    (140, '鼎泰丰节点', ST_SetSRID(ST_MakePoint(116.4140, 39.9150), 4326)::geography, 'facility', 92, 11),
-    (141, 'APM星巴克节点', ST_SetSRID(ST_MakePoint(116.4140, 39.9145), 4326)::geography, 'facility', 93, 11),
-    (142, '四季民福灯市口节点', ST_SetSRID(ST_MakePoint(116.4160, 39.9180), 4326)::geography, 'facility', 94, 11),
-    (143, '川办餐厅节点', ST_SetSRID(ST_MakePoint(116.4155, 39.9175), 4326)::geography, 'facility', 95, 11),
-    (144, '东华门烤鸭快线节点', ST_SetSRID(ST_MakePoint(116.4010, 39.9160), 4326)::geography, 'facility', 96, 12),
+    (138, '东来顺总店节点', ST_SetSRID(ST_MakePoint(116.4130, 39.9155), 4326)::geography, 'facility', 90),
+    (139, '狗不理节点', ST_SetSRID(ST_MakePoint(116.4120, 39.9150), 4326)::geography, 'facility', 91),
+    (140, '鼎泰丰节点', ST_SetSRID(ST_MakePoint(116.4140, 39.9150), 4326)::geography, 'facility', 92),
+    (141, 'APM星巴克节点', ST_SetSRID(ST_MakePoint(116.4140, 39.9145), 4326)::geography, 'facility', 93),
+    (142, '四季民福灯市口节点', ST_SetSRID(ST_MakePoint(116.4160, 39.9180), 4326)::geography, 'facility', 94),
+    (143, '川办餐厅节点', ST_SetSRID(ST_MakePoint(116.4155, 39.9175), 4326)::geography, 'facility', 95),
+    (144, '东华门烤鸭快线节点', ST_SetSRID(ST_MakePoint(116.4010, 39.9160), 4326)::geography, 'facility', 96),
 
     -- 簋街 / 雍和宫 (无直接景点ID，用南锣=18)
-    (145, '胡大饭馆节点', ST_SetSRID(ST_MakePoint(116.4250, 39.9380), 4326)::geography, 'facility', 71, 18),
-    (146, '花家怡园节点', ST_SetSRID(ST_MakePoint(116.4255, 39.9385), 4326)::geography, 'facility', 72, 18),
-    (147, '金鼎轩节点', ST_SetSRID(ST_MakePoint(116.4180, 39.9460), 4326)::geography, 'facility', 73, 18),
-    (148, '北新桥卤煮节点', ST_SetSRID(ST_MakePoint(116.4200, 39.9400), 4326)::geography, 'facility', 74, 18),
+    (145, '胡大饭馆节点', ST_SetSRID(ST_MakePoint(116.4250, 39.9380), 4326)::geography, 'facility', 71),
+    (146, '花家怡园节点', ST_SetSRID(ST_MakePoint(116.4255, 39.9385), 4326)::geography, 'facility', 72),
+    (147, '金鼎轩节点', ST_SetSRID(ST_MakePoint(116.4180, 39.9460), 4326)::geography, 'facility', 73),
+    (148, '北新桥卤煮节点', ST_SetSRID(ST_MakePoint(116.4200, 39.9400), 4326)::geography, 'facility', 74),
 
     -- 鼓楼片区
-    (149, '姚记炒肝节点', ST_SetSRID(ST_MakePoint(116.3970, 39.9400), 4326)::geography, 'facility', 75, 14),
-    (150, '糖房咖啡节点', ST_SetSRID(ST_MakePoint(116.3980, 39.9410), 4326)::geography, 'facility', 76, 14),
-    (151, '李记涮肉节点', ST_SetSRID(ST_MakePoint(116.3960, 39.9415), 4326)::geography, 'facility', 77, 14),
-    (152, '烤肉宛节点', ST_SetSRID(ST_MakePoint(116.3950, 39.9390), 4326)::geography, 'facility', 78, 14)
-ON CONFLICT (id) DO UPDATE SET scenic_spot_id = EXCLUDED.scenic_spot_id;
+    (149, '姚记炒肝节点', ST_SetSRID(ST_MakePoint(116.3970, 39.9400), 4326)::geography, 'facility', 75),
+    (150, '糖房咖啡节点', ST_SetSRID(ST_MakePoint(116.3980, 39.9410), 4326)::geography, 'facility', 76),
+    (151, '李记涮肉节点', ST_SetSRID(ST_MakePoint(116.3960, 39.9415), 4326)::geography, 'facility', 77),
+    (152, '烤肉宛节点', ST_SetSRID(ST_MakePoint(116.3950, 39.9390), 4326)::geography, 'facility', 78),
+
+    -- 北京大学校园餐饮
+    (153, '农园食堂节点', ST_SetSRID(ST_MakePoint(116.3056, 39.9944), 4326)::geography, 'facility', 98),
+    (154, '燕南美食节点', ST_SetSRID(ST_MakePoint(116.3042, 39.9904), 4326)::geography, 'facility', 99),
+    (155, '学一食堂节点', ST_SetSRID(ST_MakePoint(116.3007, 39.9910), 4326)::geography, 'facility', 100),
+    (156, '家园食堂节点', ST_SetSRID(ST_MakePoint(116.3018, 39.9888), 4326)::geography, 'facility', 101),
+    (157, '北大西门咖啡节点', ST_SetSRID(ST_MakePoint(116.2998, 39.9929), 4326)::geography, 'facility', 102),
+    (158, '未名湖畔茶饮节点', ST_SetSRID(ST_MakePoint(116.3052, 39.9931), 4326)::geography, 'facility', 103),
+    (159, '畅春园快餐节点', ST_SetSRID(ST_MakePoint(116.3104, 39.9905), 4326)::geography, 'facility', 104),
+    (160, '北大东门面馆节点', ST_SetSRID(ST_MakePoint(116.3142, 39.9923), 4326)::geography, 'facility', 105),
+    (161, '中关园咖啡节点', ST_SetSRID(ST_MakePoint(116.3132, 39.9895), 4326)::geography, 'facility', 106),
+    (162, '北大南门小吃节点', ST_SetSRID(ST_MakePoint(116.3070, 39.9866), 4326)::geography, 'facility', 107)
+) AS v(id, name, location, node_type, facility_id)
+JOIN facilities f ON f.id = v.facility_id
+WHERE f.scenic_spot_id IS NOT NULL
+ON CONFLICT (id) DO UPDATE SET
+    name = EXCLUDED.name,
+    location = EXCLUDED.location,
+    node_type = EXCLUDED.node_type,
+    facility_id = EXCLUDED.facility_id,
+    scenic_spot_id = EXCLUDED.scenic_spot_id;
 SELECT setval('facilities_id_seq', (SELECT MAX(id) FROM facilities));
 SELECT setval('graph_nodes_id_seq', (SELECT MAX(id) FROM graph_nodes));
 

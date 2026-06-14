@@ -1,5 +1,38 @@
 # 工程记录
 
+## 2026-06-14 / aigc-local-context / 旅行助手接入本地数据上下文
+
+类型：AIGC、后端提示词、前端助手体验、API 契约。
+
+背景：`/agent` 已能调用真实大模型，但提示词只包含用户输入的目的地、天数、预算和风格，没有利用 TourPilot 本地景点/学校/餐饮数据；前端已经支持展示 `suggestions`，后端却没有返回该字段；代码默认模型也与 QUICKSTART 中的 `deepseek-chat` 不一致。
+
+变更：
+- `llm_service` 默认模型改为 `deepseek-chat`，与 QUICKSTART 对齐；仍可通过 `TOURISM_LLM_MODEL` 覆盖。
+- `/api/v1/aigc/travel-chat` 调用大模型前，会按 `destination` 查询本地 `scenic_spots` 与餐饮 `facilities`，把候选景点、学校、美食、评分、票价、建议游览时长等摘要注入 system prompt。
+- `/api/v1/aigc/travel-chat` 响应新增 `suggestions`，按旅行风格返回 3 条可继续追问的问题，供 `TravelAgent.vue` 直接渲染。
+- 更新 `docs/api-runtime.md` 和前端 API 测试，明确请求 payload、响应字段和本地数据上下文边界。
+
+验证口径：
+- 未配置 DeepSeek key 时，旅行助手仍不生成假回复；配置 key 后回复应优先参考本地候选景点/餐饮，但不能声称实时预约、票务或营业状态。
+- `tourismApi.travelAgentChat()` 应解包 `suggestions`，前端快捷追问继续可点击填入输入框。
+
+## 2026-06-14 / route-global-osm-stitch / 路线规划接入更准确 OSM 路网
+
+类型：路线规划、数据库迁移、地图几何质量。
+
+背景：全局路线规划节点 1-9 已能完成多目标环游，但它们主要依赖早期演示边；同时，导入的 OSM 路网存在同坐标/近坐标重复路口，导致真实道路图被切成很多小块。用户在地图上看到路线“绕”或出现非输入地点时，也与前端把后端中间路口名称再次交给文本路线服务有关。
+
+变更：
+- 新增 `database/migrations/route_global_osm_stitch_schema.sql`：对 2 米内的重复 OSM 路口写入双向 `osm_stitch` 边，并把全局景点节点接入 600 米内最近的 OSM 路口；不删除旧演示边，旧图仍可兜底。
+- 后端路线权重轻微倾向 `osm` / `osm_stitch` 真实道路，旧空 source 演示边保留但不再天然优先；质量统计将 `osm_stitch` 计入真实道路边。
+- 前端环游模式优先使用后端已通过质量检查且包含真实道路边的本地几何；调用外部路线服务时只传用户停靠点序列，不再传后端中间路口。
+- 修复 `route_tiantan_global_node.sql` 中的乱码中文，保持迁移可读、可重复执行。
+
+验证口径：
+- 已有库按顺序执行 `route_tiantan_global_node.sql` 和 `route_global_osm_stitch_schema.sql`。
+- 典型环游输入“前门大街 / 故宫博物院 / 国家博物馆 / 天坛公园”应保持可生成；若本地 OSM 路径可达，返回 `routeQuality.realRoadEdges > 0` 并优先绘制本地道路几何。
+- 圆明园等不在当前全局路网的点仍会走明确的路线服务兜底，不伪造本地假路线。
+
 本文记录分支交接后的重要工程变更。以后不要每拉一次分支就新建一份“某分支之后改动”文档；普通协作变更统一追加到这里，重大架构取舍再写入 `docs/adr/`。
 
 记录范围：
@@ -167,6 +200,74 @@
 - 默认“内部路网”改为“聚焦路网”视图：按真实道路边的空间分布做分位裁剪，避免远处离散设施和接入边把画布拉得过大。
 - 增加“全量数据”切换，用于验收时证明所有数据库边和设施仍可查看；设施接入边默认隐藏，可通过“显示设施接入边”打开。
 - 默认仅展示核心设施点，并清理 `OSM 服务设施 + 编号` 这类原始名称标签，只在选中设施时显示可读名称，降低画面噪音。
+
+## 2026-06-13 / route-tiantan-global-node / 天坛全局路线节点补齐
+类型：路线规划、数据库迁移、演示路网修复。
+背景：多目标环游输入“天坛”时，前端会在缺少全局天坛节点的情况下匹配到天坛内部设施/建筑节点；该内部图与故宫、前门的全局演示图不连通，导致 `/api/v1/routes/tour` 返回“部分点之间不可达”，并在外部地图服务不可用时显示环游失败。
+变更：
+- 新增 `database/migrations/route_tiantan_global_node.sql`，为已有库补齐 `天坛公园节点` 以及它与前门、国家博物馆、天安门的双向步行边。
+- 同步更新 `database/seeds/seed_demo.sql`，新建库初始化时也包含天坛全局节点和演示边。
+- `/route` 的本地节点解析继续排除 `junction`，避免把街道路口或景区内部节点混入全局景点/学校环游规划。
+- 路线服务兜底失败时，前端错误提示会带上真实原因，便于区分后端未启动、外部地图服务不可用和本地图不可达。
+验证口径：
+- 已有库需执行 `database\migrations\route_tiantan_global_node.sql` 后再验证“前门大街 → 故宫博物院 → 天坛 → 返回前门大街”。
+- 新库初始化应先执行 `seed_demo.sql`，再执行该迁移；`database/README.md` 已同步顺序。
+
+## 2026-06-13 / multi-target-tour-route / 多目标智能环游路线
+
+类型：路线规划、前后端契约、算法测试、答辩文档。
+
+变更：
+
+- `/route` 页面新增多目标智能环游交互：用户手动输入当前位置 / 出发点，再输入多个目标景点或学校；每个目标可选填“第几个到达”。
+- 环游模式下，“第几个到达”只针对目标地点计数，不包含出发点和最后返回出发点；前端校验目标数量、序号范围和重复序号。
+- `POST /api/v1/routes/tour` 新增 `startNodeId`、`targetNodeIds`、`fixedOrders` payload，同时保留旧 `nodeIds` 兼容逻辑。
+- 后端新增纯算法模块处理带固定到达序号的多目标最短回路：指定序号作为硬约束，未指定目标自动排序；小规模精确枚举，大规模使用确定性近邻优化，不使用随机排列。
+- `docs/api-runtime.md` 和 `docs/答辩文档.md` 已补充多目标环游路线的接口语义和答辩说明。
+
+验证口径：
+
+- 起点为空、目标少于 2 个、指定序号越界或重复时，前端应阻止提交并显示中文错误。
+- 新 payload 与旧 `nodeIds` payload 都应能调用 `/api/v1/routes/tour`。
+- 如果 9 个目标中某目标指定第 5 个到达，后端返回的目标顺序应保证该目标位于第 5 站。
+
+## 2026-06-13 / food-recommendation-closure / 美食推荐需求闭环
+
+类型：美食推荐、前后端契约、seed 数据、协作文档。
+
+背景：评分要求中的美食模块需要在选中游览景点或学校后，按用户选择的热度、评价、距离排序，并支持按菜系过滤；同时支持输入美食名、菜系、饭店或窗口名称做模糊查询，多结果继续按热度、评分或距离排序。用户通常只看前 10 个结果，因此后端应避免全量排序。
+
+变更：
+
+- 前端 `/food` 的位置筛选统一为“景点 / 学校”，学校类对象单独分组展示；未选择具体位置时不允许选择“距离最近”，避免无位置上下文时误导用户。
+- 后端 `/api/v1/foods` 在 SQL 层按景点/学校、关键词和菜系缩小候选集，排序继续使用 `TopKSelector` 保留前 K 个结果后返回。
+- 模糊查询覆盖餐饮名称、地址、菜系元数据、景点/学校名称和分类；菜系推断优先读取 `facilities.source_tags.cuisine`，再回退到名称推断。
+- API 响应补充 `matchedTotal`、`returned`、`sourceCuisine`、`scenicCategory`、`locationTypeLabel`，便于前端区分学校和景点来源，同时保留原有 `total` 兼容字段。
+- `database/seeds/seed_foods.sql` 增加北京大学校园餐饮数据，并写入 `source/source_ref/source_tags`，用于菜系推断和幂等更新。
+- `QUICKSTART.md`、`database/README.md`、`docs/api-runtime.md` 和 `AGENTS.md` 已同步美食模块的运行、API 和协作规则；已有库只补美食数据时需要先执行 `database\internal_navigation_schema.sql`。
+
+验证口径：
+
+- `/food` 选择北京大学后应能看到校园餐饮，并可按热门、评分、距离切换排序。
+- 搜索“咖啡”“面馆”“食堂”等关键词时，应匹配餐饮名称、菜系或学校/景点相关结果。
+- `GET /api/v1/foods?scenic_spot_id=...&sort=distance&limit=10` 返回前 10 条结果，并在响应中包含 `matchedTotal` 与实际 `sort`。
+
+## 2026-06-13 / codex-db-sync / 队友更新后的数据库同步修复
+
+类型：数据库迁移、seed 幂等性、本机数据同步。
+
+变更：
+
+- 新增 `database/migrations/diary_compression_legacy_cleanup.sql`，用于清理早期半成品压缩字段 `compressed_content`、`original_bytes`、`compressed_bytes`，继续统一使用正式字段 `content_compressed` 和 `content_original_bytes`。
+- 修复 `database/seeds/seed_foods.sql` 中美食 `graph_nodes` 依赖硬编码 `scenic_spot_id` 的问题，改为从对应 `facilities.scenic_spot_id` 派生，避免不同本机数据库景点主键不一致时触发外键失败。
+- 修复 `database/seeds/seed_demo.sql` 中基础设施节点未同步景点归属的问题，按 `facilities.scenic_spot_id` 回填 `graph_nodes.scenic_spot_id`。
+- 更新 `QUICKSTART.md` 和 `database/README.md` 的初始化顺序，把压缩旧字段清理迁移纳入全量初始化和已有库日记迁移补跑路径。
+- 本机 `tourism_system` 已重跑队友新增的成就、搜索索引、日记动画、跨层导航、美食、演示和室内导航相关 SQL，并删除旧压缩字段。
+
+验证口径：
+
+- `seed_foods.sql` 应能在景点主键不同的本机数据库上重复执行，不再因 `graph_nodes.scenic_spot_id` 外键失败中断。
+- `travel_diaries` 应只保留 `content_compressed`、`content_original_bytes`、`videos`、`animation_storyboard` 等正式扩展字段，不再保留旧压缩列。
 
 ## 2026-06-13 / feature-lxd-search / 成就系统模块边界与并行协作准备
 

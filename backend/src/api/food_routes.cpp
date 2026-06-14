@@ -11,11 +11,11 @@ namespace {
 
 using tourism::db::PgConnection;
 using tourism::db::exec_params;
-using tourism::db::exec_sql;
 using tourism::services::FoodQuery;
 using tourism::services::FoodScore;
 using tourism::services::cuisine_label;
 using tourism::services::food_json;
+using tourism::services::infer_cuisine;
 using tourism::services::query_food_items;
 using tourism::services::rank_foods;
 using tourism::support::json_error;
@@ -80,6 +80,7 @@ void register_food_routes(TourismApp& app) {
             if (query.sort == "distance" && !query.has_user_location) query.sort = "hot";
 
             auto items = query_food_items(db, query);
+            int matched_total = static_cast<int>(items.size());
             auto ranked = rank_foods(items, query);
 
             crow::json::wvalue::list food_list;
@@ -88,6 +89,8 @@ void register_food_routes(TourismApp& app) {
             }
 
             crow::json::wvalue data;
+            data["matchedTotal"] = matched_total;
+            data["returned"] = static_cast<int>(food_list.size());
             data["total"] = static_cast<int>(food_list.size());
             data["items"] = std::move(food_list);
             data["algorithm"] = "TopK partial sort + derived hot score";
@@ -105,25 +108,21 @@ void register_food_routes(TourismApp& app) {
             PgConnection db;
             int scenic_spot_id = query_int(req, "scenic_spot_id", 0, 0, 100000);
 
-            // Collect distinct facility names from restaurant/cafe facilities
-            std::string scenic_filter;
-            if (scenic_spot_id > 0) {
-                scenic_filter = " AND COALESCE(f.scenic_spot_id, gn.scenic_spot_id, 0) = " + std::to_string(scenic_spot_id);
-            }
-
             std::string sql = R"SQL(
-                SELECT DISTINCT f.name
+                SELECT DISTINCT f.name,
+                       COALESCE(f.source_tags->>'cuisine', '') AS source_cuisine
                 FROM facilities f
                 LEFT JOIN graph_nodes gn ON gn.facility_id = f.id
                 WHERE f.location IS NOT NULL
                   AND (f.type = 'restaurant' OR f.type = 'cafe' OR f.type = 'fast_food')
-            )SQL" + scenic_filter;
+                  AND ($1::int <= 0 OR COALESCE(f.scenic_spot_id, gn.scenic_spot_id, 0) = $1::int)
+            )SQL";
 
-            auto rows = exec_sql(db, sql);
+            auto rows = exec_params(db, sql, {std::to_string(scenic_spot_id)});
 
             std::set<std::string> cuisine_set;
             for (int row = 0; row < rows.rows(); ++row) {
-                std::string key = tourism::services::infer_cuisine(rows.value(row, "name"));
+                std::string key = infer_cuisine(rows.value(row, "name"), rows.value(row, "source_cuisine"));
                 if (!key.empty()) cuisine_set.insert(key);
             }
 
