@@ -75,6 +75,7 @@ set(DB_SOURCES
 )
 set(SUPPORT_SOURCES
     src/support/api_helpers.cpp
+    src/support/env_loader.cpp
 )
 set(SERVICE_SOURCES
     src/services/recommendation_service.cpp

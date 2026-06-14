@@ -15,11 +15,14 @@
 #include "db/connection_pool.h"
 #include "db/postgres.h"
 #include "support/api_helpers.h"
+#include "support/env_loader.h"
 
 #include <iostream>
 #include <string>
 
 int main(int argc, char** argv) {
+    tourism::support::load_env_files();
+
     int port = 8080;
     std::string host = "0.0.0.0";
 
