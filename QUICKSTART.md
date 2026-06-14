@@ -30,6 +30,7 @@ createdb -U postgres tourism_system
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\schema.sql
 psql -U postgres -d tourism_system -f database\imports\amap_pois.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\imports\amap_pois_supplement.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\beijing_ticket_price_correction.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\internal_navigation_schema.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\imports\internal_navigation.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_campus_spots.sql
@@ -98,6 +99,12 @@ psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\dia
 
 ```powershell
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\diary_animation_schema.sql
+```
+
+已有数据库只修正北京核心景点门票：
+
+```powershell
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\beijing_ticket_price_correction.sql
 ```
 
 已有数据库只补美食推荐演示数据：

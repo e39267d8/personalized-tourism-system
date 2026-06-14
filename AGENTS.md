@@ -60,6 +60,7 @@ DeepSeek key 必须放在环境变量中。后端内置一个免费的高德 Web
 - `database/seeds/seed_campus_spots.sql`
 - `database/imports/internal_navigation_pku.sql`
 - `database/indoor_navigation_schema.sql`
+- `database/migrations/beijing_ticket_price_correction.sql`
 - `database/migrations/diary_compression_schema.sql`
 - `database/migrations/diary_compression_legacy_cleanup.sql`
 - `database/migrations/diary_location_cover_schema.sql`

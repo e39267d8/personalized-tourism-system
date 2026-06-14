@@ -7,6 +7,7 @@
 - `schema.sql`：完整建表脚本，包含景点、路线、游记、评论、收藏、评分、成就等结构。
 - `imports/amap_pois.sql`：唯一正式景点来源，负责导入高德 POI 景点数据和可用图片。
 - `imports/amap_pois_supplement.sql`：高德 POI 补充导入，补主导入缺失的北京核心地标（中国国家博物馆、军事博物馆、颐和园），幂等可重复执行。
+- `migrations/beijing_ticket_price_correction.sql`：北京核心景点成人基础门票校正迁移，把高德导入中的 0 元占位票价修正为可展示票价。
 - `internal_navigation_schema.sql`：景区内部设施、道路和路网表结构。
 - `imports/internal_navigation.sql`：故宫、北海、奥林匹克森林公园等景区内部导航数据。
 - `imports/internal_navigation_yiheyuan.sql`：颐和园真实 OSM 内部道路图（2000 条道路边 + 1249 栋建筑，爬取自 OpenStreetMap），满足"单景区内部道路图 ≥200 条边、含建筑/设施"验收；导入末尾会删除 OSM 抓取的服务设施，避免设施查询被大量不可达 OSM 设施淹没（设施/路由演示用下方 curated seed 的连通设施）。
@@ -42,6 +43,7 @@
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\schema.sql
 psql -U postgres -d tourism_system -f database\imports\amap_pois.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\imports\amap_pois_supplement.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\beijing_ticket_price_correction.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\internal_navigation_schema.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\imports\internal_navigation.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_campus_spots.sql
@@ -119,6 +121,12 @@ psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\cro
 
 ```bat
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\scenic_search_indexes.sql
+```
+
+已有数据库只修正北京核心景点门票（迁移幂等，可放心重复执行）：
+
+```bat
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\beijing_ticket_price_correction.sql
 ```
 
 已有数据库只补美食推荐演示数据：
