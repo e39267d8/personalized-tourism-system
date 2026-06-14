@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS digital_collectibles (
     token_id VARCHAR(100),
     name VARCHAR(200) NOT NULL,
     description TEXT,
-    image_url VARCHAR(500),
+    image_url TEXT,
     metadata JSONB,
     blockchain_hash VARCHAR(200),
     minted_at TIMESTAMP WITH TIME ZONE,
@@ -48,6 +48,7 @@ ALTER TABLE achievements ADD COLUMN IF NOT EXISTS code VARCHAR(80);
 ALTER TABLE achievements ADD COLUMN IF NOT EXISTS tier INTEGER DEFAULT 1;
 ALTER TABLE achievements ADD COLUMN IF NOT EXISTS display_order INTEGER DEFAULT 0;
 ALTER TABLE achievements ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
+ALTER TABLE digital_collectibles ALTER COLUMN image_url TYPE TEXT;
 
 UPDATE achievements
 SET code = 'legacy-' || id::text
