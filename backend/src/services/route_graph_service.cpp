@@ -1,4 +1,4 @@
-#include "services/route_graph_service.h"
+﻿#include "services/route_graph_service.h"
 
 #include "support/api_helpers.h"
 
@@ -23,9 +23,44 @@ using tourism::support::transport_label;
 
 constexpr double kMaxGeneratedConnectorMeters = 60.0;
 
-// 拥挤惩罚用乘法因子：拥挤的本质是让这条边"通行变慢"，惩罚应与边的
-// 体量成正比（原先固定加法对长边九牛一毛，时段变化永远不会触发绕行）。
-// 时间优先对拥挤最敏感（0.4/级），距离优先最不敏感（0.15/级，"我就要最短路程"）。
+// 鍚勪氦閫氬伐鍏风殑鐞嗘兂閫熷害锛堢背/绉掞級銆傛牎鍖猴細姝ヨ/鑷杞︼紱鏅尯锛氭琛?鐢电摱杞?shuttle)銆?
+double mode_ideal_speed(const std::string& mode) {
+    if (mode == "bike") return 4.0;        // 鑷杞?
+    if (mode == "shuttle") return 5.0;     // 鐢电摱杞︼紙鏅尯鍥哄畾绾胯矾锛?
+    if (mode == "subway") return 10.0;
+    if (mode == "car") return 8.0;
+    return 1.2;                            // 姝ヨ
+}
+
+// 鎷ユ尋搴︾郴鏁?鈭?(0,1]锛氱湡瀹為€熷害 = 鎷ユ尋搴?脳 鐞嗘兂閫熷害锛堥獙鏀?4b锛夈€?
+// 鐢辫竟鐨勬嫢鎸ょ瓑绾?1=鐣呴€?.4=鎷ュ牭)鏄犲皠锛岀瓑绾ц秺楂樿秺鎱€?
+double congestion_speed_factor(int congestion_level) {
+    switch (congestion_level) {
+        case 1: return 1.0;
+        case 2: return 0.8;
+        case 3: return 0.6;
+        default: return 0.4;  // level 4 鍙婁互涓?
+    }
+}
+
+// 浜ら€氭柟寮忚繃婊わ細transport 涓虹┖=涓嶉檺锛堟贩鍚堟墍鏈夛級锛涘彲鐢?'+' 缁勫悎澶氱鍏佽妯″紡锛?
+// 渚嬪 "walk+shuttle"锛堟櫙鍖烘琛?鐢电摱杞︽贩鍚堬級銆?walk+bike"锛堟牎鍖烘琛?鑷杞︽贩鍚堬級銆?
+bool mode_allowed(const std::string& edge_mode, const std::string& transport) {
+    if (transport.empty()) return true;
+    size_t pos = 0;
+    while (pos <= transport.size()) {
+        size_t plus = transport.find('+', pos);
+        std::string token = transport.substr(pos, plus == std::string::npos ? std::string::npos : plus - pos);
+        if (token == edge_mode) return true;
+        if (plus == std::string::npos) break;
+        pos = plus + 1;
+    }
+    return false;
+}
+
+// 鎷ユ尋鎯╃綒鐢ㄤ箻娉曞洜瀛愶細鎷ユ尋鐨勬湰璐ㄦ槸璁╄繖鏉¤竟"閫氳鍙樻參"锛屾儵缃氬簲涓庤竟鐨?
+// 浣撻噺鎴愭姣旓紙鍘熷厛鍥哄畾鍔犳硶瀵归暱杈逛節鐗涗竴姣涳紝鏃舵鍙樺寲姘歌繙涓嶄細瑙﹀彂缁曡锛夈€?
+// 璺濈浼樺厛鏈€涓嶆晱鎰燂紙0.15/绾э紝"鎴戝氨瑕佹渶鐭矾绋?锛夈€?
 double route_edge_weight(const RouteEdge& edge, const std::string& optimization, int crowd_tolerance) {
     double crowd_penalty = std::max(0, edge.congestion - crowd_tolerance);
     double source_factor = 1.0;
@@ -33,7 +68,10 @@ double route_edge_weight(const RouteEdge& edge, const std::string& optimization,
     else if (edge.source.empty()) source_factor = 1.35;
 
     if (optimization == "distance") return edge.distance * (1.0 + crowd_penalty * 0.15) * source_factor;
-    if (optimization == "time") return edge.duration * (1.0 + crowd_penalty * 0.4) * source_factor;
+    if (optimization == "time") {
+        double real_speed = mode_ideal_speed(edge.mode) * congestion_speed_factor(edge.congestion);
+        return (edge.distance / std::max(0.1, real_speed)) * source_factor;
+    }
     if (optimization == "budget") {
         double mode_cost = edge.mode == "walk" ? 0.0 : edge.mode == "bike" ? 3.0 : edge.mode == "subway" ? 5.0 : 15.0;
         return ((edge.distance / 120.0 + edge.duration / 60.0) * (1.0 + crowd_penalty * 0.2) + mode_cost * 20.0) * source_factor;
@@ -55,7 +93,7 @@ RouteSearchResult dijkstra_route(const RouteGraphData& graph,
                                  int crowd_tolerance) {
     RouteSearchResult result;
     if (!graph.nodes.count(start) || !graph.nodes.count(end)) {
-        result.error = "路线节点不存在";
+        result.error = "Route node does not exist";
         return result;
     }
     if (start == end) {
@@ -86,7 +124,7 @@ RouteSearchResult dijkstra_route(const RouteGraphData& graph,
         auto edge_iter = graph.edges.find(current);
         if (edge_iter == graph.edges.end()) continue;
         for (const auto& edge : edge_iter->second) {
-            if (!transport.empty() && edge.mode != transport) continue;
+            if (!mode_allowed(edge.mode, transport)) continue;
             double next_weight = current_weight + route_edge_weight(edge, optimization, crowd_tolerance);
             if (next_weight < dist[edge.to]) {
                 dist[edge.to] = next_weight;
@@ -97,7 +135,7 @@ RouteSearchResult dijkstra_route(const RouteGraphData& graph,
     }
 
     if (!prev.count(end)) {
-        result.error = "当前交通方式下找不到可达路线";
+        result.error = "No reachable route for current transport mode";
         return result;
     }
 
@@ -199,18 +237,18 @@ crow::json::wvalue edge_coordinates_json(const RouteEdge& edge,
 } // namespace
 
 std::string normalize_transport(const std::string& value) {
-    if (value == "walk" || value == "步行") return "walk";
-    if (value == "bike" || value == "骑行") return "bike";
-    if (value == "subway" || value == "地铁") return "subway";
-    if (value == "bus" || value == "公交") return "bus";
-    if (value == "car" || value == "driving" || value == "驾车") return "car";
+    if (value == "walk" || value == "姝ヨ") return "walk";
+    if (value == "bike" || value == "楠戣") return "bike";
+    if (value == "subway" || value == "鍦伴搧") return "subway";
+    if (value == "bus" || value == "鍏氦") return "bus";
+    if (value == "car" || value == "driving" || value == "椹捐溅") return "car";
     return "";
 }
 
 std::string normalize_optimization(const std::string& value) {
-    if (value == "distance" || value == "距离优先") return "distance";
-    if (value == "time" || value == "时间优先") return "time";
-    if (value == "budget" || value == "预算优先") return "budget";
+    if (value == "distance" || value == "璺濈浼樺厛") return "distance";
+    if (value == "time" || value == "鏃堕棿浼樺厛") return "time";
+    if (value == "budget" || value == "棰勭畻浼樺厛") return "budget";
     return "balanced";
 }
 
@@ -218,7 +256,7 @@ RouteGraphData load_route_graph(tourism::db::PgConnection& db, int scenic_spot_i
     RouteGraphData graph;
 
     auto nodes = tourism::db::exec_params(db, R"SQL(
-        SELECT gn.id::text, gn.name, gn.node_type,
+        SELECT gn.id::text, gn.name, gn.node_type, COALESCE(gn.source, '') AS source,
                COALESCE(ss.name, '') AS scenic_name,
                COALESCE(gn.scenic_spot_id, f.scenic_spot_id, 0)::text AS scenic_spot_id,
                COALESCE(gn.facility_id, 0)::text AS facility_id,
@@ -243,6 +281,7 @@ RouteGraphData load_route_graph(tourism::db::PgConnection& db, int scenic_spot_i
         node.id = to_int(nodes.value(row, "id"));
         node.name = nodes.value(row, "name");
         node.type = nodes.value(row, "node_type");
+        node.source = nodes.value(row, "source");
         node.scenic_name = nodes.value(row, "scenic_name");
         node.scenic_spot_id = to_int(nodes.value(row, "scenic_spot_id"));
         node.facility_id = to_int(nodes.value(row, "facility_id"));
@@ -307,7 +346,7 @@ RouteSearchResult plan_route_with_waypoints(const RouteGraphData& graph,
                                             int crowd_tolerance) {
     RouteSearchResult combined;
     if (points.size() < 2) {
-        combined.error = "请选择起点和终点";
+        combined.error = "Please select start and end nodes";
         return combined;
     }
 
@@ -357,6 +396,8 @@ RouteQualityReport assess_route_quality(const RouteSearchResult& route) {
         } else if (edge.source == "generated") {
             report.generated_connector_edges += 1;
             report.max_generated_connector_meters = std::max(report.max_generated_connector_meters, edge.distance);
+        } else {
+            report.real_road_edges += 1;
         }
         if (edge.coordinates.empty()) report.missing_geometry_edges += 1;
     }
@@ -466,7 +507,7 @@ crow::json::wvalue computed_route_json(const RouteGraphData& graph,
     crow::json::wvalue item;
     item["id"] = 0;
     item["route_id"] = "live-route";
-    item["title"] = !first_stop.empty() && !last_stop.empty() ? first_stop + " 到 " + last_stop : "实时规划路线";
+    item["title"] = !first_stop.empty() && !last_stop.empty() ? first_stop + " 鍒?" + last_stop : "瀹炴椂瑙勫垝璺嚎";
     item["stops"] = std::move(stops);
     item["requestedPlaces"] = std::move(requested_places);
     item["segments"] = std::move(segments);
@@ -476,9 +517,9 @@ crow::json::wvalue computed_route_json(const RouteGraphData& graph,
     int display_duration = route.display_duration > 0 ? route.display_duration : route.total_duration;
     item["time"] = duration_label(std::to_string(display_duration / 60));
     item["cost"] = route.total_distance <= 0 ? 0 : std::max(0, static_cast<int>(route.total_distance / 1000.0 * 2));
-    item["intensity"] = route.total_distance > 3500 ? "中等" : "轻松";
-    item["transport"] = requested_transport.empty() ? "混合" : transport_label(requested_transport);
-    item["bestFor"] = optimization + " 优先";
+    item["intensity"] = route.total_distance > 3500 ? "涓瓑" : "杞绘澗";
+    item["transport"] = requested_transport.empty() ? "娣峰悎" : transport_label(requested_transport);
+    item["bestFor"] = optimization + " 浼樺厛";
     item["total_distance_meters"] = static_cast<int>(route.total_distance);
     item["total_duration_seconds"] = route.total_duration;
     item["display_duration_seconds"] = display_duration;
@@ -501,9 +542,9 @@ crow::json::wvalue route_json(const tourism::db::PgResult& rows, int row) {
     item["distance"] = distance.str();
     item["time"] = duration_label(std::to_string(seconds / 60));
     item["cost"] = cost;
-    item["intensity"] = meters > 3500 ? "中等" : "轻松";
+    item["intensity"] = meters > 3500 ? "涓瓑" : "杞绘澗";
     item["transport"] = transport_label(rows.value(row, "travel_mode"));
-    item["bestFor"] = rows.value(row, "optimization_type") + " 优先";
+    item["bestFor"] = rows.value(row, "optimization_type") + " 浼樺厛";
     item["coordinates"] = route_coordinates_json(rows.value(row, "coordinates"));
     return item;
 }
@@ -587,13 +628,13 @@ bool tsp_matrix_reachable(const TspDistanceMatrix& matrix) {
 
 TspResult tsp_enumeration(const TspDistanceMatrix& matrix) {
     TspResult result;
-    result.algorithm_used = "枚举";
+    result.algorithm_used = "鏋氫妇";
     if (matrix.size < 2) {
-        result.error = "至少需要2个点";
+        result.error = "鑷冲皯闇€瑕?涓偣";
         return result;
     }
     if (!tsp_matrix_reachable(matrix)) {
-        result.error = "部分点之间不可达";
+        result.error = "閮ㄥ垎鐐逛箣闂翠笉鍙揪";
         return result;
     }
 
@@ -670,13 +711,13 @@ void tsp_backtrack_dfs(const TspDistanceMatrix& matrix, std::vector<int>& curren
 
 TspResult tsp_backtracking(const TspDistanceMatrix& matrix) {
     TspResult result;
-    result.algorithm_used = "回溯";
+    result.algorithm_used = "鍥炴函";
     if (matrix.size < 2) {
-        result.error = "至少需要2个点";
+        result.error = "鑷冲皯闇€瑕?涓偣";
         return result;
     }
     if (!tsp_matrix_reachable(matrix)) {
-        result.error = "部分点之间不可达";
+        result.error = "閮ㄥ垎鐐逛箣闂翠笉鍙揪";
         return result;
     }
 
@@ -699,7 +740,7 @@ TspResult tsp_backtracking(const TspDistanceMatrix& matrix) {
     tsp_backtrack_dfs(matrix, current, visited, 0.0, 1, best_weight, best_order, min_out_edge);
 
     if (best_order.empty()) {
-        result.error = "未找到可行环游路线";
+        result.error = "No feasible round-trip route found";
         return result;
     }
 
@@ -714,13 +755,13 @@ TspResult tsp_backtracking(const TspDistanceMatrix& matrix) {
 
 TspResult tsp_branch_and_bound(const TspDistanceMatrix& matrix) {
     TspResult result;
-    result.algorithm_used = "分支限界";
+    result.algorithm_used = "鍒嗘敮闄愮晫";
     if (matrix.size < 2) {
-        result.error = "至少需要2个点";
+        result.error = "鑷冲皯闇€瑕?涓偣";
         return result;
     }
     if (!tsp_matrix_reachable(matrix)) {
-        result.error = "部分点之间不可达";
+        result.error = "閮ㄥ垎鐐逛箣闂翠笉鍙揪";
         return result;
     }
 
@@ -829,7 +870,7 @@ TspResult tsp_branch_and_bound(const TspDistanceMatrix& matrix) {
     }
 
     if (best_order.empty()) {
-        result.error = "未找到可行环游路线";
+        result.error = "No feasible round-trip route found";
         return result;
     }
 
@@ -844,13 +885,13 @@ TspResult tsp_branch_and_bound(const TspDistanceMatrix& matrix) {
 
 TspResult tsp_nearest_neighbor(const TspDistanceMatrix& matrix) {
     TspResult result;
-    result.algorithm_used = "近邻优化(2-opt)";
+    result.algorithm_used = "杩戦偦浼樺寲(2-opt)";
     if (matrix.size < 2) {
-        result.error = "至少需要2个点";
+        result.error = "鑷冲皯闇€瑕?涓偣";
         return result;
     }
     if (!tsp_matrix_reachable(matrix)) {
-        result.error = "部分点之间不可达";
+        result.error = "閮ㄥ垎鐐逛箣闂翠笉鍙揪";
         return result;
     }
 
@@ -950,7 +991,7 @@ crow::json::wvalue tour_route_json(const RouteGraphData& graph,
         }
     }
 
-    base["tourType"] = "环游";
+    base["tourType"] = "鐜父";
     base["algorithm"] = algorithm_used;
     base["visitOrder"] = std::move(order_names);
     base["pointCount"] = static_cast<int>(visit_order.size());

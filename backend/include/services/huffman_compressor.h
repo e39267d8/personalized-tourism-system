@@ -30,6 +30,9 @@ private:
     struct HuffmanNode {
         unsigned char symbol = 0;
         int frequency = 0;
+        // 插入序号：频率相同时用它打破平局，保证 compress 与 decompress
+        // 从同一张频率表重建出完全相同的 Huffman 树（否则编码表对不上，解出乱码）。
+        uint32_t order = 0;
         HuffmanNode* left = nullptr;
         HuffmanNode* right = nullptr;
 
@@ -37,7 +40,8 @@ private:
 
         struct Compare {
             bool operator()(HuffmanNode* a, HuffmanNode* b) const {
-                return a->frequency > b->frequency;
+                if (a->frequency != b->frequency) return a->frequency > b->frequency;
+                return a->order > b->order;  // 确定性平局打破
             }
         };
     };

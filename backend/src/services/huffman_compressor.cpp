@@ -37,10 +37,18 @@ void HuffmanCompressor::build_frequency_table(const std::string& input) {
 HuffmanCompressor::HuffmanNode* HuffmanCompressor::build_tree() {
     std::priority_queue<HuffmanNode*, std::vector<HuffmanNode*>, HuffmanNode::Compare> min_heap;
 
-    for (const auto& [symbol, freq] : frequency_) {
+    // 确定性建树：叶子按符号升序入堆，依次赋递增 order；频率平局时按 order
+    // 打破。decompress 用完全相同的顺序重建，从而得到同一棵树。
+    std::vector<std::pair<unsigned char, int>> entries(frequency_.begin(), frequency_.end());
+    std::sort(entries.begin(), entries.end(),
+              [](const auto& a, const auto& b) { return a.first < b.first; });
+
+    uint32_t order = 0;
+    for (const auto& [symbol, freq] : entries) {
         auto* node = new HuffmanNode();
         node->symbol = symbol;
         node->frequency = freq;
+        node->order = order++;
         min_heap.push(node);
     }
 
@@ -55,6 +63,7 @@ HuffmanCompressor::HuffmanNode* HuffmanCompressor::build_tree() {
     // Edge case: single character
     if (min_heap.size() == 1) {
         auto* root = new HuffmanNode();
+        root->order = order++;
         root->frequency = min_heap.top()->frequency;
         root->left = min_heap.top();
         min_heap.pop();
@@ -67,6 +76,7 @@ HuffmanCompressor::HuffmanNode* HuffmanCompressor::build_tree() {
 
         auto* parent = new HuffmanNode();
         parent->frequency = left->frequency + right->frequency;
+        parent->order = order++;
         parent->left = left;
         parent->right = right;
         min_heap.push(parent);
@@ -187,12 +197,20 @@ std::string HuffmanCompressor::decompress(const std::vector<uint8_t>& input) {
 
     if (freq_table.empty()) return "";
 
-    // Rebuild tree from frequency table
+    // Rebuild tree from frequency table —— 必须与 build_tree() 逐字一致：
+    // 叶子按符号升序入堆并赋递增 order，频率平局按 order 打破，才能得到
+    // 和压缩端相同的树（否则编码表错位，解出乱码）。
     std::priority_queue<HuffmanNode*, std::vector<HuffmanNode*>, HuffmanNode::Compare> min_heap;
-    for (const auto& [symbol, freq] : freq_table) {
+    std::vector<std::pair<unsigned char, int>> entries(freq_table.begin(), freq_table.end());
+    std::sort(entries.begin(), entries.end(),
+              [](const auto& a, const auto& b) { return a.first < b.first; });
+
+    uint32_t order = 0;
+    for (const auto& [symbol, freq] : entries) {
         auto* node = new HuffmanNode();
         node->symbol = symbol;
         node->frequency = freq;
+        node->order = order++;
         min_heap.push(node);
     }
 
@@ -208,6 +226,7 @@ std::string HuffmanCompressor::decompress(const std::vector<uint8_t>& input) {
         auto* right = min_heap.top(); min_heap.pop();
         auto* parent = new HuffmanNode();
         parent->frequency = left->frequency + right->frequency;
+        parent->order = order++;
         parent->left = left;
         parent->right = right;
         min_heap.push(parent);

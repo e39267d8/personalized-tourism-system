@@ -1,0 +1,306 @@
+# -*- coding: utf-8 -*-
+"""
+生成颐和园内部步行演示图 seed（database/seeds/seed_yiheyuan_demo_map.sql）。
+
+背景：真实 OSM 内部路网碎成数千个连通块（故宫 3181 块、北大 415 块，缝隙中位
+数 32 米），无法支撑"按路网距离给附近设施排序"的验收。本脚本手工搭一张
+*连通* 的步行网 + 真实分类设施，供场所查询/内部导航验收演示。算法（Dijkstra
+路网距离、类别过滤、关键词查找）是真实的，仅这一个演示景点的地图为人工构造。
+
+幂等：seed 用 source_ref 前缀 'yiheyuan-demo:%' 标记本脚本数据，重跑前先删除
+同前缀旧数据，不影响其它景点。
+"""
+
+import json
+import math
+import os
+import urllib.parse
+import urllib.request
+
+SPOT_NAME = "颐和园"
+SRC = "yiheyuan-demo"
+CENTER_LAT, CENTER_LNG = 39.9985, 116.2755
+
+# 高德 Web 服务 key（与后端内置默认一致）；可用环境变量覆盖。
+AMAP_KEY = os.environ.get("AMAP_WEB_SERVICE_KEY", "fbdf40a14e05c09c0e6c56230dd2688f")
+# 缓存高德返回的折线，避免重复请求（按 from→to 坐标对）
+_amap_cache = {}
+
+
+def amap_walk_polyline(a, b):
+    """调高德步行规划，返回沿真实道路的折线点串 [(lng,lat), ...]。
+    失败时返回 None，调用方回退两点直线。a/b 为 (lng, lat)。"""
+    key = (round(a[0], 6), round(a[1], 6), round(b[0], 6), round(b[1], 6))
+    if key in _amap_cache:
+        return _amap_cache[key]
+    params = urllib.parse.urlencode({
+        "origin": f"{a[0]:.6f},{a[1]:.6f}",
+        "destination": f"{b[0]:.6f},{b[1]:.6f}",
+        "key": AMAP_KEY,
+        "output": "JSON",
+    })
+    url = f"https://restapi.amap.com/v3/direction/walking?{params}"
+    try:
+        with urllib.request.urlopen(url, timeout=10) as resp:
+            data = json.load(resp)
+        paths = data.get("route", {}).get("paths", [])
+        if not paths:
+            _amap_cache[key] = None
+            return None
+        pts = []
+        for step in paths[0].get("steps", []):
+            for seg in step.get("polyline", "").split(";"):
+                if "," not in seg:
+                    continue
+                lng, lat = seg.split(",")
+                p = (float(lng), float(lat))
+                if not pts or pts[-1] != p:
+                    pts.append(p)
+        result = pts if len(pts) >= 2 else None
+        _amap_cache[key] = result
+        return result
+    except Exception:
+        _amap_cache[key] = None
+        return None
+
+
+def linestring_wkt(points):
+    """[(lng,lat),...] → EWKT LINESTRING（SRID 4326）。"""
+    body = ", ".join(f"{lng:.6f} {lat:.6f}" for lng, lat in points)
+    return f"'SRID=4326;LINESTRING({body})'"
+
+
+def polyline_length(points):
+    """折线总长度（米）。"""
+    total = 0.0
+    for p, q in zip(points, points[1:]):
+        total += dist_m(p, q)
+    return total
+
+# 经纬度每度的米数（颐和园纬度约 40°）
+M_PER_LAT = 111_000.0
+M_PER_LNG = 111_000.0 * math.cos(math.radians(CENTER_LAT))
+
+def coord(dx_m, dy_m):
+    """以中心点为原点，按米偏移换算经纬度（dx 东向，dy 北向）。"""
+    return CENTER_LNG + dx_m / M_PER_LNG, CENTER_LAT + dy_m / M_PER_LAT
+
+def dist_m(a, b):
+    (lng1, lat1), (lng2, lat2) = a, b
+    return math.hypot((lng1 - lng2) * M_PER_LNG, (lat1 - lat2) * M_PER_LAT)
+
+# --- 路网节点（步行路径/景点/入口），使用真实经纬度贴合颐和园实际布局 ---
+# 布局：昆明湖居中偏南；万寿山/佛香阁在湖北岸；东宫门在东、北宫门在北、
+# 新建宫门在东南；西堤沿湖西。坐标为近似真实值（GCJ-02，与高德底图对齐）。
+# key: (中文名, node_type, 经度, 纬度)
+WAYPOINTS = {
+    "e_dong":   ("东宫门",      "entrance", 116.2774, 39.9919),
+    "w1":       ("东宫门广场",  "scenic",   116.2767, 39.9921),
+    "w2":       ("仁寿殿",      "scenic",   116.2759, 39.9924),
+    "w3":       ("玉澜堂",      "scenic",   116.2750, 39.9927),
+    "w4":       ("乐寿堂",      "scenic",   116.2740, 39.9931),
+    "w5":       ("长廊东口",    "scenic",   116.2727, 39.9934),
+    "w6":       ("排云殿前",    "scenic",   116.2703, 39.9937),
+    "w7":       ("石舫",        "scenic",   116.2673, 39.9947),
+    "w8":       ("佛香阁下",    "scenic",   116.2705, 39.9946),
+    "w9":       ("苏州街",      "scenic",   116.2709, 39.9962),
+    "w10":      ("北宫门内",    "scenic",   116.2716, 39.9974),
+    "e_bei":    ("北宫门",      "entrance", 116.2719, 39.9984),
+    "w11":      ("昆明湖东堤",  "scenic",   116.2746, 39.9906),
+    "w12":      ("知春亭",      "scenic",   116.2745, 39.9917),
+    "w13":      ("十七孔桥北",  "scenic",   116.2752, 39.9888),
+    "w14":      ("南湖岛",      "scenic",   116.2737, 39.9883),
+    "w15":      ("铜牛",        "scenic",   116.2756, 39.9899),
+    "w16":      ("西堤玉带桥",  "scenic",   116.2658, 39.9904),
+    "w17":      ("新建宫门内",  "scenic",   116.2730, 39.9862),
+    "e_xin":    ("新建宫门",    "entrance", 116.2732, 39.9854),
+}
+
+# --- 步行路径边（无向，脚本自动补双向）；沿真实道路走向，避免穿湖直线 ---
+PATH_EDGES = [
+    ("e_dong", "w1"), ("w1", "w2"), ("w2", "w3"), ("w3", "w4"), ("w4", "w5"),
+    ("w5", "w6"), ("w6", "w7"),                       # 长廊（沿北岸东西向）
+    ("w6", "w8"), ("w8", "w9"), ("w9", "w10"), ("w10", "e_bei"),  # 万寿山 → 北宫门
+    ("w1", "w11"), ("w11", "w12"),                    # 东岸 → 知春亭（东北角）
+    ("w11", "w15"), ("w15", "w13"), ("w13", "w14"),   # 东堤 → 铜牛 → 十七孔桥 → 南湖岛
+    ("w7", "w16"),                                    # 石舫 → 西堤（西岸支线）
+    ("w13", "w17"), ("w17", "e_xin"),                 # 十七孔桥 → 新建宫门（东南）
+]
+
+# --- 电瓶车线（景区固定线路，travel_mode='shuttle'，验收 4c）---
+# 沿主轴的固定观光线：东宫门 → 长廊东口 → 石舫 → 佛香阁下 → 北宫门，
+# 速度比步行快（5 vs 1.2 m/s），拥挤度低（专线）。停靠点复用已有路网节点。
+# 演示：东宫门到北宫门，纯步行很慢；步行+电瓶车混合，算法自动选电瓶车更快。
+SHUTTLE_EDGES = [
+    ("e_dong", "w5"),   # 东宫门 → 长廊东口
+    ("w5", "w7"),       # 长廊东口 → 石舫
+    ("w7", "w8"),       # 石舫 → 佛香阁下
+    ("w8", "w10"),      # 佛香阁下 → 北宫门内
+    ("w10", "e_bei"),   # 北宫门内 → 北宫门
+]
+
+# --- 设施：(名称, 类型, 最近路网节点 key, 评分, 价位) ---
+# 类型用系统已识别的英文枚举：toilet/restaurant/shop/service/atm
+FACILITIES = [
+    ("东宫门公共卫生间",   "toilet",     "w1",  4.3, 0),
+    ("仁寿殿游客服务点",   "service",    "w2",  4.5, 0),
+    ("听鹂馆饭庄",         "restaurant", "w4",  4.6, 3),
+    ("长廊东口卫生间",     "toilet",     "w5",  4.2, 0),
+    ("排云殿文创商店",     "shop",       "w6",  4.4, 2),
+    ("石舫咖啡厅",         "restaurant", "w7",  4.3, 2),
+    ("佛香阁观景平台",     "service",    "w8",  4.8, 0),
+    ("苏州街小吃店",       "restaurant", "w9",  4.1, 1),
+    ("北宫门综合超市",     "shop",       "w10", 4.2, 1),
+    ("北宫门公共卫生间",   "toilet",     "w10", 4.0, 0),
+    ("知春亭茶室",         "restaurant", "w12", 4.5, 2),
+    ("十七孔桥服务驿站",   "service",    "w13", 4.3, 0),
+    ("南湖岛公共卫生间",   "toilet",     "w14", 3.9, 0),
+    ("西堤自助售卖机",     "atm",        "w16", 4.0, 1),
+    ("新建宫门卫生间",     "toilet",     "w17", 4.1, 0),
+    ("东堤便利店",         "shop",       "w11", 4.2, 1),
+]
+
+# 设施摆在最近路网节点旁约 18 米处（错开方向，避免重叠）
+FAC_OFFSET_M = 18.0
+
+
+def node_coord(key):
+    _, _, lng, lat = WAYPOINTS[key]
+    return (lng, lat)
+
+
+def sql_escape(s):
+    return s.replace("'", "''")
+
+
+def main():
+    lines = []
+    w = lines.append
+    w("-- =====================================================")
+    w("-- 颐和园内部步行演示图（人工构造的连通路网 + 分类设施）")
+    w("-- 由 scripts/gen_yiheyuan_demo_map.py 生成，请勿手工编辑。")
+    w("-- 用途：场所查询/内部导航验收演示。真实 OSM 路网碎片化无法用，")
+    w("--       本图保证连通，算法（Dijkstra 路网距离/类别过滤/关键词）真实。")
+    w("-- 幂等：按 source_ref 前缀 'yiheyuan-demo:%' 清理后重建。")
+    w("-- =====================================================")
+    w("SET client_encoding = 'UTF8';")
+    w("BEGIN;")
+    w("")
+    w("DO $$")
+    w("DECLARE")
+    w("    v_spot INTEGER;")
+    w("BEGIN")
+    w(f"    SELECT id INTO v_spot FROM scenic_spots WHERE name = '{SPOT_NAME}' AND city = '北京市' LIMIT 1;")
+    w("    IF v_spot IS NULL THEN")
+    w("        RAISE EXCEPTION '未找到景点 颐和园，请先执行 imports/amap_pois_supplement.sql';")
+    w("    END IF;")
+    w("")
+    w("    -- 1. 清理本脚本旧数据（边→节点→设施，按 source_ref 前缀）")
+    w(f"    DELETE FROM graph_edges WHERE source_ref LIKE '{SRC}:%';")
+    w(f"    DELETE FROM graph_nodes WHERE source_ref LIKE '{SRC}:%';")
+    w(f"    DELETE FROM facilities  WHERE source_ref LIKE '{SRC}:%';")
+    w("")
+    w("    -- 2. 设施（facilities）")
+    for i, (name, ftype, _near, rating, price) in enumerate(FACILITIES):
+        lng, lat = node_coord(_near)
+        # 在节点旁错开摆放
+        ang = (i * 2.399963)  # 黄金角，均匀错开
+        flng = lng + (FAC_OFFSET_M * math.cos(ang)) / M_PER_LNG
+        flat = lat + (FAC_OFFSET_M * math.sin(ang)) / M_PER_LAT
+        ref = f"{SRC}:fac:{i}"
+        price_sql = "NULL" if price == 0 else str(price)
+        w("    INSERT INTO facilities (name, type, location, address, rating, price_level, "
+          "opening_hours, scenic_spot_id, source, source_ref)")
+        w(f"    VALUES ('{sql_escape(name)}', '{ftype}', "
+          f"ST_SetSRID(ST_MakePoint({flng:.6f}, {flat:.6f}), 4326)::geography, "
+          f"'颐和园内', {rating}, {price_sql}, '08:00-17:00', v_spot, 'demo', '{ref}');")
+    w("")
+    w("    -- 3. 路网节点（graph_nodes）：路径/景点/入口")
+    for key, (name, ntype, lng, lat) in WAYPOINTS.items():
+        ref = f"{SRC}:node:{key}"
+        w("    INSERT INTO graph_nodes (name, location, node_type, scenic_spot_id, source, source_ref)")
+        w(f"    VALUES ('{sql_escape(name)}', ST_SetSRID(ST_MakePoint({lng:.6f}, {lat:.6f}), 4326)::geography, "
+          f"'{ntype}', v_spot, 'demo', '{ref}');")
+    w("")
+    w("    -- 4. 设施对应的路网节点（node_type='facility'，绑定 facility_id）")
+    for i, (name, ftype, _near, rating, price) in enumerate(FACILITIES):
+        fac_ref = f"{SRC}:fac:{i}"
+        node_ref = f"{SRC}:facnode:{i}"
+        w("    INSERT INTO graph_nodes (name, location, node_type, scenic_spot_id, facility_id, source, source_ref)")
+        w(f"    SELECT f.name, f.location, 'facility', v_spot, f.id, 'demo', '{node_ref}'")
+        w(f"    FROM facilities f WHERE f.source_ref = '{fac_ref}';")
+    w("")
+    def emit_edge(a, b, mode, speed, congestion, ref):
+        """对无向边 (a,b) 取高德步行折线作几何，正反两向各插一条。
+        距离用折线实际长度（无折线则回退两点直线），几何让前端沿真实道路画线。"""
+        ca, cb = node_coord(a), node_coord(b)
+        straight = dist_m(ca, cb)
+        poly = amap_walk_polyline(ca, cb)
+        # 高德在景区内部缺步道时会绕远（如不知十七孔桥而绕整个湖）：折线远长于
+        # 直线则判定为绕路，回退两点直线，避免距离/时间虚高。
+        if poly and polyline_length(poly) > max(straight * 2.5, straight + 80):
+            poly = None
+        if poly:
+            d = polyline_length(poly)
+        else:
+            d = straight
+        t = max(1, int(d / speed))
+        for (x, y) in ((a, b), (b, a)):
+            xref, yref = f"{SRC}:node:{x}", f"{SRC}:node:{y}"
+            if poly:
+                geom = linestring_wkt(poly if (x, y) == (a, b) else list(reversed(poly)))
+            else:
+                p1, p2 = (node_coord(x), node_coord(y))
+                geom = linestring_wkt([p1, p2])
+            w("    INSERT INTO graph_edges (from_node, to_node, distance, travel_mode, travel_time, "
+              "base_weight, congestion_level, source, source_ref, geometry)")
+            w(f"    SELECT na.id, nb.id, {d:.1f}, '{mode}', {t}, {d/100.0:.2f}, {congestion}, 'osm', '{ref}', "
+              f"ST_GeomFromEWKT({geom})")
+            w(f"    FROM graph_nodes na, graph_nodes nb WHERE na.source_ref='{xref}' AND nb.source_ref='{yref}';")
+
+    # 路径边/电瓶车边 source='osm'（可导航真实道路），几何取自高德步行折线，
+    # 前端据此沿真实道路画线（而非节点间直线）。接入边用 'generated' 画虚线。
+    w("    -- 5. 步行路径边（双向，几何来自高德步行折线，沿真实道路）")
+    for a, b in PATH_EDGES:
+        emit_edge(a, b, "walk", 1.2, 2, f"{SRC}:edge")
+    w("")
+    # 自行车与步行同路径同几何，速度更快（4 vs 1.2 m/s），验收 4c 校区自行车策略。
+    # 颐和园同时具备步行/自行车/电瓶车三种工具，可演示混合最短时间。
+    w("    -- 5a. 自行车道（双向，与步行同几何，速度更快，验收 4c）")
+    for a, b in PATH_EDGES:
+        emit_edge(a, b, "bike", 4.0, 2, f"{SRC}:bike")
+    w("")
+    w("    -- 5b. 电瓶车线（双向，travel_mode='shuttle'，速度快、拥挤度低，验收 4c）")
+    for a, b in SHUTTLE_EDGES:
+        emit_edge(a, b, "shuttle", 5.0, 1, f"{SRC}:shuttle")
+    w("")
+    w("    -- 6. 设施接入边（双向，source='generated' 表示接入连接边）")
+    for i, (name, ftype, near, rating, price) in enumerate(FACILITIES):
+        node_ref = f"{SRC}:facnode:{i}"
+        near_ref = f"{SRC}:node:{near}"
+        # 接入距离 = 设施节点到最近路网节点（约 FAC_OFFSET_M）
+        d = FAC_OFFSET_M
+        t = int(d / 1.2)
+        for (x, y) in ((node_ref, near_ref), (near_ref, node_ref)):
+            w("    INSERT INTO graph_edges (from_node, to_node, distance, travel_mode, travel_time, "
+              "base_weight, congestion_level, source, source_ref)")
+            w(f"    SELECT na.id, nb.id, {d:.1f}, 'walk', {t}, {d/100.0:.2f}, 2, 'generated', '{SRC}:connector'")
+            w(f"    FROM graph_nodes na, graph_nodes nb WHERE na.source_ref='{x}' AND nb.source_ref='{y}';")
+    w("")
+    w("    RAISE NOTICE '颐和园演示图已重建: % 路网节点, % 设施', "
+      f"{len(WAYPOINTS)}, {len(FACILITIES)};")
+    w("END $$;")
+    w("")
+    w("COMMIT;")
+
+    out = "\n".join(lines) + "\n"
+    path = "database/seeds/seed_yiheyuan_demo_map.sql"
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(out)
+    print(f"已生成 {path}")
+    print(f"  路网节点: {len(WAYPOINTS)}  路径边(双向): {len(PATH_EDGES)*2}  "
+          f"设施: {len(FACILITIES)}  接入边(双向): {len(FACILITIES)*2}")
+
+
+if __name__ == "__main__":
+    main()

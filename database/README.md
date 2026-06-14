@@ -9,8 +9,12 @@
 - `imports/amap_pois_supplement.sql`：高德 POI 补充导入，补主导入缺失的北京核心地标（中国国家博物馆、军事博物馆、颐和园），幂等可重复执行。
 - `internal_navigation_schema.sql`：景区内部设施、道路和路网表结构。
 - `imports/internal_navigation.sql`：故宫、北海、奥林匹克森林公园等景区内部导航数据。
+- `imports/internal_navigation_yiheyuan.sql`：颐和园真实 OSM 内部道路图（2000 条道路边 + 1249 栋建筑，爬取自 OpenStreetMap），满足"单景区内部道路图 ≥200 条边、含建筑/设施"验收；导入末尾会删除 OSM 抓取的服务设施，避免设施查询被大量不可达 OSM 设施淹没（设施/路由演示用下方 curated seed 的连通设施）。
 - `seeds/seed_campus_spots.sql`：北京大学校园主对象 seed，用于把校园作为 `scenic_spots` 中的正式对象接入系统。
 - `imports/internal_navigation_pku.sql`：北京大学校园内部道路图，使用现有 `graph_nodes`、`graph_edges`、`facilities`，不新建第二套校园图表。
+- `seeds/seed_pku_curated_map.sql`：北京大学校园人工校核连通主路网 seed，补足 OSM 内部路网碎片化导致的设施不可达问题；主路网来源标记为 `campus_curated`，设施接入短边标记为 `generated`。
+- `seeds/seed_pku_bike_lanes.sql`：北京大学校园自行车道（`travel_mode='bike'`），供验收 4c 校区"自行车最短时间/混合交通"演示；依赖 `seed_pku_curated_map.sql`，按 `source_ref='pku-curated:bike'` 幂等重建。
+- `seeds/seed_yiheyuan_demo_map.sql`：颐和园连通骨架（步行 + 自行车 + 电瓶车三种 `travel_mode`，几何取自地图服务步行折线、绕路自动回退直线）+ 16 个分类设施，供场所查询和验收 4c"步行/自行车/电瓶车混合最短时间"演示。与上面的真实 OSM 道路图叠加：OSM 提供 ≥200 边和建筑的丰富底图，本 seed 提供连通可路由的骨架。
 - `indoor_navigation_schema.sql`：室内导航领域表结构，包含 `indoor_buildings`、`indoor_floors`、`indoor_features`、`indoor_edges` 和 `indoor_route_audit`。
 - `seeds/seed_indoor_navigation.sql`：北大红楼首批正式室内图数据，使用 `local_indoor_graph` provider，不是独立数据库，也不是前端假 Demo。
 - `migrations/achievement_module_schema.sql`：成就系统正式结构迁移，补齐成就编码、景点打卡、游记评审、实体徽章申请与数字纪念凭证相关表和索引。
@@ -42,6 +46,10 @@ psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\internal_navig
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\imports\internal_navigation.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_campus_spots.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\imports\internal_navigation_pku.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_pku_curated_map.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_pku_bike_lanes.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\imports\internal_navigation_yiheyuan.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_yiheyuan_demo_map.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\indoor_navigation_schema.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\achievement_module_schema.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\migrations\diary_compression_schema.sql
@@ -68,7 +76,20 @@ psql -U postgres -d tourism_system -f database\verify_demo.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\internal_navigation_schema.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_campus_spots.sql
 psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\imports\internal_navigation_pku.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_pku_curated_map.sql
 ```
+
+已有数据库只补内部导航交通工具（验收 4c：校区自行车 / 景区电瓶车，支持混合最短时间）：
+
+```bat
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_pku_bike_lanes.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\imports\internal_navigation_yiheyuan.sql
+psql -U postgres -d tourism_system -v ON_ERROR_STOP=1 -f database\seeds\seed_yiheyuan_demo_map.sql
+```
+
+说明：`bike`/`shuttle` 边的 `travel_mode` 决定可走道路，后端按各工具理想速度
+（步行 1.2 / 自行车 4 / 电瓶车 5 m/s）× 拥挤度系数计算时间，`transport` 传
+`walk` / `walk+bike` / `walk+shuttle` 选择策略，可多工具混合求时间最短。
 
 已有 lxd/yhm 数据库只补北大红楼室内导航：
 
@@ -137,7 +158,7 @@ psql -U postgres -d tourism_system -c "SELECT b.scenic_spot_id, s.name, b.name, 
 补完后验证北京大学校园内部道路图：
 
 ```bat
-psql -U postgres -d tourism_system -c "WITH target AS (SELECT scenic_spot_id AS id FROM graph_nodes WHERE source_ref LIKE 'pku:%' GROUP BY scenic_spot_id ORDER BY COUNT(*) DESC LIMIT 1) SELECT (SELECT COUNT(*) FROM graph_nodes n WHERE n.scenic_spot_id=t.id AND n.source_ref LIKE 'pku:%') AS pku_graph_nodes, (SELECT COUNT(*) FROM graph_nodes n WHERE n.scenic_spot_id=t.id AND n.source_ref LIKE 'pku:%' AND n.node_type='building') AS building_nodes, (SELECT COUNT(*) FROM facilities f WHERE f.scenic_spot_id=t.id AND f.source_ref LIKE 'pku:%' AND f.type <> 'building') AS service_facilities, (SELECT COUNT(DISTINCT f.type) FROM facilities f WHERE f.scenic_spot_id=t.id AND f.source_ref LIKE 'pku:%' AND f.type <> 'building') AS service_facility_types, (SELECT COUNT(*) FROM graph_edges e JOIN graph_nodes a ON a.id=e.from_node JOIN graph_nodes b ON b.id=e.to_node WHERE a.scenic_spot_id=t.id AND b.scenic_spot_id=t.id AND a.source_ref LIKE 'pku:%' AND b.source_ref LIKE 'pku:%') AS graph_edges FROM target t;"
+psql -U postgres -d tourism_system -c "WITH target AS (SELECT scenic_spot_id AS id FROM graph_nodes WHERE source_ref LIKE 'pku:%' OR source_ref LIKE 'pku-curated:%' GROUP BY scenic_spot_id ORDER BY COUNT(*) DESC LIMIT 1) SELECT (SELECT COUNT(*) FROM graph_nodes n WHERE n.scenic_spot_id=t.id AND (n.source_ref LIKE 'pku:%' OR n.source_ref LIKE 'pku-curated:%')) AS pku_graph_nodes, (SELECT COUNT(*) FROM graph_nodes n WHERE n.scenic_spot_id=t.id AND (n.source_ref LIKE 'pku:%' OR n.source_ref LIKE 'pku-curated:%') AND n.node_type='building') AS building_nodes, (SELECT COUNT(*) FROM facilities f WHERE f.scenic_spot_id=t.id AND (f.source_ref LIKE 'pku:%' OR f.source_ref LIKE 'pku-curated:%') AND f.type <> 'building') AS service_facilities, (SELECT COUNT(DISTINCT f.type) FROM facilities f WHERE f.scenic_spot_id=t.id AND (f.source_ref LIKE 'pku:%' OR f.source_ref LIKE 'pku-curated:%') AND f.type <> 'building') AS service_facility_types, (SELECT COUNT(*) FROM graph_edges e JOIN graph_nodes a ON a.id=e.from_node JOIN graph_nodes b ON b.id=e.to_node WHERE a.scenic_spot_id=t.id AND b.scenic_spot_id=t.id AND (a.source_ref LIKE 'pku:%' OR a.source_ref LIKE 'pku-curated:%') AND (b.source_ref LIKE 'pku:%' OR b.source_ref LIKE 'pku-curated:%')) AS graph_edges FROM target t;"
 ```
 
 说明：北京大学校园内部道路图和北大红楼室内导航是两项不同能力。前者进入 `graph_nodes`、`graph_edges`、`facilities`，用于校园级道路图；后者进入 `indoor_*` 表，用于单体建筑室内拓扑。
