@@ -93,7 +93,7 @@ RouteSearchResult dijkstra_route(const RouteGraphData& graph,
                                  int crowd_tolerance) {
     RouteSearchResult result;
     if (!graph.nodes.count(start) || !graph.nodes.count(end)) {
-        result.error = "璺嚎鑺傜偣涓嶅瓨鍦?;
+        result.error = "Route node does not exist";
         return result;
     }
     if (start == end) {
@@ -135,7 +135,7 @@ RouteSearchResult dijkstra_route(const RouteGraphData& graph,
     }
 
     if (!prev.count(end)) {
-        result.error = "褰撳墠浜ら€氭柟寮忎笅鎵句笉鍒板彲杈捐矾绾?;
+        result.error = "No reachable route for current transport mode";
         return result;
     }
 
@@ -346,7 +346,7 @@ RouteSearchResult plan_route_with_waypoints(const RouteGraphData& graph,
                                             int crowd_tolerance) {
     RouteSearchResult combined;
     if (points.size() < 2) {
-        combined.error = "璇烽€夋嫨璧风偣鍜岀粓鐐?;
+        combined.error = "Please select start and end nodes";
         return combined;
     }
 
@@ -740,7 +740,7 @@ TspResult tsp_backtracking(const TspDistanceMatrix& matrix) {
     tsp_backtrack_dfs(matrix, current, visited, 0.0, 1, best_weight, best_order, min_out_edge);
 
     if (best_order.empty()) {
-        result.error = "鏈壘鍒板彲琛岀幆娓歌矾绾?;
+        result.error = "No feasible round-trip route found";
         return result;
     }
 
@@ -870,7 +870,7 @@ TspResult tsp_branch_and_bound(const TspDistanceMatrix& matrix) {
     }
 
     if (best_order.empty()) {
-        result.error = "鏈壘鍒板彲琛岀幆娓歌矾绾?;
+        result.error = "No feasible round-trip route found";
         return result;
     }
 
